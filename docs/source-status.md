@@ -1,33 +1,32 @@
 # Source recovery status
 
-Checked: 15 November 2026. Status: **correct chat identified; partial recovery verified**.
+Checked: 15 November 2026. **All 14 visible conversation turns and all 25 listed user photo uploads are recovered locally.**
 
-## Source
+## Source and exports
 
-- Chat: [Нагадай чорну п’ятницю](https://chatgpt.com/c/6af7f006-e118-83eb-b866-adda58c27655), 14 November 2026.
-- Retrieval: Codex app `read_thread`, maximum supported 10 turns and 20,000 characters per item; all returned page cursors followed to exhaustion.
-- Original connector response: [local JSON](../sources/chatgpt/6af7f006-e118-83eb-b866-adda58c27655.json).
-- Readable chronological text: [local transcript](../sources/chatgpt/2026-11-14-fashion-capsules.md).
-- Provenance and photo checksums: [local manifest](../sources/manifest.local.json).
-- [Photo index](../output/source-gallery.html).
+- Chat: [Нагадай чорну п’ятницю](https://chatgpt.com/c/6af7f006-e118-83eb-b866-adda58c27655), dated 14 November 2026.
+- [Full visible browser export](../sources/chatgpt/browser-conversation.json): exact rendered text, DOM message IDs, visible links and per-turn image counts. Exported UTF-16 length of 31,083 code units matches the saved file.
+- [Readable chronological transcript](../sources/chatgpt/2026-11-14-fashion-capsules.md): all 14 user/assistant pairs, from the initial Black Friday question to the final jacket-liner photo.
+- [Chat file inventory](../sources/chatgpt/browser-file-inventory.json), [local checksum/provenance manifest](../sources/manifest.local.json), [photo gallery](../output/source-gallery.html).
+- The earlier partial connector JSON/transcript and pagination receipts remain in `sources/chatgpt/` as provenance, superseded by the full browser export for coverage.
 
 ## Verified coverage
 
-| Material | Recovered | Limit |
-| --- | --- | --- |
-| Conversation | 5 visible user/assistant turns | Opening Black Friday/style/capsule-selection discussion is absent from returned text |
-| Recovered photo files | 10 JPEGs, 4,042,056 bytes | Visible user messages reference 25 images: batches of 10, 10, 4 and 1 |
-| Capsule notes | 4 combinations summarized from recovered assistant text | Direct user selection/acceptance is absent |
-| Downloadable documents | None exposed in returned turns | Full-chat document coverage remains unknown |
+| Material | Result |
+| --- | --- |
+| Visible conversation | 14 user/assistant pairs; merged scroll windows have an unambiguous order |
+| User uploads | 25 named JPEG files, all copied; 11,382,125 bytes total |
+| User photo references | 25 across batches of 10, 10, 4 and 1, matching the file-panel count |
+| Other downloadable documents | No non-image document was listed in the chat's file panel |
+| Curated notes | Confirmed preferences, original three capsules, later variations, wardrobe observations and shopping proposals |
+| Extra illustrative web images | 12 archived; 17 URLs retained after browser asset export could not fetch those sources |
 
-All 10 copied files match the connector-provided source bytes by SHA-256. Provided filenames and connector order are preserved. Camera-original resolution/metadata is not established by this preview-file retrieval. The connector does not associate returned file paths with individual messages; photo-to-message mapping remains unverified.
+All copied files have size and SHA-256 entries in the local manifests. A native download of `IMG_1034.jpeg` matched its connector-provided copy exactly. The 25-upload set is complete against the observed file list; no cloud conversation or unrelated original was deleted.
 
-## Remaining recovery
+## Limits
 
-- Retrieve at least 15 further images referenced in visible messages; filenames are not exposed by the connector.
-- Recover the opening discussion and any documents/earlier attachments there.
-- Confirm original message/photo mapping before using image numbers as garment identifiers.
-
-The connector reports `hasMore: false` after five visible turns, but those turns refer to earlier capsule choices. End of pagination establishes exhaustion of available connector output, not a complete original conversation. Both browser sessions reached a different account with older history; no source material was taken from that account.
-
-The cloud conversation and unrelated originals were retained. Recovery is not complete until missing material is retrieved or the user explicitly accepts this coverage boundary.
+- Camera-original resolution/metadata is not established; these are files as supplied by ChatGPT. The first ten connector files are 1152 × 1536 JPEGs.
+- Provided filenames and the file-panel sequence are preserved. Individual filename-to-message mapping is not independently verified; local gallery numbers are navigation labels.
+- The [reference manifest](../sources/references.local.json) preserves downloaded illustrative assets and unavailable source URLs. Web illustrations are separate from the 25 user uploads.
+- The export covers the visible conversation branch. Hidden reasoning, internal tool calls, deleted material and alternate branches are outside the claim.
+- Historical prices, promotions and store facts were preserved as source content and were not revalidated as current recommendations.

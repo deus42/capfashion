@@ -7,6 +7,7 @@ sources/documents/
 sources/*.local.json
 assets/photos/
 assets/derived/
+assets/references/
 output/*
 !output/README.md
 tasks/worklogs/

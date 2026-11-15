@@ -2,7 +2,7 @@
 
 Personal fashion and capsule-wardrobe workspace, initialized 15 November 2026.
 
-The source chat is **“Нагадай чорну п’ятницю”**, dated 14 November 2026. Five visible turns and 10 photos have been recovered locally. Visible text references 25 photos; the opening discussion and 15 photos remain unavailable through the connector. See [source status](docs/source-status.md).
+The source chat is **“Нагадай чорну п’ятницю”**, dated 14 November 2026. All 14 visible user/assistant turns and all 25 listed photo uploads are now local. The original three capsule choices, later variants and shopping notes are preserved with source attribution. See [source status](docs/source-status.md).
 
 ## Start here
 
@@ -10,7 +10,9 @@ The source chat is **“Нагадай чорну п’ятницю”**, dated 
 - [Source recovery and coverage](docs/source-status.md)
 - [Capsule plans](docs/capsules/README.md)
 - [Recovered wardrobe notes](docs/wardrobe.md)
+- [Shopping notes](docs/shopping-list.md)
 - [Local photo index](output/source-gallery.html)
+- [Archived reference illustrations](output/reference-gallery.html)
 - [Original documents](sources/README.md)
 - [Photo handling](assets/README.md)
 - [Agent instructions](AGENTS.md); [Claude entrypoint](CLAUDE.md)

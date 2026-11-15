@@ -13,6 +13,8 @@ Keep the existing fashion/capsule work, original photos and future wardrobe deci
 
 ## Working method
 
+Confirmed in the recovered user messages: comfortable, relaxed smart casual for a remote-work lifestyle; an interest in Tommy Hilfiger/Tom Tailor-style outfits alongside existing sportswear; little use for formal suits. The user preferred the original three capsule proposals and asked to reproduce them exactly. Navy chinos and white Adidas Stan Smith were explicitly confirmed as already owned. These are source decisions, not new assumptions.
+
 Originals are evidence. Curated notes distinguish direct user decisions, visible garment observations, assistant proposals and unresolved questions. Each capsule plan should identify its use case, included item/photo references, combinations, gaps and acceptance status; create a plan when source material supports it.
 
 Use copies for photo transformations. Keep original filenames and order in a local source manifest even when readable working names are introduced. Record missing or unavailable attachments explicitly.
@@ -23,4 +25,4 @@ Personal material stays local. Public sharing, external uploads, shopping and de
 
 ## Current next step
 
-Recover the opening discussion and remaining photos from the identified chat. The available transcript, photo copies and capsule notes are already local; see [source status](source-status.md).
+Use the recovered material as the baseline for future wardrobe/capsule work. Project initialization and recovery of the visible conversation and listed uploads are verified; see [source status](source-status.md) for the separate web-illustration limits.

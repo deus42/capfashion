@@ -1,6 +1,8 @@
 # Recovered wardrobe notes
 
-Source: five recovered turns from [Нагадай чорну п’ятницю](https://chatgpt.com/c/6af7f006-e118-83eb-b866-adda58c27655), dated 14 November 2026. [Coverage](source-status.md), [local transcript](../sources/chatgpt/2026-11-14-fashion-capsules.md), [recovered photos](../output/source-gallery.html).
+Source: complete visible conversation from [Нагадай чорну п’ятницю](https://chatgpt.com/c/6af7f006-e118-83eb-b866-adda58c27655), dated 14 November 2026: 14 turns and 25 listed photos. [Coverage](source-status.md), [local transcript](../sources/chatgpt/2026-11-14-fashion-capsules.md), [recovered photos](../output/source-gallery.html).
+
+Directly confirmed by the user: existing navy chinos; white Adidas Stan Smith worn regularly; the liner pictured in the final turn belongs to the green jacket. Keep these separate from the prior assistant's visual descriptions below.
 
 The user identified the uploaded images as their wardrobe and described the final outfit as a usual outfit. This table preserves the prior assistant's observations; it is not an independently verified item catalogue. Do not invent photo/item mappings from it.
 
@@ -16,4 +18,4 @@ The user identified the uploaded images as their wardrobe and described the fina
 
 The user directly confirmed that the liner pictured in the final turn belongs to the green jacket. The prior assistant described it as blue and interpreted it as a layered system usable separately or together. Exact model names, materials and completeness remain unverified.
 
-Keep the recovered files and source labels intact. Assign stable item IDs after the remaining photos and original message order are recovered.
+Keep the recovered files and source labels intact. All 25 listed files are local; an item catalogue can be created in a separate task by reviewing them and assigning stable item IDs. Individual filename-to-message mapping remains unverified.

@@ -49,6 +49,7 @@
 - `docs/project.md`: project purpose, boundaries and working method.
 - `docs/source-status.md`: import provenance, coverage and missing material.
 - `docs/wardrobe.md`: attributed source observations; not yet a verified item catalogue.
+- `docs/shopping-list.md`: dated shopping proposals from the source, not current availability or a purchase order.
 - `docs/capsules/`: curated capsule plans; source proposals remain proposals until accepted.
 - `sources/README.md` and `assets/README.md`: original-source and photo handling.
 

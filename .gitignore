@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+sources/chatgpt/
+sources/documents/
+sources/*.local.json
+assets/photos/
+assets/derived/
+output/*
+!output/README.md
+tasks/worklogs/
+.local/
+node_modules/

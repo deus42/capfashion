@@ -6,9 +6,9 @@ Keep the existing fashion/capsule work, original photos and future wardrobe deci
 
 ## Current scope
 
-- Recover the requested ChatGPT conversation from 14 November 2026, or identify the exact matching conversation if its date differs.
-- Preserve the conversation and accessible attachments with source IDs, original filenames/order and checksums.
-- Extract confirmed requirements and capsule decisions into readable project notes after the actual source is recovered.
+- Source recovery is complete: preserve all 25 photos, the visible conversation and their provenance.
+- Build a source-backed candidate wardrobe catalogue; every item requires owner confirmation.
+- Maintain the [Cap Fashion v1 specification](superpowers/specs/2026-11-15-cap-fashion-design.md) and test personal visual prototypes before application implementation.
 - Keep agent instructions, task checkpoints and the Vault project map synchronized.
 
 ## Working method
@@ -21,8 +21,8 @@ Use copies for photo transformations. Keep original filenames and order in a loc
 
 ## Boundaries
 
-Personal material stays local. Public sharing, external uploads, shopping and deletion of cloud/local originals require a specific task instruction. No app architecture, paid service or deployment is selected by this initialization.
+Personal originals and derived images stay in ignored local storage. The user separately authorized scoped prototypes in FASHN and through Codex; this is not public-sharing, subscription-purchase or deployment authorization. The specification records a local technical baseline; application implementation has not started.
 
 ## Current next step
 
-Use the recovered material as the baseline for future wardrobe/capsule work. Project initialization and recovery of the visible conversation and listed uploads are verified; see [source status](source-status.md) for the separate web-illustration limits.
+Review the saved specification, candidate catalogue and first own-person capsule visualization. Owner measurements and item confirmations remain open inputs. The source-status note retains the separate web-illustration limits.

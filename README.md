@@ -6,6 +6,7 @@ The source chat is **“Нагадай чорну п’ятницю”**, dated 
 
 ## Start here
 
+- [Cap Fashion v1 — functional specification for review](docs/superpowers/specs/2026-11-15-cap-fashion-design.md)
 - [Project brief](docs/project.md)
 - [Source recovery and coverage](docs/source-status.md)
 - [Capsule plans](docs/capsules/README.md)
@@ -29,7 +30,7 @@ output/               Generated reports/previews (ignored)
 tasks/worklogs/       Local execution checkpoints (ignored)
 ```
 
-This is a documentation workspace with local Git history. A software application or deployment has not been specified. Original personal material stays outside Git; no remote publication is configured.
+This workspace contains source material, a functional specification for review, a candidate wardrobe catalogue and visual prototypes. Application code and deployment are not implemented. Original personal material and generated personal images stay outside Git; no remote publication is configured.
 
 ## Vault
 

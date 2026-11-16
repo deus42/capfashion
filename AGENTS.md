@@ -23,10 +23,11 @@
 ## Project Purpose
 
 - Personal fashion and capsule-wardrobe workspace: preserve source conversations/photos, maintain source-backed wardrobe notes, and develop capsule plans.
-- Current phase is documentation and source recovery. A software product, stack, deployment or public gallery is not established.
+- Current phase is functional specification, candidate wardrobe catalogue and visual prototyping. Application code and deployment are not implemented; the specification remains for owner review.
 
 ## Execution Policy
 
+- Spec first: use `docs/superpowers/specs/2026-11-15-cap-fashion-design.md` as the product requirements source. Resolve material open decisions through as many question rounds as needed; do not silently substitute assumptions or start application implementation before the design is reviewed. This implements the user's explicit 15 November instruction; inherit the shared Vault preference for all projects.
 - Apply the active platform/developer, Vault OS, repo, Never Guess, task-continuity, validation/review/reporting and security policies. Bias toward caution over speed on non-trivial work; keep routine edits tight.
 - Think Before Coding: inspect `README.md`, `docs/project.md`, `docs/source-status.md` and the active checkpoint. Surface material assumptions and tradeoffs before implementation.
 - Simplicity First: make the smallest useful change; add application code or dependencies when an actual requirement calls for them.
@@ -45,10 +46,11 @@
 
 ## Docs Source Of Truth
 
+- `docs/superpowers/specs/2026-11-15-cap-fashion-design.md`: functional v1 specification and acceptance criteria, pending owner review.
 - `README.md`: project entrypoint, layout and current scope.
 - `docs/project.md`: project purpose, boundaries and working method.
 - `docs/source-status.md`: import provenance, coverage and missing material.
-- `docs/wardrobe.md`: attributed source observations; not yet a verified item catalogue.
+- `docs/wardrobe.md`: source history and stable candidate groups from the 25-photo review; `.local/wardrobe-candidates.json` contains private machine-readable observations. Neither is an owner-verified physical inventory.
 - `docs/shopping-list.md`: dated shopping proposals from the source, not current availability or a purchase order.
 - `docs/capsules/`: curated capsule plans; source proposals remain proposals until accepted.
 - `sources/README.md` and `assets/README.md`: original-source and photo handling.

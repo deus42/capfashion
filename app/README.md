@@ -50,6 +50,12 @@ API responses and static assets are gzip-compressed (state ≈ 28 KB on the wire
 
 ## Data
 
+### Earlier recommendations and inspiration
+
+«Капсули → Усі образи» combines the catalogue across capsules and selections. Representatives differ in at least two of top / layer / bottom / shoes; one-slot changes and accessory changes stay in secondary variant groups. This is a structural filter, with visual styling review still required.
+
+«Галерея → Натхнення» shows archived chat illustrations with themes and source attribution. `server/inspiration.ts` imports a checksumed local reference manifest through the shared locked store, deduplicates by SHA-256, and copies display files into `media/inspiration/`. It never sends references through photo intake or changes inventory/base photos. Personal manifests, captions, source mapping and generated results remain in ignored local storage.
+
 - Personal data: `../.local/app-data/` (Git-ignored), containing `db.json`, `db.prev.json` (last valid copy), `media/uploads`, `media/renders`, `media/thumbs` and `jobs/<id>/` (prompt, Codex log, result).
 - First start seeds from the 25 chat photos, `.local/wardrobe-candidates.json` (47 candidates), the 14 November capsule/shopping notes and the first Urban Casual concept. Nothing is auto-confirmed.
 - Writes are locked, atomic and validated. A stale edit gets `409` instead of overwriting newer data. Originals are never modified. HEIC uploads keep the original and add a JPEG copy (`sips`).

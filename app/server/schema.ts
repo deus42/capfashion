@@ -49,6 +49,14 @@ export interface Photo {
   /** Owner's check against the base-photo standard; null = not checked. */
   meetsStandard?: boolean | null;
   note?: string;
+  /** Archived styling reference, separate from owner photos and generated try-ons. */
+  inspiration?: {
+    title: string;
+    sourceUrl: string;
+    sourceNote: string;
+    tags: string[];
+    sha256: string;
+  };
   createdAt: string;
 }
 

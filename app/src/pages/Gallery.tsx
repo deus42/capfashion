@@ -1,17 +1,22 @@
 import { useMemo, useState } from 'react';
-import { Download, Heart, Images, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
+import { Download, ExternalLink, Heart, Images, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
 import type { DB, Photo, Result } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
-import { useApp, useDb } from '../store.tsx';
+import { useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, Overlay, PageHead } from '../components/ui.tsx';
 import { REVIEW_LABEL, REVIEW_TONE, fmtDate } from '../lib.ts';
 import { Composition, ReviewBar, compositionFor } from './Studio.tsx';
+import './Gallery.css';
 
-type Entry = { kind: 'tryon'; r: Result; at: string } | { kind: 'packshot'; p: Photo; at: string; itemId?: string };
+type Entry = { kind: 'tryon'; r: Result; at: string } | { kind: 'packshot' | 'inspiration'; p: Photo; at: string; itemId?: string };
 
 function entries(db: DB): Entry[] {
   const out: Entry[] = db.results.map((r) => ({ kind: 'tryon' as const, r, at: r.createdAt }));
   for (const p of db.photos) {
+    if (p.inspiration) {
+      out.push({ kind: 'inspiration', p, at: p.createdAt });
+      continue;
+    }
     if (p.kind !== 'packshot') continue;
     const item = db.items.find((i) => i.packshotId === p.id);
     out.push({ kind: 'packshot', p, at: p.createdAt, itemId: item?.id });
@@ -68,28 +73,32 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   }
   const item = entry.itemId ? db.items.find((i) => i.id === entry.itemId) : undefined;
   const job = db.jobs.find((j) => j.photoId === entry.p.id);
+  const inspiration = entry.p.inspiration;
+  const title = inspiration?.title ?? item?.title ?? entry.p.originalName;
   return (
     <Overlay onClose={onClose}>
-      <div className="lightbox" role="dialog" aria-modal="true">
-        <div className="lb-img" style={{ background: '#fff' }}><img src={media(entry.p.path)} alt={item?.title} /></div>
+      <div className={`lightbox${inspiration ? ' inspiration-lightbox' : ''}`} role="dialog" aria-modal="true">
+        <div className="lb-img" style={{ background: '#fff' }}><img src={media(entry.p.path)} alt={title} /></div>
         <div className="lb-side">
           <div className="drawer-head">
-            <h2>{item?.title ?? entry.p.originalName}</h2>
+            <h2>{title}</h2>
             <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
           </div>
           <div className="body">
             <div className="row wrap">
-              <Badge tone="info">Packshot</Badge>
-              <Badge>реконструкція</Badge>
+              <Badge tone="info">{inspiration ? 'Натхнення' : 'Packshot'}</Badge>
+              {!inspiration && <Badge>реконструкція</Badge>}
               <span className="small faint">{fmtDate(entry.p.createdAt)}</span>
             </div>
-            <div className="note small">{entry.p.note ?? 'Генеративна реконструкція.'}</div>
+            <div className="note small">{inspiration?.sourceNote ?? entry.p.note ?? 'Генеративна реконструкція.'}</div>
+            {inspiration && <div className="row wrap">{inspiration.tags.map((t) => <Badge key={t}>{t}</Badge>)}</div>}
           </div>
           <div className="drawer-foot">
-            <ConfirmButton className="btn sm ghost danger" title="Видалити packshot" message="Видалити це згенероване фото? Річ і її оригінальні фото залишаться." onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), 'Packshot видалено'); if (ok !== undefined) onClose(); }}>
+            <ConfirmButton className="btn sm ghost danger" title={inspiration ? 'Прибрати референс' : 'Видалити packshot'} message={inspiration ? 'Прибрати цей референс із галереї? Архівне джерело залишиться.' : 'Видалити це згенероване фото? Річ і її оригінальні фото залишаться.'} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), 'Зображення прибрано'); if (ok !== undefined) onClose(); }}>
               <Trash2 size={13} />
             </ConfirmButton>
             <span style={{ flex: 1 }} />
+            {inspiration && <a className="btn sm" href={inspiration.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Джерело</a>}
             {job && (
               <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${job.id}/retry`, { run: true }), 'Новий packshot у роботі')}>
                 <RotateCcw size={13} /> Перегенерувати
@@ -105,12 +114,17 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
 
 export function GalleryPage() {
   const db = useDb();
-  const [type, setType] = useState<'all' | 'tryon' | 'packshot'>('all');
+  const { query } = useRoute();
+  const [type, setType] = useState<'all' | 'tryon' | 'packshot' | 'inspiration'>(query.get('type') === 'inspiration' ? 'inspiration' : 'all');
+  const [tag, setTag] = useState('');
   const [filter, setFilter] = useState<'any' | 'pending' | 'accepted' | 'fav'>('any');
   const [open, setOpen] = useState<Entry | null>(null);
   const all = useMemo(() => entries(db), [db]);
+  const tags = [...new Set(all.flatMap((e) => e.kind === 'inspiration' ? e.p.inspiration?.tags ?? [] : []))].sort();
   const list = all.filter((e) => {
     if (type !== 'all' && e.kind !== type) return false;
+    if (type === 'inspiration' && tag && !(e.kind === 'inspiration' && e.p.inspiration?.tags.includes(tag))) return false;
+    if (type === 'inspiration') return true;
     if (filter === 'any') return true;
     if (e.kind !== 'tryon') return false;
     if (filter === 'fav') return e.r.favorite;
@@ -123,19 +137,26 @@ export function GalleryPage() {
     if (g) g[1].push(e);
     else groups.push([k, [e]]);
   }
-  const counts = { tryon: all.filter((e) => e.kind === 'tryon').length, packshot: all.filter((e) => e.kind === 'packshot').length };
+  const counts = { tryon: all.filter((e) => e.kind === 'tryon').length, packshot: all.filter((e) => e.kind === 'packshot').length, inspiration: all.filter((e) => e.kind === 'inspiration').length };
 
   return (
     <div className="page">
       <PageHead title="Галерея" />
       <div className="toolbar">
-        <div className="seg">
+        <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
           <button className={type === 'all' ? 'on' : ''} onClick={() => setType('all')}>Усе <span className="faint">{all.length}</span></button>
           <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>Примірки <span className="faint">{counts.tryon}</span></button>
           <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>Packshot <span className="faint">{counts.packshot}</span></button>
+          <button className={type === 'inspiration' ? 'on' : ''} onClick={() => setType('inspiration')}>Натхнення <span className="faint">{counts.inspiration}</span></button>
         </div>
         <span className="grow" />
-        {type !== 'packshot' && (
+        {type === 'inspiration' && (
+          <div className="chips" role="group" aria-label="Тема натхнення">
+            <button className={`chip${tag === '' ? ' active' : ''}`} onClick={() => setTag('')}>Усі теми</button>
+            {tags.map((t) => <button key={t} className={`chip${tag === t ? ' active' : ''}`} onClick={() => setTag(t)}>{t}</button>)}
+          </div>
+        )}
+        {type !== 'packshot' && type !== 'inspiration' && (
           <div className="chips">
             {(
               [
@@ -167,8 +188,9 @@ export function GalleryPage() {
                   </button>
                 ) : (
                   <button key={e.p.id} className="gtile contain" onClick={() => setOpen(e)}>
-                    <img src={thumb(e.p.path, 520)} alt="" loading="lazy" />
-                    <span className="cap">{db.items.find((i) => i.id === e.itemId)?.title ?? e.p.originalName}</span>
+                    <img src={thumb(e.p.path, 520)} alt={e.p.inspiration?.title ?? ''} loading="lazy" />
+                    {e.kind === 'inspiration' && <span className="tl"><Badge tone="glass">Натхнення</Badge></span>}
+                    <span className="cap">{e.p.inspiration?.title ?? db.items.find((i) => i.id === e.itemId)?.title ?? e.p.originalName}</span>
                   </button>
                 ),
               )}

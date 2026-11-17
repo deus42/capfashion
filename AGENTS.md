@@ -46,13 +46,14 @@
 
 ## Docs Source Of Truth
 
-- `docs/superpowers/specs/2026-11-15-cap-fashion-design.md`: functional v1 specification and acceptance criteria, pending owner review.
+- `docs/superpowers/specs/2026-11-15-cap-fashion-design.md`: functional v1 specification and acceptance criteria, accepted as the implementation basis on 17 November; later identity decisions retain their explicit review/input status.
 - `README.md`: project entrypoint, layout and current scope.
 - `docs/project.md`: project purpose, boundaries and working method.
 - `docs/source-status.md`: import provenance, coverage and missing material.
 - `docs/wardrobe.md`: source history and stable candidate groups from the 25-photo review; `.local/wardrobe-candidates.json` contains private machine-readable observations. Neither is an owner-verified physical inventory.
 - `docs/shopping-list.md`: dated shopping proposals from the source, not current availability or a purchase order.
 - `docs/capsules/`: curated capsule plans; source proposals remain proposals until accepted.
+- `docs/capsules/2026-11-17-source-coverage.md`: earlier recommendation-to-catalogue mapping and the distinction between exact source combinations, stylistic interpretations and variants.
 - `sources/README.md` and `assets/README.md`: original-source and photo handling.
 
 ## Repo Layout
@@ -82,6 +83,17 @@
 - Git exclusion is not a backup. Preserve source copies until recovery is verified; do not delete cloud chats or move irreplaceable originals blindly.
 
 ## Project-Specific Rules
+
+### Mandatory original-photo identity — owner instruction, 17 November 2026
+
+- Every personal try-on MUST take the owner's face AND physique from the owner's ORIGINAL photographs. Preserve actual facial features, apparent age, hairline, skin, build and body proportions. Do not replace, average, beautify, de-age, slim, lengthen or muscularize the person.
+- Pin one owner-confirmed primary original and consistent body references for the whole generation batch. Record the exact source paths, SHA-256 values and face/body/garment roles. Do not silently switch the primary photograph between looks or mix faces from different photos.
+- Generated images, previous try-ons, capsule covers, synthetic models and inspiration photos MUST NEVER supply identity or physique. Clothing references supply clothing only; other visible faces must not influence identity.
+- Pass the actual original files explicitly to the IMAGE TOOL through `referenced_image_paths`, with identity references first. Attaching originals to a Codex/CLI conversation or merely naming them in a prompt is insufficient. Respect the current tool's reference limit and verify the actual call receipt.
+- Use the original appearance rather than invented age, hair or body descriptions. Identity fidelity takes priority over a flattering model appearance; resolve pose/angle conflicts with the owner instead of silently changing the face.
+- Check a control render against the pinned originals before continuing a batch. Inspect face, hairline, age, physique, garment composition and reference-call evidence. Visible identity drift requires correction; do not label such an image as a correct personal try-on.
+- Never fall back to a generic man when original references are missing, unreadable or were not passed to the image tool. Stop that generation with a specific explanation; retain originals and previous attempts.
+- Owner likeness acceptance remains explicit. Successful generation, an attractive image or an agent's review does not establish that the face matches. Preserve rejected attempts as history and link corrected attempts to their predecessors.
 
 - Preserve photo order and identity. Do not infer a garment's brand, material, fit or ownership without source evidence; label visual uncertainty.
 - Separate user-confirmed preferences, observed items, prior assistant suggestions and unverified claims. A recommendation does not prove ownership or acceptance.

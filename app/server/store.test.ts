@@ -9,6 +9,9 @@ import { createStore } from './store.ts';
 import { dispatch, snapshotSlots } from './routes.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
 import { applyAnalyze, applyIntake } from './analysis.ts';
+import { importInspiration } from './inspiration.ts';
+import { createHash } from 'node:crypto';
+import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 
@@ -52,6 +55,49 @@ function setup() {
   const call = (method: string, p: string, body: Record<string, unknown> = {}) => dispatch(ctx, method, p, body) as Promise<any>;
   return { dir, store, call, drained: () => drained };
 }
+
+test('reference import verifies bytes, deduplicates and preserves wardrobe and base photos', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capfashion-inspiration-'));
+  try {
+    const dir = path.join(root, '.local/data');
+    fs.mkdirSync(path.join(root, 'assets/references'), { recursive: true });
+    const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
+    fs.writeFileSync(path.join(root, 'assets/references/a.png'), bytes);
+    const store = createStore(dir, fixture);
+    const before = store.read();
+    const asset = { path: 'assets/references/a.png', sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, source_url: 'https://example.com/a.png', title: 'Olive Casual' };
+    assert.equal((await importInspiration(store, root, [asset, asset], 'Archived chat')).added.length, 1);
+    assert.equal((await importInspiration(store, root, [asset], 'Archived chat')).added.length, 0);
+    const db = store.read();
+    assert.deepEqual(db.items, before.items);
+    assert.deepEqual(db.profile, before.profile);
+    assert.deepEqual(db.looks, before.looks);
+    assert.deepEqual(db.jobs, before.jobs);
+    const p = db.photos.find((p) => p.inspiration)!;
+    assert.equal(p.inspiration!.title, 'Olive Casual');
+    assert.deepEqual(fs.readFileSync(path.join(root, p.path)), bytes);
+    await assert.rejects(importInspiration(store, root, [{ ...asset, sha256: 'wrong' }], ''), /checksum/);
+    await assert.rejects(importInspiration(store, root, [{ ...asset, source_url: 'javascript:alert(1)' }], ''), /HTTPS/);
+    fs.writeFileSync(path.join(root, 'outside.png'), bytes);
+    await assert.rejects(importInspiration(store, root, [{ ...asset, path: 'outside.png' }], ''), /outside/);
+    assert.equal(store.read().photos.length, before.photos.length + 1);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('outfit groups count core changes, ignore accessories and avoid similarity chains', () => {
+  const a = fixture().looks[0];
+  const withRef = (l: typeof a, slot: 'top' | 'shoes' | 'accessories', id: string) => ({ ...l, id: l.id + id, slots: { ...l.slots, [slot]: [{ kind: 'need' as const, id }] } });
+  const belt = withRef(a, 'accessories', 'belt');
+  const shoe = withRef(a, 'shoes', 'shoe');
+  const topAndShoe = withRef(shoe, 'top', 'polo');
+  assert.equal(changedCoreSlots(a, belt).length, 0);
+  assert.equal(changedCoreSlots(a, shoe).length, 1);
+  assert.equal(changedCoreSlots(a, topAndShoe).length, 2);
+  const groups = groupLookVariations([a, belt, shoe, topAndShoe]);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].variants.length, 2);
+  assert.equal(groups[1].primary.id, topAndShoe.id);
+});
 
 test('fixture is valid and seeds an atomic file with a previous-valid backup', async () => {
   assert.equal(validateDb(fixture()), null);

@@ -1,0 +1,11 @@
+@media (max-width: 640px) {
+  .lightbox.inspiration-lightbox {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 24px);
+  }
+  .lightbox.inspiration-lightbox .lb-img { flex: 1; min-height: 0; }
+  .lightbox.inspiration-lightbox .lb-side { flex: 0 1 auto; max-height: 52%; min-height: 0; }
+  .lightbox.inspiration-lightbox .drawer-head,
+  .lightbox.inspiration-lightbox .drawer-foot { flex-shrink: 0; }
+}

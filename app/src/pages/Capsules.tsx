@@ -6,6 +6,7 @@ import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Modal, RenderPlaceholder } from '../components/ui.tsx';
 import { REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, coverForLook, piecesOf } from '../lib.ts';
 import { CapsuleTile } from './Home.tsx';
+import { groupLookVariations } from '../look-variation.ts';
 
 function AnalyzeBox() {
   const db = useDb();
@@ -37,30 +38,47 @@ function AnalyzeBox() {
 export function CapsulesPage() {
   const db = useDb();
   const { query } = useRoute();
-  const [tab, setTab] = useState<'capsules' | 'selections'>(query.get('tab') === 'selections' ? 'selections' : 'capsules');
+  const [tab, setTab] = useState<'capsules' | 'selections' | 'looks'>(query.get('tab') === 'selections' ? 'selections' : query.get('tab') === 'looks' ? 'looks' : 'capsules');
   const capsules = db.capsules.filter((c) => c.kind !== 'selection');
   const selections = db.capsules.filter((c) => c.kind === 'selection').slice().reverse();
   const list = tab === 'capsules' ? capsules : selections;
+  // Give each capsule's lead look a chance to represent its own style before
+  // folding later one-piece substitutions into variants across the catalogue.
+  const orderedLooks = [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]
+    .map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));
 
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>{tab === 'capsules' ? 'Капсули' : 'Підбірки'}</h1></div>
+        <div><h1>{tab === 'capsules' ? 'Капсули' : tab === 'looks' ? 'Усі образи' : 'Підбірки'}</h1></div>
         <div className="actions">
-          <div className="seg">
+          <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
             <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
             <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>З моїх речей <span className="faint">{selections.length}</span></button>
+            <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{db.looks.length}</span></button>
           </div>
         </div>
       </div>
       {tab === 'selections' && <AnalyzeBox />}
-      {list.length === 0 ? (
+      {tab === 'looks' ? <LookCollection looks={orderedLooks} /> : list.length === 0 ? (
         <Empty icon={<Sparkles />} title="Підбірок ще немає">Напиши, куди збираєшся, і натисни «Підібрати» — образи складуться лише з твоїх речей.</Empty>
       ) : (
         <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
       )}
     </div>
   );
+}
+
+function LookCollection({ looks }: { looks: Look[] }) {
+  const groups = groupLookVariations(looks);
+  const variants = looks.length - groups.length;
+  return <>
+    <div className="section-head"><h2 className="h2">Образи <span className="count">{groups.length}</span></h2><span className="small faint">{variants > 0 ? `Варіанти: ${variants}` : ''}</span></div>
+    <div className="look-grid">{groups.map((g) => <div key={g.primary.id}>
+      <LookCard look={g.primary} />
+      {g.variants.length > 0 && <div className="variants"><span className="small faint">Варіанти</span><div className="variants-grid">{g.variants.map((l) => <LookCard key={l.id} look={l} />)}</div></div>}
+    </div>)}</div>
+  </>;
 }
 
 function EditLook({ look, onClose }: { look: Look; onClose: () => void }) {
@@ -116,14 +134,11 @@ function LookCard({ look }: { look: Look }) {
   const stale = cover && cover.lookVersion !== look.version;
   return (
     <div className="look-card">
-      <a className="cover" href={`#/studio?look=${look.id}`}>
-        {cover ? <img src={thumb(cover.imagePath, 700)} alt={look.name} /> : <RenderPlaceholder lookIds={[look.id]} />}
-        <div className="corner">
-          {cover && <Badge tone={`${REVIEW_TONE[cover.review]} glass`}>{REVIEW_LABEL[cover.review]}</Badge>}
-          {stale && <Badge tone="warn">склад змінено</Badge>}
-        </div>
+      <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`#/studio?look=${look.id}`}>
+        {cover ? <img style={{ objectFit: 'contain' }} src={thumb(cover.imagePath, 700)} alt={look.name} /> : <RenderPlaceholder lookIds={[look.id]} />}
         <span className="go btn sm primary"><Sparkles size={13} /> {cover ? 'Відкрити' : 'Приміряти'}</span>
       </a>
+      {cover && <div className="row wrap"><Badge tone={REVIEW_TONE[cover.review]}>{REVIEW_LABEL[cover.review]}</Badge>{stale && <Badge tone="warn">склад змінено</Badge>}</div>}
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h4 title={look.note}>{look.name}</h4>
         <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
@@ -191,6 +206,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           </div>
         </div>
         <div className="actions">
+          {!isSelection && <a className="btn" href="#/gallery?type=inspiration">Натхнення</a>}
           {needs.length > 0 && <button className="btn" onClick={() => go('/shopping')}><ShoppingBag size={15} /> Докупити {needs.length}</button>}
           <button className={`icon-btn${capsule.favorite ? ' on' : ''}`} aria-label="Обране" onClick={() => void act(() => api('PATCH', `/api/capsules/${capsule.id}`, { favorite: !capsule.favorite }))}>
             <Heart size={15} fill={capsule.favorite ? 'currentColor' : 'none'} />
@@ -210,7 +226,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> Образ</button>
         </div>
       </div>
-      <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} />)}</div>
+      <LookCollection looks={looks} />
 
       <div className="section-head"><h2 className="h2">Речі капсули <span className="count">{pieces.size}</span></h2></div>
       <div className="ward-grid">

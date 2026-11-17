@@ -10,7 +10,6 @@ import { CapsuleDetail, CapsulesPage } from './pages/Capsules.tsx';
 import { LookPage } from './pages/Look.tsx';
 import { WardrobePage } from './pages/Wardrobe.tsx';
 import { GalleryPage } from './pages/Gallery.tsx';
-import { QueuePage } from './pages/Queue.tsx';
 import { ShoppingPage } from './pages/Shopping.tsx';
 import { ProfilePage } from './pages/Profile.tsx';
 
@@ -64,7 +63,7 @@ export default function App() {
   else if (section === 'wardrobe') page = <WardrobePage openId={parts[1]} />;
   else if (section === 'studio') page = <Redirect to={query.get('look') ? `/looks/${query.get('look')}` : '/capsules'} />;
   else if (section === 'gallery') page = <GalleryPage />;
-  else if (section === 'queue') page = <QueuePage />;
+  else if (section === 'queue') page = <Redirect to="/home" />;
   else if (section === 'shopping') page = <ShoppingPage focus={query.get('need') ?? undefined} />;
   else if (section === 'profile') page = <ProfilePage tab={parts[1]} />;
   else if (section === 'glossary') page = <Redirect to="/home" />;
@@ -80,7 +79,7 @@ export default function App() {
         <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
         <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
         <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
-        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} desk />
+        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} />
         <div className="rail-spacer" />
         <a href="/profile" className={`rail-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
           {avatar ? <Img path={avatar.path} w={120} /> : <User size={18} />}

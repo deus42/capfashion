@@ -410,6 +410,7 @@ export function RateButtons({ kind, target, size = 'md' }: { kind: 'look' | 'cap
 
 /** Pieces in two blocks: what the owner has, and what to buy. Each tile links to its item or need. */
 export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: ResolvedRef[]; ownTitle?: string }) {
+  const db = useDb();
   const seen = new Set<string>();
   const unique = pieces.filter((r) => {
     const k = `${r.ref.kind}:${r.ref.id}`;
@@ -420,7 +421,7 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
   const own = unique.filter((r) => r.kind === 'owned' || r.kind === 'candidate');
   const buy = unique.filter((r) => r.kind === 'need' || r.kind === 'product');
   const tile = (r: ResolvedRef) => (
-    <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `/wardrobe/${r.ref.id}` : r.ref.kind === 'need' ? `/shopping?need=${r.ref.id}` : '/shopping'}>
+    <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `/wardrobe/${r.ref.id}` : `/shopping?need=${r.ref.kind === 'need' ? r.ref.id : (db.products.find((p) => p.id === r.ref.id)?.needId ?? '')}`}>
       <div className="img">
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
         {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}

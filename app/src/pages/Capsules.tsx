@@ -1,39 +1,13 @@
 import { useMemo, useState } from 'react';
-import { EyeOff, ImageOff, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { EyeOff, ImageOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, capsuleLooks, distinctLooks, piecesOf } from '../lib.ts';
-import { byRating, hiddenLookIds, isCapsuleHidden } from '../rating.ts';
+import { SEASON_LABEL, capsuleLooks, distinctLooks, missingLine, piecesOf, rankCapsules, rankLooks, readyLine } from '../lib.ts';
+import { hiddenLookIds, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile } from './Home.tsx';
 
-function AnalyzeBox() {
-  const db = useDb();
-  const { act } = useApp();
-  const [text, setText] = useState('');
-  const job = db.jobs.filter((j) => j.kind === 'analyze').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const busy = job && (job.state === 'queued' || job.state === 'running');
-  return (
-    <div className="prompt-box" style={{ maxWidth: 'none', marginBottom: 26 }}>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Підбери образи з моїх речей… Напр.: на вихідні, у прохолодну погоду" />
-      <div className="bar">
-        {job?.state === 'error' && <span className="small" style={{ color: 'var(--bad)' }}>{job.stateNote}</span>}
-        <span className="grow" />
-        <button
-          className="btn primary"
-          disabled={busy}
-          onClick={async () => {
-            const ok = await act(() => api('POST', '/api/analyze', { prompt: text }), 'Аналізатор складає образи');
-            if (ok) setText('');
-          }}
-        >
-          {busy ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />} {busy ? 'Підбираю…' : 'Підібрати'}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export function CapsulesPage() {
   const db = useDb();
@@ -42,8 +16,8 @@ export function CapsulesPage() {
   const tab = (['selections', 'looks', 'hidden'] as const).find((t) => t === query.get('tab')) ?? 'capsules';
   const setTab = (t: typeof tab) => go(t === 'capsules' ? '/capsules' : `/capsules?tab=${t}`);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
-  const capsules = byRating(shown.filter((c) => c.kind !== 'selection'));
-  const selections = byRating(shown.filter((c) => c.kind === 'selection').reverse());
+  const capsules = rankCapsules(db, shown.filter((c) => c.kind !== 'selection'));
+  const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const list = tab === 'capsules' ? capsules : selections;
   // Each capsule's lead look first, then the rest of the catalogue.
   const orderedLooks = capsuleLooks(db, [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]);
@@ -66,14 +40,13 @@ export function CapsulesPage() {
           </div>
         </div>
       </div>
-      {tab === 'selections' && <AnalyzeBox />}
       {tab === 'hidden' ? (
         hiddenCount === 0 ? <Empty icon={<EyeOff />} title="Нічого не приховано" /> : <>
           {hiddenCaps.length > 0 && <div className="capsule-grid" style={{ marginBottom: 30 }}>{hiddenCaps.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
           {hiddenLooks.length > 0 && <div className="look-grid">{hiddenLooks.map((l) => <LookCard key={l.id} look={l} />)}</div>}
         </>
-      ) : tab === 'looks' ? <LookGrid looks={allLooks} /> : list.length === 0 ? (
-        <Empty icon={<Sparkles />} title="Підбірок ще немає">Напиши, куди збираєшся, і натисни «Підібрати» — образи складуться лише з твоїх речей.</Empty>
+      ) : tab === 'looks' ? <LookGrid looks={allLooks} heading={false} /> : list.length === 0 ? (
+        tab === 'selections' ? <Empty icon={<Sparkles />} title="Підбірок ще немає" /> : <Empty icon={<Sparkles />} title="Капсул ще немає" />
       ) : (
         <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
       )}
@@ -82,9 +55,9 @@ export function CapsulesPage() {
 }
 
 /** Looks already reduced to one card per look (see distinctLooks). */
-function LookGrid({ looks }: { looks: Look[] }) {
+function LookGrid({ looks, heading = true }: { looks: Look[]; heading?: boolean }) {
   return <>
-    <div className="section-head"><h2 className="h2">Образи <span className="count">{looks.length}</span></h2></div>
+    {heading && <div className="section-head"><h2 className="h2">Образи <span className="count">{looks.length}</span></h2></div>}
     <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} />)}</div>
   </>;
 }
@@ -107,7 +80,10 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
             message={<>Видалити «{look.name}»?{renders ? ` Разом з ним зникнуть ${renders} примірок цього образу.` : ''} Речі в гардеробі залишаться.</>}
             onConfirm={async () => {
               const ok = await act(() => api('DELETE', `/api/looks/${look.id}`), 'Образ видалено');
-              if (ok !== undefined) onClose();
+              if (ok === undefined) return;
+              onClose();
+              // Leaving the deleted look's own page: back to its capsule.
+              if (location.pathname === `/looks/${look.id}`) go(look.capsuleId ? `/capsules/${look.capsuleId}` : '/capsules?tab=looks', true);
             }}
           >
             <Trash2 size={15} /> Видалити
@@ -135,18 +111,17 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
 }
 
 function LookCard({ look }: { look: Look }) {
-  const [editing, setEditing] = useState(false);
+  const db = useDb();
+  const miss = missingLine(db, look);
   return (
     <div className="look-card">
       <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${look.id}`}>
         <LookArt look={look} />
       </a>
-      <a href={`/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4></a>
+      <a href={`/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4>{miss && <span className="miss">{miss}</span>}</a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
-        <button className="icon-btn" style={{ width: 32, height: 32 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
       </div>
-      {editing && <EditLook look={look} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -162,7 +137,28 @@ function EditCapsule({ capsule, onClose }: { capsule: Capsule; onClose: () => vo
     if (ok) onClose();
   };
   return (
-    <Modal title="Редагувати" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Скасувати</button><button className="btn primary" onClick={() => void save()}>Зберегти</button></>}>
+    <Modal
+      title="Редагувати"
+      onClose={onClose}
+      footer={
+        <>
+          <ConfirmButton
+            className="btn ghost danger"
+            title={capsule.kind === 'selection' ? 'Видалити підбірку' : 'Видалити капсулу'}
+            message={<>Видалити «{capsule.name}» і її образи назавжди? Щоб просто прибрати з очей — постав 👎. Речі в гардеробі залишаться.</>}
+            onConfirm={async () => {
+              const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), 'Видалено');
+              if (ok !== undefined) go(capsule.kind === 'selection' ? '/capsules?tab=selections' : '/capsules');
+            }}
+          >
+            <Trash2 size={14} />
+          </ConfirmButton>
+          <span style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>Скасувати</button>
+          <button className="btn primary" onClick={() => void save()}>Зберегти</button>
+        </>
+      }
+    >
       <div className="grid-form">
         <label className="field full"><span>Назва</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="field full"><span>Опис</span><textarea className="textarea" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
@@ -187,7 +183,7 @@ export function CapsuleDetail({ id }: { id: string }) {
   if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
   const hidden = isCapsuleHidden(db, capsule);
   // A hidden capsule opened from «Приховані» shows its looks so it can be judged again.
-  const looks = hidden ? byRating(allLooks) : distinctLooks(db, allLooks);
+  const looks = hidden ? rankLooks(db, allLooks) : distinctLooks(db, allLooks);
   const pieces = looks.flatMap((l) => piecesOf(db, l.slots));
   const isSelection = capsule.kind === 'selection';
 
@@ -202,6 +198,7 @@ export function CapsuleDetail({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{capsule.name}</h1>
+          {readyLine(db, capsule) && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
             <Badge>{SEASON_LABEL[capsule.season]}</Badge>
             {isSelection && <Badge tone="ok">лише мої речі</Badge>}
@@ -210,20 +207,8 @@ export function CapsuleDetail({ id }: { id: string }) {
           </div>
         </div>
         <div className="actions">
-          {!isSelection && <a className="btn" href="/gallery?type=inspiration">Натхнення</a>}
           <RateButtons kind="capsule" target={capsule} />
           <button className="icon-btn" aria-label="Редагувати" onClick={() => setEditing(true)}><Pencil size={14} /></button>
-          <ConfirmButton
-            className="icon-btn"
-            title={isSelection ? 'Видалити підбірку' : 'Видалити капсулу'}
-            message={<>Видалити «{capsule.name}» і {allLooks.length} її образів назавжди? Щоб просто прибрати з очей — постав 👎. Речі в гардеробі залишаться.</>}
-            onConfirm={async () => {
-              const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), 'Видалено');
-              if (ok !== undefined) go(isSelection ? '/capsules?tab=selections' : '/capsules');
-            }}
-          >
-            <Trash2 size={14} />
-          </ConfirmButton>
           <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> Образ</button>
         </div>
       </div>

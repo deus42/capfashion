@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Pencil, Plus, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Merge, Pencil, Plus, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
@@ -8,7 +8,6 @@ import { CATEGORY_LABEL, distinctLooks, looksUsing } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 
 import { TermInfo } from './Glossary.tsx';
-import { useIntake } from './Home.tsx';
 
 const STATUS_LABEL: Record<ItemStatus, string> = { needs_confirmation: 'Потребує підтвердження', confirmed: 'Підтверджено', inactive: 'Неактуальна' };
 const STATUS_SHORT: Record<ItemStatus, string> = { needs_confirmation: 'звірити', confirmed: 'моя річ', inactive: 'неактуальна' };
@@ -191,7 +190,6 @@ function NewItem({ onClose }: { onClose: () => void }) {
           </select>
         </label>
       </div>
-      <p className="small muted" style={{ marginTop: 12 }}>Фото, етикетку й деталі додаси в картці речі; packshot згенерується з фото.</p>
     </Modal>
   );
 }
@@ -216,9 +214,9 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : mode === 'compose' && s.length >= 4 ? s : [...s, id]));
   const useCount = new Map<string, number>();
   const hiddenLooks = hiddenLookIds(db);
-  for (const l of db.looks) if (!hiddenLooks.has(l.id)) for (const refs of Object.values(l.slots)) for (const r of refs) if (r.kind === 'item') useCount.set(r.id, (useCount.get(r.id) ?? 0) + 1);
+  // Same count as the item page: distinct looks (near-copies fold into one).
+  for (const l of distinctLooks(db, db.looks.filter((x) => !hiddenLooks.has(x.id)))) for (const id of new Set(Object.values(l.slots).flat().filter((r) => r.kind === 'item').map((r) => r.id))) useCount.set(id, (useCount.get(id) ?? 0) + 1);
   const [creating, setCreating] = useState(false);
-  const intake = useIntake();
   const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const status = (['needs_confirmation', 'confirmed', 'inactive'] as ItemStatus[]).includes(view as ItemStatus) ? (view as ItemStatus) : null;
   const isNew = (i: Item) => i.origin === 'intake' && i.status === 'needs_confirmation';
@@ -237,14 +235,13 @@ export function WardrobePage({ openId }: { openId?: string }) {
 
   return (
     <div className="page">
-      {intake.field}
       <PageHead
         title={title}
         actions={
           mode ? null : (
             <>
               {missing > 0 && (
-                <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), `Packshot для ${missing} речей у черзі`)} title="Згенерувати чисті фото">
+                <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), 'Роблю фото речей')} title="Фото речей">
                   <Wand2 size={15} /> {missing}
                 </button>
               )}
@@ -257,18 +254,8 @@ export function WardrobePage({ openId }: { openId?: string }) {
         }
       />
 
-      {intakeBusy > 0 && (
-        <div className="row" style={{ marginBottom: 12, gap: 12 }}>
-          <Loader2 size={15} className="spin" />
-          <span className="small muted">Розбираю фото: {intakeBusy} — нові речі з’являться тут</span>
-        </div>
-      )}
-      {busy.size > 0 && (
-        <div className="row" style={{ marginBottom: 22, gap: 12 }}>
-          <Loader2 size={15} className="spin" />
-          <span className="small muted" style={{ whiteSpace: 'nowrap' }}>Packshot {done}/{db.items.length}</span>
-          <div className="progress" style={{ flex: 1 }}><i style={{ width: `${Math.round((done / db.items.length) * 100)}%` }} /></div>
-        </div>
+      {(intakeBusy > 0 || busy.size > 0) && (
+        <div className="progress" style={{ marginBottom: 22 }}><i style={{ width: `${Math.round((done / Math.max(1, db.items.length)) * 100)}%` }} /></div>
       )}
 
       <div className="split">
@@ -300,7 +287,6 @@ export function WardrobePage({ openId }: { openId?: string }) {
               <input className="input" placeholder="Пошук речі" value={q} onChange={(e) => setQ(e.target.value)} />
             </label>
             <span className="grow" />
-            <span className="small muted">{list.length} речей</span>
           </div>
           {list.length === 0 ? (
             <Empty icon={<CircleDashed />} title="Речей не знайдено">Зміни фільтр або додай нову річ.</Empty>
@@ -323,7 +309,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
                       {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
                       {!mergeSel && (useCount.get(i.id) ?? 0) > 0 && <span className="uses" title="У скількох образах">{useCount.get(i.id)} обр.</span>}
-                      {st && <span className="gen"><Loader2 size={12} className={st === 'running' ? 'spin' : ''} /> {st === 'running' ? 'Packshot генерується' : 'Packshot у черзі'}</span>}
+                      {st && <span className="busy-bar" role="progressbar" aria-label="Фото речі" />}
                     </div>
                     <span className="nm">{i.title}<TermInfo texts={[i.title]} /></span>
                   </button>

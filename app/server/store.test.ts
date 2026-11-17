@@ -425,9 +425,10 @@ test('a new selection gets a try-on for every look; missing renders are queued o
   const sel = db.capsules.find((c) => c.kind === 'selection')!;
   assert.equal(sel.lookIds.length, 2);
   for (const id of sel.lookIds) assert.ok(db.results.some((r) => r.lookId === id), `look ${id} has a render`);
-  assert.ok(db.results.some((r) => r.lookId === 'L-1'), 'the seed look without a try-on got one by itself (no queue to manage)');
+  assert.ok(!db.results.some((r) => r.lookId === 'L-1'), 'no automatic batch: other looks are not rendered unasked');
   const again = await call('POST', '/api/renders/missing', {});
-  assert.equal(again.queued, 0, 'every look already shows its current composition');
+  assert.equal(again.queued, 1, 'only the seed look L-1 still lacked a render');
+  await createRunner(store, dir, fake).drain();
   await store.mutate((d) => {
     const l = d.looks.find((x) => x.id === 'L-1')!;
     l.version += 1;

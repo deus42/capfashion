@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Check, ImageOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { DB, Job, Look, SlotKey, SlotRef } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, LookArt, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookBusy, resolveRef } from '../lib.ts';
+import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookBusy, missingLine, resolveRef } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
@@ -75,13 +75,13 @@ export function LookPage({ id }: { id: string }) {
   const newPicture = async () => {
     // The server uses the pinned identity reference when there is one.
     const job = await act(() => api<Job>('POST', '/api/jobs', { lookId: look.id, basePhotoIds: db.profile.basePhotoIds, instructions: '', run: true }));
-    if (job?.state === 'needs_data') toast('Нові примірки — після перевірки обличчя', true);
+    if (job?.state === 'needs_data') toast(job.stateNote ?? 'Зараз не вийде', true);
   };
   const itsMe = (yes: boolean) =>
     cover &&
     act(
       () => api('POST', `/api/results/${cover.id}/review`, yes ? { decision: 'accepted' } : { decision: 'rework', reason: 'face', run: true }),
-      yes ? 'Прийнято' : 'Зрозумів — зроблю нову',
+      yes ? 'Прийнято' : 'Прибрано',
     );
   const swapAccessory = (current: SlotRef, id: string) =>
     act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, slots: { ...look.slots, accessories: look.slots.accessories.map((r) => (same(r, current) ? { kind: 'item', id } : r)) } }));
@@ -108,7 +108,7 @@ export function LookPage({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{look.name}</h1>
-          {hidden && <div className="row wrap" style={{ marginTop: 12 }}><Badge>{look.disliked ? 'приховано' : 'схожий на прихований'}</Badge></div>}
+          {hidden && <div className="row wrap" style={{ marginTop: 12 }}><Badge>{look.disliked ? 'приховано' : capsule?.disliked ? 'капсулу приховано' : 'схожий на прихований'}</Badge></div>}
         </div>
         <div className="actions">
           <RateButtons kind="look" target={look} />
@@ -129,8 +129,7 @@ export function LookPage({ id }: { id: string }) {
               <button className="btn primary" onClick={() => void itsMe(true)}><Check size={15} /> Так</button>
             </div>
           )}
-          <button className="btn" disabled={busy || paused} onClick={() => void newPicture()}><Sparkles size={15} /> Нова картинка</button>
-          {paused && <span className="small muted">Нові примірки — після перевірки обличчя</span>}
+          {!paused && <button className="btn" disabled={busy} onClick={() => void newPicture()}><Sparkles size={15} /> Нова картинка</button>}
         </div>
         <div className="look-side">
           <div className="section-head"><h2 className="h2">Речі образу <span className="count">{own.length}</span></h2></div>
@@ -146,7 +145,7 @@ export function LookPage({ id }: { id: string }) {
             <div className="ward-grid">{buy.map(tile)}</div>
           </>}
           {options.map((o) => (
-            <div key={`${o.current.kind}-${o.current.id}`}>
+            <Fragment key={`${o.current.kind}-${o.current.id}`}>
               <div className="section-head"><h2 className="h2">Або замість «{o.title}»</h2></div>
               <div className="ward-grid">
                 {o.options.map((i) => {
@@ -159,7 +158,7 @@ export function LookPage({ id }: { id: string }) {
                   );
                 })}
               </div>
-            </div>
+            </Fragment>
           ))}
         </div>
       </div>
@@ -202,7 +201,11 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
   };
   const slots = slot ? [slot] : SLOTS;
   return (
-    <Modal title={current ? `Замінити: ${resolveRef(db, current).title}` : 'Додати річ'} onClose={onClose} wide>
+    <Modal
+      title={current ? <a href={current.kind === 'item' ? `/wardrobe/${current.id}` : `/shopping?need=${current.kind === 'need' ? current.id : (db.products.find((p) => p.id === current.id)?.needId ?? '')}`} onClick={onClose}>{resolveRef(db, current).title}</a> : 'Додати річ'}
+      onClose={onClose}
+      wide
+    >
       {current && slot && (
         <button className="btn sm ghost danger" style={{ marginBottom: 14 }} onClick={() => void save(slot, look.slots[slot].filter((r) => !same(r, current)))}>
           <Trash2 size={13} /> Прибрати з образу
@@ -226,10 +229,12 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
 }
 
 function SiblingCard({ look }: { look: Look }) {
+  const db = useDb();
   return (
     <a className="sib" href={`/looks/${look.id}`}>
       <span className="img"><LookArt look={look} w={480} /></span>
       <span className="nm">{look.favorite && <b className="liked-dot" aria-label="Подобається" />}{look.name}</span>
+      {missingLine(db, look) && <span className="miss">{missingLine(db, look)}</span>}
     </a>
   );
 }

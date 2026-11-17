@@ -307,6 +307,8 @@ export function deleteItem(db: DB, id: string) {
   db.items = db.items.filter((i) => i.id !== id);
 }
 
+const MEASURE_UK: Record<(typeof MEASURE_KEYS)[number], string> = { height: 'зріст', chest: 'груди', waist: 'талія', hips: 'стегна', shoulders: 'плечі', sleeve: 'довжина рукава', inseam: 'внутрішній шов', foot: 'довжина стопи' };
+
 type Handler = (ctx: Ctx, params: string[], body: Body) => unknown;
 const routes: [string, RegExp, Handler][] = [];
 const on = (method: string, pattern: string, h: Handler) => routes.push([method, new RegExp(`^${pattern.replace(/:\w+/g, '([^/]+)')}$`), h]);
@@ -336,6 +338,8 @@ on('PATCH', '/api/items/:id', (ctx, [id], b) =>
     pick(item, b, ['title', 'color', 'brand', 'model', 'composition', 'fit', 'size']);
     if (b.category && CATEGORIES.includes(b.category as never)) item.category = b.category as Item['category'];
     if (b.status && ITEM_STATUSES.includes(b.status as never)) item.status = b.status as Item['status'];
+    // «Це моя річ? — Ні»: a rejected item no longer covers a recommendation; its looks get the stand-in back.
+    if (item.status === 'inactive' && before !== 'inactive') for (const n of db.needs) if (n.coveredByItem === item.id && n.status === 'covered' && !db.products.some((p) => p.needId === n.id && p.status === 'purchased')) uncoverNeed(db, n.id);
     if (Array.isArray(b.photoIds)) item.photoIds = (b.photoIds as string[]).filter((pid) => db.photos.some((p) => p.id === pid));
     clearDetachedCrop(db, item);
     if (!item.title) throw new HttpError(400, 'Назва не може бути порожньою');
@@ -557,6 +561,8 @@ on('POST', '/api/results/:id/review', async (ctx, [id], b) => {
       if (!REWORK_REASONS.includes(reason)) throw new HttpError(400, 'Вкажи причину переробки');
       r.review = 'rework';
       r.reviewReason = reason;
+      // «Це я? — Ні»: a face the owner rejected never shows on the site again; the file stays in local history.
+      if (reason === 'face') r.hiddenAt = now();
     } else if (decision === 'pending') {
       r.review = 'pending';
     } else throw new HttpError(400, 'Невідоме рішення');
@@ -725,9 +731,11 @@ on('PATCH', '/api/profile', (ctx, _p, b) =>
       for (const k of MEASURE_KEYS) {
         const m = (b.measurements as Record<string, { value: unknown; date?: string }>)[k];
         if (!m) continue;
-        const v = m.value === '' || m.value === null || m.value === undefined ? null : Number(m.value);
-        if (v !== null && (!Number.isFinite(v) || v <= 0 || v > 300)) throw new HttpError(400, `Неправильне значення мірки: ${k}`);
-        prof.measurements[k] = { value: v, date: v === null ? undefined : (str(m.date, 10) ?? now().slice(0, 10)) };
+        const v = m.value === '' || m.value === null || m.value === undefined ? null : Number(String(m.value).replace(',', '.'));
+        if (v !== null && (!Number.isFinite(v) || v <= 0 || v > 300)) throw new HttpError(400, `Неправильне значення: ${MEASURE_UK[k]}`);
+        // The date says when it was measured: an unchanged value keeps its date.
+        const prev = prof.measurements[k];
+        prof.measurements[k] = { value: v, date: v === null ? undefined : prev.value === v && prev.date ? prev.date : (str(m.date, 10) ?? now().slice(0, 10)) };
       }
     }
     if (Array.isArray(b.knownSizes)) {

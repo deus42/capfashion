@@ -4,7 +4,7 @@ import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, distinctLooks, fmtDay, itemArt, looksUsing } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
@@ -229,6 +229,28 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
   );
 }
 
+const inLooks = (n: number) => `в ${n} ${n === 1 ? 'образі' : 'образах'}`;
+const willComplete = (n: number) => (n === 1 ? '1 стане повним' : `${n} стануть повними`);
+
+/** The one purchase that helps most right now (owner, 17.11): it completes or brings closer the most looks. */
+export function NextPurchase() {
+  const db = useDb();
+  const top = purchaseRanking(db)[0];
+  if (!top || top.looksIn === 0) return null;
+  const n = top.need;
+  const art = n.conceptPhotoId ? db.photos.find((p) => p.id === n.conceptPhotoId)?.path : undefined;
+  return (
+    <a className="next-buy" href={`/shopping?need=${n.id}`}>
+      <span className="img">{art ? <img src={thumb(art, 600)} alt={n.title} /> : <CategoryIcon category={n.category} size={34} />}</span>
+      <span className="txt">
+        <span className="eyebrow">Наступна покупка</span>
+        <span className="t">{n.title}</span>
+        <span className="miss">{inLooks(top.looksIn)}{top.completes ? ` · ${willComplete(top.completes)}` : ''}</span>
+      </span>
+    </a>
+  );
+}
+
 function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
   const db = useDb();
   const { act, toast } = useApp();
@@ -259,10 +281,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
         <div className="grow stack" style={{ gap: 4 }}>
           <div className="row wrap">
             <h3>{need.title}<TermInfo texts={[need.title, need.description]} /></h3>
-            <Badge tone={need.priority === 'core' ? 'dark' : ''}>{need.priority === 'core' ? 'основне' : 'опційно'}</Badge>
-            <Badge>{CATEGORY_LABEL[need.category]}</Badge>
-            {need.status === 'covered' ? <Badge tone="ok">{bought ? 'закрито покупкою' : 'вже є своя річ'}</Badge> : products.length === 0 ? <Badge tone="warn">товар ще не знайдено</Badge> : null}
-            {need.origin === 'agent' && <Badge tone="info">пропозиція агента</Badge>}
+            {need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}
           </div>
           <span className="muted small">{need.description}</span>
         </div>
@@ -305,12 +324,6 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
             <dd><a href={`/wardrobe/${covered.id}`} style={{ textDecoration: 'underline' }}>{covered.title}</a></dd>
           </>
         )}
-        {need.sourceNote && (
-          <>
-            <dt>Джерело</dt>
-            <dd className="small muted">{need.sourceNote}</dd>
-          </>
-        )}
       </div>
       {products.length > 0 && (
         <div className="product-grid">
@@ -334,16 +347,16 @@ export function ShoppingPage({ focus }: { focus?: string }) {
     if (focusCovered) setShow('all');
     if (focus) window.setTimeout(() => document.getElementById(`need-${focus}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   }, [focus, focusCovered]);
+  // Ordered by the next-purchase rating; closed ones after the open ones.
+  const order = new Map(purchaseRanking(db).map((r, i) => [r.need.id, i]));
   const needs = db.needs
     .filter((n) => show === 'all' || n.status === 'open')
-    .sort((a, b) => Number(b.priority === 'core') - Number(a.priority === 'core') || looksUsing(db, 'need', b.id).length - looksUsing(db, 'need', a.id).length);
-  const core = db.needs.filter((n) => n.status === 'open' && n.priority === 'core').length;
+    .sort((a, b) => (order.get(a.id) ?? 1e6) - (order.get(b.id) ?? 1e6));
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Покупки</h1>
-          <p>{core} основних · магазини Tower Center Rijeka</p>
         </div>
         <div className="actions chips">
           <button className={`chip${show === 'open' ? ' active' : ''}`} onClick={() => setShow('open')}>Відкриті</button>
@@ -353,8 +366,9 @@ export function ShoppingPage({ focus }: { focus?: string }) {
           </a>
         </div>
       </div>
+      {show === 'open' && <NextPurchase />}
       {needs.length === 0 ? (
-        <Empty icon={<ShoppingBag />} title="Відкритих потреб немає" />
+        <Empty icon={<ShoppingBag />} title="Відкритих покупок немає" />
       ) : (
         <div className="list">
           {needs.map((n) => <NeedCard key={n.id} need={n} focus={n.id === focus} />)}

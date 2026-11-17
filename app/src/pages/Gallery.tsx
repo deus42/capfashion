@@ -6,7 +6,6 @@ import { useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, Overlay, PageHead, RateButtons } from '../components/ui.tsx';
 import { hiddenLookIds } from '../rating.ts';
 import { REVIEW_LABEL, REVIEW_TONE, fmtDate } from '../lib.ts';
-import { Composition, ReviewBar, compositionFor } from './Studio.tsx';
 import './Gallery.css';
 
 type Entry = { kind: 'tryon'; r: Result; at: string } | { kind: 'packshot' | 'inspiration' | 'original'; p: Photo; at: string; itemId?: string };
@@ -38,39 +37,19 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const db = useDb();
   const { act } = useApp();
   if (entry.kind === 'tryon') {
+    // A try-on in the archive: the picture, the look's rating and the way to the look (its check lives on the look page).
     const r = db.results.find((x) => x.id === entry.r.id);
     if (!r) return null;
     const look = db.looks.find((l) => l.id === r.lookId);
-    const comp = look ? compositionFor(db, r, look) : null;
     return (
       <Overlay onClose={onClose}>
-        <div className="lightbox" role="dialog" aria-modal="true">
+        <div className="lightbox simple" role="dialog" aria-modal="true">
           <div className="lb-img"><img src={media(r.imagePath)} alt={look?.name} /></div>
-          <div className="lb-side">
-            <div className="drawer-head">
-              <h2>{look?.name ?? 'Примірка'}</h2>
-              <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
-            </div>
-            <div className="body">
-              <div className="row wrap">
-                <Badge tone={REVIEW_TONE[r.review]}>{REVIEW_LABEL[r.review]}</Badge>
-                <Badge>v{r.lookVersion}</Badge>
-                <span className="small faint">{fmtDate(r.createdAt)}</span>
-              </div>
-              {comp && <Composition lines={comp.lines} version={comp.version} title="Склад" />}
-              <ReviewBar result={r} />
-              {r.notes && <div className="note small">{r.notes}</div>}
-              <div className="small faint">{r.tool} · {r.model}</div>
-            </div>
-            <div className="drawer-foot">
-              <ConfirmButton className="btn sm ghost danger" title="Видалити примірку" message="Видалити це зображення примірки? Образ і речі залишаться." onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/results/${r.id}`), 'Примірку видалено'); if (ok !== undefined) onClose(); }}>
-                <Trash2 size={13} />
-              </ConfirmButton>
-              <span style={{ flex: 1 }} />
-              {look && <RateButtons kind="look" target={look} size="sm" />}
-              {look && <a className="btn sm" href={`/looks/${look.id}`} onClick={onClose}>Образ</a>}
-              <a className="btn sm" href={media(r.imagePath)} download><Download size={13} /> Завантажити</a>
-            </div>
+          <div className="lb-bar">
+            <b className="grow">{look?.name ?? 'Примірка'}</b>
+            {look && <RateButtons kind="look" target={look} size="sm" />}
+            {look && <a className="btn sm" href={`/looks/${look.id}`} onClick={onClose}>Образ</a>}
+            <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
           </div>
         </div>
       </Overlay>
@@ -92,23 +71,21 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
           </div>
           <div className="body">
             <div className="row wrap">
-              <Badge tone="info">{original ? 'Оригінал · референс' : inspiration ? 'Натхнення' : 'Packshot'}</Badge>
-              {!original && !inspiration && <Badge>реконструкція</Badge>}
               <span className="small faint">{fmtDate(entry.p.createdAt)}</span>
             </div>
-            <div className="note small">{original ? entry.p.referenceRole === 'face' ? `Оригінальний референс обличчя, окремо від фото статури й генерацій. ${entry.p.note ?? ''}` : 'Твоє оригінальне фото. Зберігається як референс окремо від згенерованих примірок. Вибір для конкретної генерації не прибирає інші оригінали.' : inspiration?.sourceNote ?? entry.p.note ?? 'Генеративна реконструкція.'}</div>
+            {inspiration?.sourceNote && <div className="note small">{inspiration.sourceNote}</div>}
             {inspiration && <div className="row wrap">{inspiration.tags.map((t) => <Badge key={t}>{t}</Badge>)}</div>}
           </div>
           <div className="drawer-foot">
-            {!original && <ConfirmButton className="btn sm ghost danger" title={inspiration ? 'Прибрати референс' : 'Видалити packshot'} message={inspiration ? 'Прибрати цей референс із галереї? Архівне джерело залишиться.' : 'Видалити це згенероване фото? Річ і її оригінальні фото залишаться.'} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), 'Зображення прибрано'); if (ok !== undefined) onClose(); }}>
+            {!original && <ConfirmButton className="btn sm ghost danger" title={inspiration ? 'Прибрати референс' : 'Видалити фото речі'} message={inspiration ? 'Прибрати цей референс із галереї? Архівне джерело залишиться.' : 'Видалити це згенероване фото? Річ і її оригінальні фото залишаться.'} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), 'Зображення прибрано'); if (ok !== undefined) onClose(); }}>
               <Trash2 size={13} />
             </ConfirmButton>}
             <span style={{ flex: 1 }} />
             {inspiration && <a className="btn sm" href={inspiration.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Джерело</a>}
             {original && <a className="btn sm" href={media(entry.p.originalPath ?? entry.p.path)} download><Download size={13} /> Оригінал</a>}
             {!original && job && (
-              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${job.id}/retry`, { run: true }), 'Новий packshot у роботі')}>
-                <RotateCcw size={13} /> Перегенерувати
+              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${job.id}/retry`, { run: true }), 'Роблю нове фото речі')}>
+                <RotateCcw size={13} /> Нове фото
               </button>
             )}
             {item && <a className="btn sm primary" href={`/wardrobe/${item.id}`} onClick={onClose}>Картка речі</a>}
@@ -122,7 +99,7 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
 export function GalleryPage() {
   const db = useDb();
   const { query } = useRoute();
-  const [type, setType] = useState<'all' | 'tryon' | 'packshot' | 'inspiration' | 'original' | 'face'>(query.get('type') === 'face' ? 'face' : query.get('type') === 'original' ? 'original' : query.get('type') === 'inspiration' ? 'inspiration' : 'all');
+  const [type, setType] = useState<'tryon' | 'packshot' | 'inspiration' | 'original' | 'face'>(query.get('type') === 'face' ? 'face' : query.get('type') === 'original' ? 'original' : query.get('type') === 'inspiration' ? 'inspiration' : query.get('type') === 'packshot' ? 'packshot' : 'tryon');
   const [tag, setTag] = useState('');
   const [filter, setFilter] = useState<'any' | 'pending' | 'accepted' | 'fav'>('any');
   const [open, setOpen] = useState<Entry | null>(null);
@@ -130,8 +107,7 @@ export function GalleryPage() {
   const tags = [...new Set(all.flatMap((e) => e.kind === 'inspiration' ? e.p.inspiration?.tags ?? [] : []))].sort();
   const list = all.filter((e) => {
     if (type === 'face') return e.kind === 'original' && e.p.referenceRole === 'face';
-    if (type === 'all' && (e.kind === 'original' || e.kind === 'inspiration')) return false;
-    if (type !== 'all' && e.kind !== type) return false;
+    if (e.kind !== type) return false;
     if (type === 'inspiration' && tag && !(e.kind === 'inspiration' && e.p.inspiration?.tags.includes(tag))) return false;
     if (type === 'inspiration' || type === 'original') return true;
     if (filter === 'any') return true;
@@ -153,11 +129,10 @@ export function GalleryPage() {
       <PageHead title="Галерея" />
       <div className="toolbar">
         <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
-          <button className={type === 'all' ? 'on' : ''} onClick={() => setType('all')}>Згенероване <span className="faint">{counts.tryon + counts.packshot}</span></button>
+          <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>Примірки <span className="faint">{counts.tryon}</span></button>
+          <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>Фото речей <span className="faint">{counts.packshot}</span></button>
           <button className={type === 'original' ? 'on' : ''} onClick={() => setType('original')}>Мої фото <span className="faint">{counts.original}</span></button>
           <button className={type === 'face' ? 'on' : ''} onClick={() => setType('face')}>Обличчя <span className="faint">{counts.face}</span></button>
-          <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>Примірки <span className="faint">{counts.tryon}</span></button>
-          <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>Packshot <span className="faint">{counts.packshot}</span></button>
           <button className={type === 'inspiration' ? 'on' : ''} onClick={() => setType('inspiration')}>Натхнення <span className="faint">{counts.inspiration}</span></button>
         </div>
         <span className="grow" />
@@ -167,7 +142,7 @@ export function GalleryPage() {
             {tags.map((t) => <button key={t} className={`chip${tag === t ? ' active' : ''}`} onClick={() => setTag(t)}>{t}</button>)}
           </div>
         )}
-        {type !== 'packshot' && type !== 'inspiration' && type !== 'original' && type !== 'face' && (
+        {type === 'tryon' && (
           <div className="chips">
             {(
               [
@@ -183,7 +158,7 @@ export function GalleryPage() {
         )}
       </div>
       {groups.length === 0 ? (
-        <Empty icon={<Images />} title="Поки порожньо">Згенеруй примірку або packshot — вони з’являться тут.</Empty>
+        <Empty icon={<Images />} title="Поки порожньо" />
       ) : (
         groups.map(([day, es]) => (
           <section key={day}>

@@ -1,16 +1,18 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Check, Loader2, Sparkles, ThumbsDown, ThumbsUp, TriangleAlert, Wand2 } from 'lucide-react';
+import { ArrowRight, Check, Loader2, Sparkles, ThumbsDown, ThumbsUp, Wand2 } from 'lucide-react';
 import type { Capsule, DB, Job } from '../api.ts';
 import { api, thumb, uploadFile } from '../api.ts';
-import { go, useApp, useDb } from '../store.tsx';
+import { useApp, useDb } from '../store.tsx';
 import { Badge, LookArt, RenderPlaceholder } from '../components/ui.tsx';
-import { capsuleLooks, distinctLooks } from '../lib.ts';
-import { byRating, isCapsuleHidden } from '../rating.ts';
+import { capsuleLooks, distinctLooks, rankCapsules, readyLine } from '../lib.ts';
+import { isCapsuleHidden } from '../rating.ts';
+import { NextPurchase } from './Shopping.tsx';
 
 /** A capsule is a set of looks: its tile shows up to four of them, each with its own try-on. */
 export function CapsuleTile({ c }: { c: Capsule }) {
   const db = useDb();
-  const looks = c.disliked ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds));
+  // A hidden capsule (👎 or all its looks hidden) still shows its looks, so its tile is never empty.
+  const looks = isCapsuleHidden(db, c) ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds));
   const shownLooks = looks.slice(0, 4);
   return (
     <a href={`/capsules/${c.id}`} className="capsule-card">
@@ -23,7 +25,7 @@ export function CapsuleTile({ c }: { c: Capsule }) {
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{looks.length} {looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}</div>
+        <div className="meta">{readyLine(db, c) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
       </div>
     </a>
   );
@@ -63,40 +65,30 @@ function processing(db: DB) {
     .filter(
       (j) =>
         (j.kind === 'intake' || j.kind === 'analyze') &&
-        (j.state === 'queued' || j.state === 'running' || (j.state === 'error' && !db.jobs.some((x) => x.retryOf === j.id)) || (j.kind === 'intake' && j.state === 'done' && new Date(j.finishedAt ?? 0).getTime() > recent)),
+        // Failures are not the owner's job to manage (owner, 17.11): only work in progress and fresh upload results show.
+        (j.state === 'queued' || j.state === 'running' || (j.kind === 'intake' && j.state === 'done' && new Date(j.finishedAt ?? 0).getTime() > recent)),
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 6);
-}
-
-/** Short outcome label for a finished upload. */
-function outcome(db: DB, j: Job) {
-  const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
-  const parts: string[] = [];
-  if (photo?.kind === 'base') parts.push(photo.meetsStandard ? 'Твоє фото ✓' : 'Твоє фото');
-  if (photo?.kind === 'label') parts.push('Етикетка');
-  const n = j.createdItemIds?.length ?? 0;
-  if (n) parts.push(`+${n} ${n === 1 ? 'річ' : n < 5 ? 'речі' : 'речей'}`);
-  return parts.join(' · ') || 'Без змін';
 }
 
 function ProcCard({ j }: { j: Job }) {
   const db = useDb();
   const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
   const done = j.state === 'done';
-  const href = j.kind === 'analyze' ? '/capsules?tab=selections' : photo?.kind === 'base' ? '/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '/wardrobe';
+  const href = j.kind === 'analyze' ? (j.capsuleId ? `/capsules/${j.capsuleId}` : '/capsules?tab=selections') : photo?.kind === 'base' ? '/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '/wardrobe';
   return (
-    <a className="proc-card" href={href} title={j.stateNote}>
+    <a className="proc-card" href={href}>
       <div className="img">
         {photo ? <img src={thumb(photo.path, 300)} alt="" /> : <Wand2 size={26} />}
         <span className="st">
-          <Badge tone={j.state === 'error' ? 'bad glass' : done ? 'ok glass' : 'glass'}>
-            {j.state === 'error' ? <TriangleAlert size={11} /> : done ? <Check size={11} /> : <Loader2 size={11} className={j.state === 'running' ? 'spin' : ''} />}
-            {j.state === 'error' ? 'помилка' : done ? 'готово' : j.state === 'running' ? 'аналіз' : 'черга'}
+          <Badge tone={done ? 'ok glass' : 'glass'}>
+            {done ? <Check size={11} /> : <Loader2 size={11} className="spin" />}
+            {done ? 'готово' : 'розбираю'}
           </Badge>
         </span>
       </div>
-      <span className="t">{done ? (j.kind === 'intake' ? outcome(db, j) : 'Підбірка готова') : j.state === 'error' ? 'Помилка — відкрий чергу' : j.kind === 'analyze' ? 'Підбірка образів' : 'Розбираю фото…'}</span>
+      <span className="t">{done ? (j.stateNote || 'Готово') : j.kind === 'analyze' ? 'Складаю образи…' : 'Розбираю фото…'}</span>
     </a>
   );
 }
@@ -107,8 +99,8 @@ export function HomePage() {
   const [text, setText] = useState('');
   const procs = processing(db);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
-  const selections = byRating(shown.filter((c) => c.kind === 'selection').reverse());
-  const capsules = byRating(shown.filter((c) => c.kind !== 'selection'));
+  const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
+  const capsules = rankCapsules(db, shown.filter((c) => c.kind !== 'selection'));
   const analyzing = db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'));
 
   const analyze = async () => {
@@ -142,6 +134,8 @@ export function HomePage() {
         </div>
       </section>
 
+      <NextPurchase />
+
       {procs.length > 0 && (
         <>
           <div className="section-head"><h2 className="h2">В обробці</h2></div>
@@ -156,7 +150,7 @@ export function HomePage() {
         </>
       )}
 
-      <div className="section-head"><h2 className="h2">Капсули</h2><a href="/capsules" onClick={() => go('/capsules')}>Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+      <div className="section-head"><h2 className="h2">Капсули</h2><a href="/capsules">Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
       <div className="capsule-grid">{capsules.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
     </div>
   );

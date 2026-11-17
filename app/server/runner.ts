@@ -8,7 +8,6 @@ import { newId, now } from './store.ts';
 import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
 import { coverNeed, packshotJob, queueMissingRenders } from './routes.ts';
-import { looksNeedingRender, rendersPaused } from '../src/render-need.ts';
 import { verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -274,7 +273,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       if (j.kind === 'intake') {
         const outcome = applyIntake(db, j, reply as never);
         j.createdItemIds = outcome.created;
-        j.attachedItemIds = outcome.attachedTo;
+        // A label photo joins its item too, so the upload card links to it.
+        j.attachedItemIds = [...new Set([...outcome.attachedTo, ...(outcome.labelFor ? [outcome.labelFor] : [])])];
         for (const id of outcome.created) packshotJob(db, { itemId: id });
         // An upload that is an open recommendation leaves the shopping list and replaces the stand-in in looks and renders.
         const covered: string[] = [];
@@ -464,10 +464,6 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     draining = true;
     state.lastError = null;
     try {
-      // Try-ons follow compositions by themselves: once generation can run, every look whose
-      // composition changed since its last try-on gets one (owner, 17.11: no queue to manage).
-      const before = store.read();
-      if (!rendersPaused(before) && looksNeedingRender(before).length) await store.mutate((db) => queueMissingRenders(db));
       for (;;) {
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));

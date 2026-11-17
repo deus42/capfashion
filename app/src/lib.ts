@@ -1,5 +1,5 @@
-import type { Category, DB, Job, Look, MeasureKey, Result, Season, SlotKey, SlotRef } from './api.ts';
-import { byRating, hiddenLookIds } from './rating.ts';
+import type { Capsule, Category, DB, Job, Look, MeasureKey, Result, Season, SlotKey, SlotRef } from './api.ts';
+import { hiddenLookIds } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -88,7 +88,10 @@ export function resultsForLook(db: DB, lookId: string) {
  */
 export function coverForLook(db: DB, look: Look): Result | undefined {
   const rs = resultsForLook(db, look.id);
-  return rs.find((r) => r.review === 'accepted') ?? rs.find((r) => r.review === 'pending');
+  // A try-on awaiting the owner's check shows only when it was made with the current, active face reference.
+  const face = db.profile.identity && !db.profile.identity.disabledReason ? db.profile.identity.face?.sha256 : undefined;
+  const current = (r: Result) => Boolean(face) && db.jobs.find((j) => j.id === r.jobId)?.snapshot.identity?.face?.sha256 === face;
+  return rs.find((r) => r.review === 'accepted') ?? rs.find((r) => r.review === 'pending' && current(r));
 }
 
 /** A try-on of this look is being made. */
@@ -146,7 +149,79 @@ export function distinctLooks(db: DB, looks: Look[]): Look[] {
   const visible = looks.filter((l) => !hidden.has(l.id));
   const best = visible.map((l, i) => ({ l, i, s: lookScore(db, l) })).sort((a, b) => b.s - a.s || a.i - b.i).map((e) => e.l);
   const reps = new Set(groupLookVariations(best).map((g) => g.primary.id));
-  return byRating(visible.filter((l) => reps.has(l.id)));
+  return rankLooks(db, visible.filter((l) => reps.has(l.id)));
+}
+
+/** Recommendations a look still waits for (a shop option counts as its recommendation). */
+export function missingNeeds(db: DB, look: Pick<Look, 'slots'>): string[] {
+  const ids = Object.values(look.slots).flat().flatMap((r) => (r.kind === 'need' ? [r.id] : r.kind === 'product' ? [db.products.find((p) => p.id === r.id)?.needId ?? r.id] : []));
+  return [...new Set(ids)];
+}
+
+/** Everything in the look is already in the wardrobe: it can be worn today. */
+export const isComplete = (db: DB, look: Look) => Object.values(look.slots).some((refs) => refs.length) && missingNeeds(db, look).length === 0;
+
+/** Quiet line under an incomplete look's name (owner, 17.11): «бракує: кеди +1». */
+export function missingLine(db: DB, look: Look): string | null {
+  const m = missingNeeds(db, look);
+  if (!m.length) return null;
+  const first = db.needs.find((n) => n.id === m[0])?.title ?? '';
+  return `бракує: ${first.charAt(0).toLowerCase()}${first.slice(1)}${m.length > 1 ? ` +${m.length - 1}` : ''}`;
+}
+
+/** Liked first, then looks the owner can wear now, then the rest; otherwise the given order (owner, 17.11). */
+export const rankLooks = (db: DB, looks: Look[]) =>
+  looks.map((l, i) => ({ l, i, full: isComplete(db, l) })).sort((a, b) => Number(b.l.favorite) - Number(a.l.favorite) || Number(b.full) - Number(a.full) || a.i - b.i).map((e) => e.l);
+
+/** How many of a capsule's looks are ready to wear. */
+export function capsuleReady(db: DB, c: Capsule) {
+  const looks = distinctLooks(db, capsuleLooks(db, c.lookIds));
+  return { done: looks.filter((l) => isComplete(db, l)).length, total: looks.length };
+}
+
+/** «4 з 6 готові» / «усі готові» — the quiet capsule line. */
+export function readyLine(db: DB, c: Capsule) {
+  const { done, total } = capsuleReady(db, c);
+  if (!total) return '';
+  return done === total ? 'усі готові' : `${done} з ${total} готові`;
+}
+
+/** Liked first, then fully ready capsules, then the share of ready looks. */
+export const rankCapsules = (db: DB, caps: Capsule[]) =>
+  caps
+    .map((c, i) => {
+      const { done, total } = capsuleReady(db, c);
+      return { c, i, full: total > 0 && done === total, share: total ? done / total : 0 };
+    })
+    .sort((a, b) => Number(b.c.favorite) - Number(a.c.favorite) || Number(b.full) - Number(a.full) || b.share - a.share || a.i - b.i)
+    .map((e) => e.c);
+
+/**
+ * Next-purchase rating (owner, 17.11): looks it would complete count most,
+ * then how much closer it brings the other looks, the owner's liked looks and
+ * core priority. Derived from the data, so every purchase or upload re-ranks.
+ */
+export function purchaseRanking(db: DB) {
+  const hidden = hiddenLookIds(db);
+  const looks = db.looks.filter((l) => !hidden.has(l.id));
+  const open = db.needs.filter((n) => n.status === 'open');
+  return open
+    .map((n) => {
+      let looksIn = 0;
+      let completes = 0;
+      let closer = 0;
+      let liked = 0;
+      for (const l of looks) {
+        const m = missingNeeds(db, l);
+        if (!m.includes(n.id)) continue;
+        looksIn += 1;
+        closer += 1 / m.length;
+        if (m.length === 1) completes += 1;
+        if (l.favorite) liked += 1;
+      }
+      return { need: n, looksIn, completes, score: completes * 3 + closer + liked + (n.priority === 'core' ? 0.5 : 0) };
+    })
+    .sort((a, b) => b.score - a.score || b.looksIn - a.looksIn);
 }
 
 export const capsuleLooks = (db: DB, lookIds: string[]) => lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));

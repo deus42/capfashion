@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Camera, Check, CircleCheck, Heart, KeyRound, Loader2, Plus, Ruler, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Camera, Check, CircleCheck, Heart, Loader2, Plus, Ruler, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { Category, KnownSize, MeasureKey } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
@@ -21,7 +21,6 @@ const TABS = [
   { key: 'measurements', label: 'Мірки', icon: <Ruler size={17} /> },
   { key: 'sizes', label: 'Розміри брендів', icon: <Tag size={17} /> },
   { key: 'preferences', label: 'Побажання', icon: <Heart size={17} /> },
-  { key: 'access', label: 'Генерація і доступ', icon: <KeyRound size={17} /> },
 ];
 
 function Section({ title, sub, actions, children }: { title: string; sub?: string; actions?: ReactNode; children: ReactNode }) {
@@ -135,13 +134,12 @@ function Measurements() {
             <label key={m.key} className="field">
               <span className="row" style={{ justifyContent: 'space-between' }}>
                 {m.label}
-                <span className="small faint" style={{ fontWeight: 400 }}>{saved.value === null ? 'ще не заповнено' : fmtDay(saved.date)}</span>
+                {saved.value !== null && <span className="small faint" style={{ fontWeight: 400 }}>{fmtDay(saved.date)}</span>}
               </span>
               <div style={{ position: 'relative' }}>
-                <input className="input" inputMode="decimal" value={values[m.key]} onChange={(e) => setValues((x) => ({ ...x, [m.key]: e.target.value }))} placeholder="—" style={{ paddingRight: 44 }} />
+                <input className="input" inputMode="decimal" value={values[m.key]} onChange={(e) => setValues((x) => ({ ...x, [m.key]: e.target.value.replace(',', '.') }))} placeholder="—" style={{ paddingRight: 44 }} />
                 <span className="faint small" style={{ position: 'absolute', right: 14, top: 13 }}>см</span>
               </div>
-              <span className="hint">{m.how}</span>
             </label>
           );
         })}
@@ -207,53 +205,12 @@ function Preferences() {
   return (
     <Section title="Побажання" actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
       <div className="grid-form">
-        {fields.map(([k, label, hint]) => (
+        {fields.map(([k, label]) => (
           <label key={k} className="field">
             <span>{label}</span>
             <textarea className="textarea" value={prefs[k]} onChange={(e) => setPrefs((p) => ({ ...p, [k]: e.target.value }))} />
-            <span className="hint">{hint}</span>
           </label>
         ))}
-      </div>
-    </Section>
-  );
-}
-
-function Access() {
-  const db = useDb();
-  const { act, state } = useApp();
-  const [s, setS] = useState(db.settings);
-  const key = JSON.stringify(db.settings);
-  useEffect(() => setS(db.settings), [key]);
-  return (
-    <Section title="Генерація і доступ" actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/settings', s), 'Налаштування збережено')}>Зберегти</button>}>
-      <div className="grid-form">
-        <label className="field">
-          <span>Модель Codex</span>
-          <input className="input" value={s.codexModel} onChange={(e) => setS((x) => ({ ...x, codexModel: e.target.value }))} />
-          <span className="hint">Sol = gpt-6.1-sol. Бінарник: {state?.runner.codexBin ?? '—'}</span>
-        </label>
-        <label className="field">
-          <span>Глибина міркувань</span>
-          <select className="select" value={s.reasoningEffort} onChange={(e) => setS((x) => ({ ...x, reasoningEffort: e.target.value as typeof x.reasoningEffort }))}>
-            {['low', 'medium', 'high', 'xhigh'].map((x) => <option key={x}>{x}</option>)}
-          </select>
-          <span className="hint">medium достатньо для генерації зображень.</span>
-        </label>
-        <label className="field">
-          <span>Одночасних генерацій</span>
-          <select className="select" value={String(s.concurrency ?? 2)} onChange={(e) => setS((x) => ({ ...x, concurrency: Number(e.target.value) }))}>
-            {[1, 2, 3, 4].map((x) => <option key={x} value={x}>{x}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>Tailscale-логін власника</span>
-          <input className="input" value={s.tailscaleLogin} onChange={(e) => setS((x) => ({ ...x, tailscaleLogin: e.target.value }))} placeholder="порожньо — віддалений доступ вимкнено" />
-          <span className="hint">Лише цей логін пропускається через tailscale serve.</span>
-        </label>
-      </div>
-      <div className="note" style={{ marginTop: 22 }}>
-        Запуск ізольований: без особистого конфігу Codex, запис лише в каталог завдання. Сервер слухає тільки 127.0.0.1; телефон відкриває <b>https://…ts.net:10443</b> у межах tailnet.
       </div>
     </Section>
   );
@@ -271,7 +228,6 @@ export function ProfilePage({ tab }: { tab?: string }) {
           {current === 'measurements' && <Measurements />}
           {current === 'sizes' && <Sizes />}
           {current === 'preferences' && <Preferences />}
-          {current === 'access' && <Access />}
         </div>
       </div>
     </div>

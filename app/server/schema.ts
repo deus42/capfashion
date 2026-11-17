@@ -47,6 +47,8 @@ export interface IdentityReference {
   preserveHeadAngle: boolean;
   hairstyle?: string;
   noGlasses?: boolean;
+  /** Rejected identity setup must be replaced before another personal try-on. */
+  disabledReason?: string;
   bodyOriginal?: HashedFile;
   hair?: { sourcePhotoId: string; original: HashedFile; crop: HashedFile };
   confirmedAt: string;
@@ -71,6 +73,8 @@ export interface Photo {
   source: 'chat-2026-11-14' | 'upload' | 'generated';
   /** Keep personal originals available as references, independently of item/base selection. */
   preserveAsReference?: boolean;
+  /** Owner-supplied face references are separate from full-body sources. */
+  referenceRole?: 'face';
   observation?: string;
   /** Owner's check against the base-photo standard; null = not checked. */
   meetsStandard?: boolean | null;
@@ -373,6 +377,7 @@ export function validateDb(db: unknown): string | null {
     if (!PHOTO_KINDS.includes(p.kind)) return `Фото ${p.id}: невідомий тип`;
     if (!isRelativeSafe(p.path)) return `Фото ${p.id}: недозволений шлях`;
     if (p.originalPath && !isRelativeSafe(p.originalPath)) return `Фото ${p.id}: недозволений шлях оригіналу`;
+    if (p.referenceRole && (p.referenceRole !== 'face' || p.source === 'generated' || p.inspiration)) return `Фото ${p.id}: референс обличчя повинен бути власним оригіналом`;
   }
   for (const i of d.items) {
     if (!CATEGORIES.includes(i.category)) return `Річ ${i.id}: невідома категорія`;

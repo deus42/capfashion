@@ -298,6 +298,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const job = db0.jobs.find((j) => j.id === jobId)!;
     if (job.kind === 'intake' || job.kind === 'analyze') return runAnalysis(jobId);
     const isPackshot = job.kind === 'packshot';
+    if (!isPackshot && (db0.profile.identity?.disabledReason || job.snapshot.identity?.disabledReason)) throw Error(db0.profile.identity?.disabledReason || job.snapshot.identity!.disabledReason);
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
     fs.mkdirSync(jobDir, { recursive: true });
     const resultFile = path.join(jobDir, 'result.png');

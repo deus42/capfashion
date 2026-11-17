@@ -81,7 +81,10 @@ export function createJob(db: DB, look: Look, basePhotoIds: string[], instructio
   const basePaths = identity ? [identity.face.path, identity.body.path, ...(identity.hair ? [identity.hair.crop.path] : [])] : selectedIds.map((id) => findOr404(db.photos, id, 'Базове фото').path);
   const snapshot = structuredClone(frozen ?? { lookName: look.name, slots: snapshotSlots(db, look.slots), basePhotoIds: selectedIds, basePhotoPaths: basePaths, identity });
   const job: Job = { id: newId('J'), lookId: look.id, lookVersion: frozen ? (db.jobs.find((j) => j.id === retryOf)?.lookVersion ?? look.version) : look.version, snapshot, instructions, state: 'queued', origin: 'site', retryOf, createdAt: now() };
-  if (!snapshot.basePhotoIds.length) {
+  if (identity?.disabledReason || snapshot.identity?.disabledReason) {
+    job.state = 'needs_data';
+    job.stateNote = identity?.disabledReason || snapshot.identity?.disabledReason;
+  } else if (!snapshot.basePhotoIds.length) {
     job.state = 'needs_data';
     job.stateNote = 'Немає базового фото. Додай 2–3 фото спереду в «Мій профіль» або вибери фото в Примірці.';
   } else if (!snapshot.slots.length) {

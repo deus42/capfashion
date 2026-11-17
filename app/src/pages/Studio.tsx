@@ -330,7 +330,7 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
                 ))}
                 {!db.profile.identity && <button className="input-thumb add" onClick={() => setBasePicker(true)} aria-label="Вибрати фото"><ImagePlus size={18} /></button>}
               </div>
-              {db.profile.identity && <p className="small muted">{basePhotos[0]?.originalName} · закріплені оригінали обличчя й статури · {db.profile.identity.preserveHeadAngle ? 'оригінальний ракурс' : 'прямий погляд'}{db.profile.identity.noGlasses ? ' · без окулярів' : ''}</p>}
+              {db.profile.identity && <p className="small muted">{db.profile.identity.disabledReason ?? `${basePhotos[0]?.originalName} · закріплені оригінали обличчя й статури · ${db.profile.identity.preserveHeadAngle ? 'оригінальний ракурс' : 'прямий погляд'}${db.profile.identity.noGlasses ? ' · без окулярів' : ''}`}</p>}
             </div>
           </div>
 

@@ -96,7 +96,7 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
               {!original && !inspiration && <Badge>реконструкція</Badge>}
               <span className="small faint">{fmtDate(entry.p.createdAt)}</span>
             </div>
-            <div className="note small">{original ? 'Твоє оригінальне фото. Зберігається як референс окремо від згенерованих примірок. Вибір для конкретної генерації не прибирає інші оригінали.' : inspiration?.sourceNote ?? entry.p.note ?? 'Генеративна реконструкція.'}</div>
+            <div className="note small">{original ? entry.p.referenceRole === 'face' ? `Оригінальний референс обличчя, окремо від фото статури й генерацій. ${entry.p.note ?? ''}` : 'Твоє оригінальне фото. Зберігається як референс окремо від згенерованих примірок. Вибір для конкретної генерації не прибирає інші оригінали.' : inspiration?.sourceNote ?? entry.p.note ?? 'Генеративна реконструкція.'}</div>
             {inspiration && <div className="row wrap">{inspiration.tags.map((t) => <Badge key={t}>{t}</Badge>)}</div>}
           </div>
           <div className="drawer-foot">
@@ -122,13 +122,14 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
 export function GalleryPage() {
   const db = useDb();
   const { query } = useRoute();
-  const [type, setType] = useState<'all' | 'tryon' | 'packshot' | 'inspiration' | 'original'>(query.get('type') === 'original' ? 'original' : query.get('type') === 'inspiration' ? 'inspiration' : 'all');
+  const [type, setType] = useState<'all' | 'tryon' | 'packshot' | 'inspiration' | 'original' | 'face'>(query.get('type') === 'face' ? 'face' : query.get('type') === 'original' ? 'original' : query.get('type') === 'inspiration' ? 'inspiration' : 'all');
   const [tag, setTag] = useState('');
   const [filter, setFilter] = useState<'any' | 'pending' | 'accepted' | 'fav'>('any');
   const [open, setOpen] = useState<Entry | null>(null);
   const all = useMemo(() => entries(db), [db]);
   const tags = [...new Set(all.flatMap((e) => e.kind === 'inspiration' ? e.p.inspiration?.tags ?? [] : []))].sort();
   const list = all.filter((e) => {
+    if (type === 'face') return e.kind === 'original' && e.p.referenceRole === 'face';
     if (type === 'all' && (e.kind === 'original' || e.kind === 'inspiration')) return false;
     if (type !== 'all' && e.kind !== type) return false;
     if (type === 'inspiration' && tag && !(e.kind === 'inspiration' && e.p.inspiration?.tags.includes(tag))) return false;
@@ -145,7 +146,7 @@ export function GalleryPage() {
     if (g) g[1].push(e);
     else groups.push([k, [e]]);
   }
-  const counts = { tryon: all.filter((e) => e.kind === 'tryon').length, packshot: all.filter((e) => e.kind === 'packshot').length, inspiration: all.filter((e) => e.kind === 'inspiration').length, original: all.filter((e) => e.kind === 'original').length };
+  const counts = { tryon: all.filter((e) => e.kind === 'tryon').length, packshot: all.filter((e) => e.kind === 'packshot').length, inspiration: all.filter((e) => e.kind === 'inspiration').length, original: all.filter((e) => e.kind === 'original').length, face: all.filter((e) => e.kind === 'original' && e.p.referenceRole === 'face').length };
 
   return (
     <div className="page">
@@ -154,6 +155,7 @@ export function GalleryPage() {
         <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
           <button className={type === 'all' ? 'on' : ''} onClick={() => setType('all')}>Згенероване <span className="faint">{counts.tryon + counts.packshot}</span></button>
           <button className={type === 'original' ? 'on' : ''} onClick={() => setType('original')}>Мої фото <span className="faint">{counts.original}</span></button>
+          <button className={type === 'face' ? 'on' : ''} onClick={() => setType('face')}>Обличчя <span className="faint">{counts.face}</span></button>
           <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>Примірки <span className="faint">{counts.tryon}</span></button>
           <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>Packshot <span className="faint">{counts.packshot}</span></button>
           <button className={type === 'inspiration' ? 'on' : ''} onClick={() => setType('inspiration')}>Натхнення <span className="faint">{counts.inspiration}</span></button>
@@ -165,7 +167,7 @@ export function GalleryPage() {
             {tags.map((t) => <button key={t} className={`chip${tag === t ? ' active' : ''}`} onClick={() => setTag(t)}>{t}</button>)}
           </div>
         )}
-        {type !== 'packshot' && type !== 'inspiration' && type !== 'original' && (
+        {type !== 'packshot' && type !== 'inspiration' && type !== 'original' && type !== 'face' && (
           <div className="chips">
             {(
               [
@@ -199,7 +201,7 @@ export function GalleryPage() {
                   <button key={e.p.id} className="gtile contain" onClick={() => setOpen(e)}>
                     <img src={thumb(e.p.path, 520)} alt={e.p.inspiration?.title ?? ''} loading="lazy" />
                     {e.kind === 'inspiration' && <span className="tl"><Badge tone="glass">Натхнення</Badge></span>}
-                    {e.kind === 'original' && <span className="tl"><Badge tone="glass">Оригінал</Badge></span>}
+                    {e.kind === 'original' && <span className="tl"><Badge tone="glass">{e.p.referenceRole === 'face' ? 'Обличчя · оригінал' : 'Оригінал'}</Badge></span>}
                     <span className="cap">{e.p.inspiration?.title ?? db.items.find((i) => i.id === e.itemId)?.title ?? e.p.originalName}</span>
                   </button>
                 ),

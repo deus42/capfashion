@@ -552,6 +552,30 @@ test('front gaze, hair-only styling and no glasses freeze with original identity
   assert.match(validateDb(db)!, /зачіска.*власного оригіналу/);
 });
 
+test('face archive permits only original owner photos and rejected identity cannot start a new or frozen retry', async () => {
+  const { store, call, dir } = setup();
+  const file = (p: string) => ({ path: p, sha256: 'b'.repeat(64) });
+  await store.mutate((db) => {
+    db.photos[0].referenceRole = 'face';
+    db.photos[0].preserveAsReference = true;
+    db.profile.identity = { sourcePhotoId: 'P-1', original: file(db.photos[0].path), face: file('.local/face.png'), body: file('.local/body.png'), preserveHeadAngle: false, disabledReason: 'Обличчя відхилено власником', confirmedAt: at };
+  });
+  const job = await call('POST', '/api/jobs', { lookId: 'L-1' });
+  assert.equal(job.state, 'needs_data');
+  assert.match(job.stateNote, /відхилено/);
+  const retry = await call('POST', `/api/jobs/${job.id}/retry`);
+  assert.equal(retry.state, 'needs_data');
+  await store.mutate((db) => { db.jobs.find((j) => j.id === job.id)!.state = 'queued'; });
+  const fake = path.join(dir, 'must-not-run.sh'), marker = path.join(dir, 'ran');
+  fs.writeFileSync(fake, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+  await createRunner(store, dir, fake).drain();
+  assert.equal(fs.existsSync(marker), false, 'even an older queued job must not run the rejected setup');
+  assert.equal(store.read().results.length, 0);
+  const db = store.read();
+  db.photos[0].source = 'generated';
+  assert.match(validateDb(db)!, /референс обличчя.*власним оригіналом/);
+});
+
 test('retained uploaded originals survive attempted deletion independently of base selection', async () => {
   const { store, call } = setup();
   await store.mutate((db) => {

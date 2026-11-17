@@ -25,4 +25,4 @@ Personal originals and derived images stay in ignored local storage. The user se
 
 ## Current next step
 
-Review the saved specification, candidate catalogue and first own-person capsule visualization. Owner measurements and item confirmations remain open inputs. The source-status note retains the separate web-illustration limits.
+Review the saved specification, candidate catalogue and first own-person capsule visualization. The owner will supply new front-facing base photos to the specification's base-photo standard; the corrected Urban Casual render waits for them. Owner measurements and item confirmations remain open inputs. The source-status note retains the separate web-illustration limits.

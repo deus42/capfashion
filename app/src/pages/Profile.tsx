@@ -6,6 +6,7 @@ import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
 import { useIntake } from './Home.tsx';
+import { InfoMark } from './Glossary.tsx';
 import { CATEGORY_LABEL, MEASURES, fmtDay } from '../lib.ts';
 
 const STANDARD = [
@@ -133,7 +134,7 @@ function Measurements() {
           return (
             <label key={m.key} className="field">
               <span className="row" style={{ justifyContent: 'space-between' }}>
-                {m.label}
+                <span>{m.label}<InfoMark title={m.label} text={m.how} /></span>
                 {saved.value !== null && <span className="small faint" style={{ fontWeight: 400 }}>{fmtDay(saved.date)}</span>}
               </span>
               <div style={{ position: 'relative' }}>
@@ -161,7 +162,7 @@ function Sizes() {
       actions={
         <>
           <button className="btn" onClick={() => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }])}><Plus size={15} /> Додати</button>
-          <button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, knownSizes: sizes }), 'Розміри збережено')}>Зберегти</button>
+          <button className="btn primary" disabled={sizes.some((s) => !s.brand.trim() || !s.size.trim())} onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, knownSizes: sizes }), 'Розміри збережено')}>Зберегти</button>
         </>
       }
     >

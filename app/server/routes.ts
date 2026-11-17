@@ -569,7 +569,8 @@ on('POST', '/api/results/:id/review', async (ctx, [id], b) => {
     r.reviewNote = str(b.note);
     r.reviewedAt = now();
     let retry: Job | undefined;
-    if (r.review === 'rework') {
+    // A rejected face is not re-run with the same references (owner rule); a new picture is the owner's call.
+    if (r.review === 'rework' && r.reviewReason !== 'face') {
       const prev = findOr404(db.jobs, r.jobId, 'Завдання');
       const look = findOr404(db.looks, prev.lookId ?? '', 'Образ');
       const fix = `Переробити: ${REASON_TEXT[r.reviewReason!]}${r.reviewNote ? ` — ${r.reviewNote}` : ''}.`;
@@ -713,8 +714,11 @@ on('POST', '/api/products/:id/purchase', async (ctx, [id], b) => {
     bump(p, undefined);
     need.status = 'covered';
     need.coveredByItem = item.id;
+    // Every shop option of the bought need leaves the looks too, not only the one bought.
+    const options = new Set(db.products.filter((x) => x.needId === need.id && (x.status !== 'purchased' || x.id === p.id)).map((x) => x.id));
+    const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
+    need.coveredLookIds = looks;
     bump(need, undefined);
-    const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && r.id === p.id), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
     // The bought piece replaces the stand-in in every render, too.
     return { item, renders: queueRerenders(db, looks) };
   });

@@ -51,8 +51,9 @@ export default function App() {
     );
   }
 
-  const { db, runner } = state;
-  const activeJobs = db.jobs.filter((j) => j.state === 'queued' || j.state === 'running').length;
+  const { db } = state;
+  // The thin bar means work is happening now; queued work waiting for its turn shows nothing.
+  const runningJobs = db.jobs.filter((j) => j.state === 'running').length;
   const avatar = db.profile.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).find(Boolean);
   const ic = 20;
 
@@ -86,7 +87,7 @@ export default function App() {
         </a>
       </nav>
       <div className="frame">
-        {(activeJobs > 0 || runner.running) && <div className="busy-bar app-progress" role="progressbar" aria-label="Обробка" />}
+        {runningJobs > 0 && <div className="busy-bar app-progress" role="progressbar" aria-label="Обробка" />}
         <header className="topbar">
           <a href="/home" className="wordmark m-only">Cap Fashion</a>
           <div className="grow" />

@@ -94,16 +94,8 @@ export function coverForLook(db: DB, look: Look): Result | undefined {
   return rs.find((r) => r.review === 'accepted') ?? rs.find((r) => r.review === 'pending' && current(r));
 }
 
-/** A try-on of this look is being made. */
-export const lookBusy = (db: DB, lookId: string) => db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && (j.state === 'queued' || j.state === 'running'));
-
-export function capsuleCover(db: DB, lookIds: string[]) {
-  const hidden = hiddenLookIds(db);
-  const visible = lookIds.filter((id) => !hidden.has(id));
-  const looks = (visible.length ? visible : lookIds).map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));
-  const all = looks.flatMap((l) => resultsForLook(db, l.id));
-  return all.find((r) => r.review === 'accepted') ?? all.find((r) => r.review === 'pending') ?? undefined;
-}
+/** A try-on of this look is being made right now (a queued one is not shown as work in progress). */
+export const lookBusy = (db: DB, lookId: string) => db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && j.state === 'running');
 
 /** Looks (visible on the site) that use this piece. */
 export function looksUsing(db: DB, kind: SlotRef['kind'], id: string) {
@@ -135,7 +127,7 @@ export function fmtDay(iso?: string) {
 
 const lookScore = (db: DB, l: Look) => {
   const rs = resultsForLook(db, l.id);
-  return (l.favorite ? 4 : 0) + (rs.some((r) => r.review === 'accepted') ? 2 : 0) + (rs.length ? 1 : 0);
+  return (l.favorite ? 8 : 0) + (isComplete(db, l) ? 4 : 0) + (rs.some((r) => r.review === 'accepted') ? 2 : 0) + (rs.length ? 1 : 0);
 };
 
 /**
@@ -158,15 +150,27 @@ export function missingNeeds(db: DB, look: Pick<Look, 'slots'>): string[] {
   return [...new Set(ids)];
 }
 
-/** Everything in the look is already in the wardrobe: it can be worn today. */
-export const isComplete = (db: DB, look: Look) => Object.values(look.slots).some((refs) => refs.length) && missingNeeds(db, look).length === 0;
+/** Pieces the owner cannot wear now: recommendations still to buy and items that are inactive, merged away or gone. */
+function missingTitles(db: DB, look: Pick<Look, 'slots'>): string[] {
+  const gone = Object.values(look.slots).flat().flatMap((r) => {
+    if (r.kind !== 'item') return [];
+    const it = db.items.find((i) => i.id === r.id);
+    return !it || it.status === 'inactive' || it.mergedInto ? [it?.title ?? r.id] : [];
+  });
+  return [...missingNeeds(db, look).map((id) => db.needs.find((n) => n.id === id)?.title ?? id), ...gone];
+}
 
-/** Quiet line under an incomplete look's name (owner, 17.11): «бракує: кеди +1». */
-export function missingLine(db: DB, look: Look): string | null {
-  const m = missingNeeds(db, look);
+const hasPieces = (look: Pick<Look, 'slots'>) => Object.values(look.slots).some((refs) => refs.length);
+
+/** Everything in the look is in the wardrobe and in use: it can be worn today. */
+export const isComplete = (db: DB, look: Look) => hasPieces(look) && missingTitles(db, look).length === 0;
+
+/** Quiet line under an incomplete look's name (owner, 17.11): what is missing first, then how many more. */
+export function missingInfo(db: DB, look: Look): { text: string; more: number } | null {
+  if (!hasPieces(look)) return { text: 'порожній образ', more: 0 };
+  const m = missingTitles(db, look);
   if (!m.length) return null;
-  const first = db.needs.find((n) => n.id === m[0])?.title ?? '';
-  return `бракує: ${first.charAt(0).toLowerCase()}${first.slice(1)}${m.length > 1 ? ` +${m.length - 1}` : ''}`;
+  return { text: `бракує: ${m[0].charAt(0).toLowerCase()}${m[0].slice(1)}`, more: m.length - 1 };
 }
 
 /** Liked first, then looks the owner can wear now, then the rest; otherwise the given order (owner, 17.11). */
@@ -175,7 +179,8 @@ export const rankLooks = (db: DB, looks: Look[]) =>
 
 /** How many of a capsule's looks are ready to wear. */
 export function capsuleReady(db: DB, c: Capsule) {
-  const looks = distinctLooks(db, capsuleLooks(db, c.lookIds));
+  // An empty look just added with «+ Образ» does not count yet.
+  const looks = distinctLooks(db, capsuleLooks(db, c.lookIds)).filter(hasPieces);
   return { done: looks.filter((l) => isComplete(db, l)).length, total: looks.length };
 }
 
@@ -202,23 +207,21 @@ export const rankCapsules = (db: DB, caps: Capsule[]) =>
  * core priority. Derived from the data, so every purchase or upload re-ranks.
  */
 export function purchaseRanking(db: DB) {
-  const hidden = hiddenLookIds(db);
-  const looks = db.looks.filter((l) => !hidden.has(l.id));
   const open = db.needs.filter((n) => n.status === 'open');
   return open
     .map((n) => {
-      let looksIn = 0;
+      // Same looks as everywhere else: visible, near-copies folded into one.
+      const looks = distinctLooks(db, db.looks.filter((l) => missingNeeds(db, l).includes(n.id)));
       let completes = 0;
       let closer = 0;
       let liked = 0;
       for (const l of looks) {
-        const m = missingNeeds(db, l);
-        if (!m.includes(n.id)) continue;
-        looksIn += 1;
-        closer += 1 / m.length;
-        if (m.length === 1) completes += 1;
+        const m = missingTitles(db, l).length;
+        if (m === 1) completes += 1;
+        else closer += 1 / m;
         if (l.favorite) liked += 1;
       }
+      const looksIn = looks.length;
       return { need: n, looksIn, completes, score: completes * 3 + closer + liked + (n.priority === 'core' ? 0.5 : 0) };
     })
     .sort((a, b) => b.score - a.score || b.looksIn - a.looksIn);

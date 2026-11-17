@@ -16,6 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
+import { isComplete, missingInfo, purchaseRanking } from '../src/lib.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 
@@ -210,10 +211,14 @@ test('rework review creates a linked retry with the reason; accept clears it (A0
     db.results.push({ id: 'R-1', jobId: j.id, lookId: 'L-1', lookVersion: 1, imagePath: 'r.png', tool: 't', model: 'm', prompt: 'p', sources: [], usedItemPhotos: true, review: 'pending', favorite: false, createdAt: at });
   });
   await assert.rejects(call('POST', '/api/results/R-1/review', { decision: 'rework' }), (e: any) => e.status === 400);
-  const out = await call('POST', '/api/results/R-1/review', { decision: 'rework', reason: 'face', note: 'очі' });
+  const out = await call('POST', '/api/results/R-1/review', { decision: 'rework', reason: 'proportions', note: 'плечі' });
   assert.equal(out.result.review, 'rework');
   assert.equal(out.retry.retryOf, job.id);
-  assert.match(out.retry.instructions, /обличчя не схоже — очі/);
+  assert.match(out.retry.instructions, /змінені пропорції тіла — плечі/);
+  // «Це я? — Ні»: the face is hidden from the site and the same references are not re-run.
+  const face = await call('POST', '/api/results/R-1/review', { decision: 'rework', reason: 'face' });
+  assert.equal(face.retry, undefined);
+  assert.ok(store.read().results[0].hiddenAt);
   await call('PATCH', '/api/results/R-1', { favorite: true, note: 'краща' });
   assert.equal(store.read().results[0].favorite, true);
 });
@@ -825,4 +830,39 @@ test('changing a look\'s pieces queues its new try-on by itself and drops an old
   assert.deepEqual(db.jobs.filter((j) => j.lookId === 'L-1').map((j) => [j.lookVersion, j.state]), [[3, 'queued']], 'only the newest composition is made');
   await call('PATCH', '/api/looks/L-1', { rev: db.looks[0].rev, name: 'Renamed' });
   assert.equal(store.read().jobs.filter((j) => j.lookId === 'L-1').length, 1, 'renaming does not re-render');
+});
+test('complete looks, the quiet missing line and the next-purchase rating follow the wardrobe', async () => {
+  const { store, call } = setup();
+  let db = store.read();
+  const look = () => store.read().looks[0];
+  assert.equal(isComplete(db, look()), false);
+  assert.deepEqual(missingInfo(db, look()), { text: 'бракує: молочна футболка', more: 0 });
+  assert.equal(purchaseRanking(db)[0].need.id, 'N-1');
+  assert.equal(purchaseRanking(db)[0].completes, 1);
+  await store.mutate((d) => { d.items.push({ id: 'W-T', rev: 1, category: 'tees', title: 'Молочна футболка', status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at }); });
+  await call('POST', '/api/needs/N-1/cover', { itemId: 'W-T' });
+  db = store.read();
+  assert.equal(isComplete(db, look()), true, 'the owned tee completes the look');
+  assert.equal(purchaseRanking(db).length, 0, 'nothing left to buy');
+  await call('PATCH', '/api/items/W-T', { rev: db.items.find((i) => i.id === 'W-T')!.rev, status: 'inactive' });
+  db = store.read();
+  assert.equal(db.needs[0].status, 'open', '«не моя річ» puts the recommendation back');
+  assert.equal(isComplete(db, look()), false);
+});
+
+test('an inactive item makes a look incomplete; measurements accept a comma and keep their date', async () => {
+  const { store, call } = setup();
+  await store.mutate((d) => {
+    d.looks[0].slots.top = [{ kind: 'item', id: 'W-2' }];
+    d.items.find((i) => i.id === 'W-2')!.status = 'inactive';
+  });
+  const db = store.read();
+  assert.equal(isComplete(db, db.looks[0]), false);
+  assert.match(missingInfo(db, db.looks[0])!.text, /navy chinos \(дубль\)/i);
+  const prof = await call('PATCH', '/api/profile', { rev: store.read().profile.rev, measurements: { chest: { value: '82,5' } } });
+  assert.equal(prof.measurements.chest.value, 82.5);
+  await store.mutate((d) => { d.profile.measurements.chest.date = '2026-01-01'; });
+  const again = await call('PATCH', '/api/profile', { rev: store.read().profile.rev, measurements: { chest: { value: '82.5' } } });
+  assert.equal(again.measurements.chest.date, '2026-01-01', 'an unchanged value keeps the day it was measured');
+  await assert.rejects(call('PATCH', '/api/profile', { rev: store.read().profile.rev, measurements: { chest: { value: 'abc' } } }), /груди/);
 });

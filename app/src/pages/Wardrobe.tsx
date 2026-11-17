@@ -3,7 +3,7 @@ import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Merge, Penc
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, Empty, LookArt, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, ConfirmButton, Empty, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, distinctLooks, looksUsing } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 
@@ -89,6 +89,7 @@ function ItemPage({ item }: { item: Item }) {
             <a key={l.id} className="sib" href={`/looks/${l.id}`}>
               <span className="img"><LookArt look={l} w={480} /></span>
               <span className="nm">{l.name}</span>
+              <Missing look={l} />
             </a>
           ))}
         </div>

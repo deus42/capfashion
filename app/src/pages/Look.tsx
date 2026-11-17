@@ -3,9 +3,9 @@ import { Check, ImageOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { DB, Job, Look, SlotKey, SlotRef } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, Empty, LookArt, Modal, RateButtons } from '../components/ui.tsx';
+import { Badge, CategoryIcon, Empty, LookArt, Missing, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookBusy, missingLine, resolveRef } from '../lib.ts';
+import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookBusy, resolveRef } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
@@ -80,7 +80,7 @@ export function LookPage({ id }: { id: string }) {
   const itsMe = (yes: boolean) =>
     cover &&
     act(
-      () => api('POST', `/api/results/${cover.id}/review`, yes ? { decision: 'accepted' } : { decision: 'rework', reason: 'face', run: true }),
+      () => api('POST', `/api/results/${cover.id}/review`, yes ? { decision: 'accepted' } : { decision: 'rework', reason: 'face' }),
       yes ? 'Прийнято' : 'Прибрано',
     );
   const swapAccessory = (current: SlotRef, id: string) =>
@@ -229,12 +229,11 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
 }
 
 function SiblingCard({ look }: { look: Look }) {
-  const db = useDb();
   return (
     <a className="sib" href={`/looks/${look.id}`}>
       <span className="img"><LookArt look={look} w={480} /></span>
       <span className="nm">{look.favorite && <b className="liked-dot" aria-label="Подобається" />}{look.name}</span>
-      {missingLine(db, look) && <span className="miss">{missingLine(db, look)}</span>}
+      <Missing look={look} />
     </a>
   );
 }

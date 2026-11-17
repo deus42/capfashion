@@ -251,7 +251,7 @@ export function NextPurchase() {
   );
 }
 
-function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
+function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; top?: boolean }) {
   const db = useDb();
   const { act, toast } = useApp();
   const [adding, setAdding] = useState(false);
@@ -279,6 +279,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
       <div className="stack" style={{ gap: 14, minWidth: 0 }}>
       <div className="need-head">
         <div className="grow stack" style={{ gap: 4 }}>
+          {top && <span className="eyebrow-sm">Наступна покупка</span>}
           <div className="row wrap">
             <h3>{need.title}<TermInfo texts={[need.title, need.description]} /></h3>
             {need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}
@@ -366,12 +367,11 @@ export function ShoppingPage({ focus }: { focus?: string }) {
           </a>
         </div>
       </div>
-      {show === 'open' && <NextPurchase />}
       {needs.length === 0 ? (
         <Empty icon={<ShoppingBag />} title="Відкритих покупок немає" />
       ) : (
         <div className="list">
-          {needs.map((n) => <NeedCard key={n.id} need={n} focus={n.id === focus} />)}
+          {needs.map((n, i) => <NeedCard key={n.id} need={n} focus={n.id === focus} top={i === 0 && n.status === 'open'} />)}
         </div>
       )}
     </div>

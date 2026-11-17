@@ -7,7 +7,7 @@ import { useApp, useDb } from '../store.tsx';
 import { api } from '../api.ts';
 import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
-import { REF_KIND_LABEL, coverForLook, lookBusy, piecesOf } from '../lib.ts';
+import { REF_KIND_LABEL, coverForLook, lookBusy, missingInfo, piecesOf } from '../lib.ts';
 import { TermInfo } from '../pages/Glossary.tsx';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
@@ -254,6 +254,14 @@ export function LookArt({ look, w = 700, max }: { look: Look; w?: number; max?: 
       {lookBusy(db, look.id) && <span className="busy-bar" role="progressbar" aria-label="Генерую примірку" />}
     </span>
   );
+}
+
+/** Quiet «бракує: …» under a look's name; the «+N» stays visible when the title is cut. */
+export function Missing({ look }: { look: Look }) {
+  const db = useDb();
+  const m = missingInfo(db, look);
+  if (!m) return null;
+  return <span className="miss"><span className="miss-t">{m.text}</span>{m.more > 0 && <span className="miss-n">+{m.more}</span>}</span>;
 }
 
 export function LookCollage({ slots, max = 5 }: { slots: Slots; max?: number }) {

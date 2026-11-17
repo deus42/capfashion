@@ -3,8 +3,8 @@ import { EyeOff, ImageOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
-import { Badge, ConfirmButton, Empty, LookArt, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, capsuleLooks, distinctLooks, missingLine, piecesOf, rankCapsules, rankLooks, readyLine } from '../lib.ts';
+import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
+import { SEASON_LABEL, capsuleLooks, distinctLooks, piecesOf, rankCapsules, rankLooks, readyLine } from '../lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile } from './Home.tsx';
 
@@ -111,14 +111,13 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
 }
 
 function LookCard({ look }: { look: Look }) {
-  const db = useDb();
-  const miss = missingLine(db, look);
+
   return (
     <div className="look-card">
       <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${look.id}`}>
         <LookArt look={look} />
       </a>
-      <a href={`/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4>{miss && <span className="miss">{miss}</span>}</a>
+      <a href={`/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
       </div>
@@ -148,7 +147,7 @@ function EditCapsule({ capsule, onClose }: { capsule: Capsule; onClose: () => vo
             message={<>Видалити «{capsule.name}» і її образи назавжди? Щоб просто прибрати з очей — постав 👎. Речі в гардеробі залишаться.</>}
             onConfirm={async () => {
               const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), 'Видалено');
-              if (ok !== undefined) go(capsule.kind === 'selection' ? '/capsules?tab=selections' : '/capsules');
+              if (ok !== undefined) go(capsule.kind === 'selection' ? '/capsules?tab=selections' : '/capsules', true);
             }}
           >
             <Trash2 size={14} />

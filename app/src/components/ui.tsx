@@ -66,17 +66,6 @@ export function Modal({ title, onClose, children, footer, wide }: { title: React
   );
 }
 
-/** Details open as their own page — never a side panel or drawer (owner rule). */
-export function DetailPage({ title, back, backLabel, children, footer }: { title: ReactNode; back: string; backLabel: string; children: ReactNode; footer?: ReactNode }) {
-  return (
-    <div className="page detail-page">
-      <div className="crumb"><a href={back}>{backLabel}</a></div>
-      <div className="page-head"><div><h1>{title}</h1></div></div>
-      <div className="detail-body">{children}</div>
-      {footer && <div className="detail-foot">{footer}</div>}
-    </div>
-  );
-}
 
 /** File input + drag-and-drop. On iPhone the picker offers camera or library. */
 export function UploadButton({

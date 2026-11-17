@@ -1,23 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Sparkles, Split, Trash2, Wand2, X } from 'lucide-react';
+import { useState } from 'react';
+import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Pencil, Plus, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, DetailPage, Empty, Img, LookArt, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, distinctLooks, fmtDate, looksUsing } from '../lib.ts';
+import { Badge, CategoryIcon, ConfirmButton, Empty, LookArt, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
+import { CATEGORY_LABEL, distinctLooks, looksUsing } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
-import type { Capsule, DB, Look } from '../api.ts';
 
-function groupByCapsule(db: DB, looks: Look[]) {
-  const groups: { capsule?: Capsule; looks: Look[] }[] = [];
-  for (const l of looks) {
-    const capsule = db.capsules.find((c) => c.id === l.capsuleId);
-    const g = groups.find((x) => x.capsule?.id === capsule?.id);
-    if (g) g.looks.push(l);
-    else groups.push({ capsule, looks: [l] });
-  }
-  return groups;
-}
 import { TermInfo } from './Glossary.tsx';
 import { useIntake } from './Home.tsx';
 
@@ -33,202 +22,137 @@ function usePackshotState() {
   return busy;
 }
 
-function ItemPage({ item, onClose }: { item: Item; onClose: () => void }) {
+/**
+ * Minimal item page (owner, 17.11: always minimal, never side panels): the
+ * picture and photos, one "Це моя річ?" question while unconfirmed, the looks
+ * it is in. Everything editable sits behind the pencil.
+ */
+function ItemPage({ item }: { item: Item }) {
   const db = useDb();
   const { act } = useApp();
   const busy = usePackshotState();
-  const blank = () => ({ title: item.title, category: item.category, color: item.color ?? '', brand: item.brand ?? '', model: item.model ?? '', composition: item.composition ?? '', fit: item.fit ?? '', size: item.size ?? '' });
-  const [form, setForm] = useState(blank);
-  const [splitSel, setSplitSel] = useState<string[] | null>(null);
-  useEffect(() => setForm(blank()), [item.id, item.rev]);
+  const [editing, setEditing] = useState(false);
   const photos = item.photoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
   const packshot = item.packshotId ? db.photos.find((p) => p.id === item.packshotId) : undefined;
+  const main = packshot ?? photos[0];
   const looks = distinctLooks(db, looksUsing(db, 'item', item.id));
-  const set = (k: keyof ReturnType<typeof blank>) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const covers = db.needs.filter((n) => n.coveredByItem === item.id);
   const patch = (body: Record<string, unknown>, msg: string) => act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...body }), msg);
-  const dirty = (Object.keys(form) as (keyof ReturnType<typeof blank>)[]).some((k) => (form[k] || '') !== ((item[k as keyof Item] as string | undefined) ?? ''));
-  const state = busy.get(item.id);
 
   return (
-    <DetailPage
-      title={<>{item.title}<TermInfo texts={[item.title, item.fit]} /></>}
-      back="/wardrobe"
-      backLabel="Гардероб"
+    <div className="page">
+      <div className="crumb"><a href="/wardrobe">Гардероб</a></div>
+      <div className="page-head">
+        <div><h1>{item.title}<TermInfo texts={[item.title, item.fit]} /></h1></div>
+        <div className="actions">
+          <button className="icon-btn" aria-label="Редагувати річ" onClick={() => setEditing(true)}><Pencil size={14} /></button>
+        </div>
+      </div>
+
+      <div className="item-hero">
+        <a className="item-main" href={main ? media(main.path) : undefined} target={main ? '_blank' : undefined} rel="noreferrer">
+          {main ? <img src={thumb(main.path, 960)} alt={item.title} /> : <CategoryIcon category={item.category} size={34} />}
+          {busy.has(item.id) && <span className="busy-bar" role="progressbar" aria-label="Packshot" />}
+        </a>
+        <div className="item-thumbs">
+          {photos.map((p) => (
+            <a key={p.id} className="item-thumb" href={media(p.path)} target="_blank" rel="noreferrer"><img src={thumb(p.path, 240)} alt="" loading="lazy" /></a>
+          ))}
+          <UploadButton kind="item" params={{ item: item.id }} className="item-thumb add" label="" />
+        </div>
+      </div>
+
+      {item.status === 'needs_confirmation' && (
+        <div className="its-me">
+          <span>Це моя річ?</span>
+          <button className="btn" onClick={() => void patch({ status: 'inactive' }, 'Прибрано')}>Ні</button>
+          <button className="btn primary" onClick={() => void patch({ status: 'confirmed' }, 'Моя річ')}><Check size={15} /> Так</button>
+        </div>
+      )}
+      {item.status === 'inactive' && (
+        <div className="its-me">
+          <span>Не моя / неактуальна</span>
+          <button className="btn" onClick={() => void patch({ status: 'confirmed' }, 'Повернуто')}>Повернути</button>
+        </div>
+      )}
+
+      <div className="section-head">
+        <h2 className="h2">Образи <span className="count">{looks.length}</span></h2>
+        {item.status !== 'inactive' && (
+          <button className="btn sm" onClick={() => void act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи — зʼявляться в «Підбірках»')}>
+            <Sparkles size={13} /> Ще образ
+          </button>
+        )}
+      </div>
+      {looks.length > 0 && (
+        <div className="sib-strip">
+          {looks.map((l) => (
+            <a key={l.id} className="sib" href={`/looks/${l.id}`}>
+              <span className="img"><LookArt look={l} w={480} /></span>
+              <span className="nm">{l.name}</span>
+            </a>
+          ))}
+        </div>
+      )}
+      {covers.map((n) => (
+        <a key={n.id} className="small muted" style={{ display: 'block', marginTop: 16 }} href={`/shopping?need=${n.id}`}>Закриває покупку «{n.title}»</a>
+      ))}
+      {editing && <ItemEdit item={item} onClose={() => setEditing(false)} />}
+    </div>
+  );
+}
+
+/** Everything editable about an item, in one modal behind the pencil. */
+function ItemEdit({ item, onClose }: { item: Item; onClose: () => void }) {
+  const { act } = useApp();
+  const [form, setForm] = useState({ title: item.title, category: item.category, color: item.color ?? '', brand: item.brand ?? '', model: item.model ?? '', composition: item.composition ?? '', fit: item.fit ?? '', size: item.size ?? '' });
+  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const field = (k: keyof typeof form, label: string) => (
+    <label className="field"><span>{label}</span><input className="input" value={form[k]} onChange={set(k)} /></label>
+  );
+  const save = async () => {
+    const ok = await act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...form }), 'Збережено');
+    if (ok) onClose();
+  };
+  return (
+    <Modal
+      title="Річ"
+      onClose={onClose}
       footer={
         <>
           <ConfirmButton
             className="btn ghost danger"
             title="Видалити річ"
-            message={<>Видалити «{item.title}» з гардероба?{looks.length ? ` Вона зникне з ${looks.length} образів.` : ''} Якщо річ просто більше не носиш — краще «Неактуальна».</>}
+            message={`Видалити «${item.title}» з гардероба? Фото-оригінали лишаться в архіві.`}
             onConfirm={async () => {
               const ok = await act(() => api('DELETE', `/api/items/${item.id}`), 'Річ видалено');
-              if (ok !== undefined) onClose();
+              if (ok !== undefined) go('/wardrobe');
             }}
           >
-            <Trash2 size={15} />
+            <Trash2 size={14} />
           </ConfirmButton>
+          <button className="btn ghost" onClick={() => void act(() => api('POST', '/api/packshots', { itemIds: [item.id], run: true }), 'Нове фото речі в роботі')}><Wand2 size={14} /> Нове фото</button>
           <span style={{ flex: 1 }} />
-          {item.status !== 'confirmed' && (
-            <button className="btn" onClick={() => void patch({ status: 'confirmed' }, 'Річ підтверджено')}>
-              <Check size={15} /> Так, це моя річ
-            </button>
-          )}
-          {item.status !== 'inactive' && (
-            <button className="btn" onClick={() => void patch({ status: 'inactive' }, 'Позначено неактуальною')}>
-              <X size={15} /> Неактуальна
-            </button>
-          )}
-          {item.status !== 'needs_confirmation' && (
-            <button className="btn ghost" onClick={() => void patch({ status: 'needs_confirmation' }, 'Повернуто на перевірку')}>
-              <RotateCcw size={15} /> На перевірку
-            </button>
-          )}
-          <button className="btn primary" disabled={!dirty} onClick={() => void patch(form, 'Збережено')}>Зберегти</button>
+          <button className="btn primary" onClick={() => void save()}>Зберегти</button>
         </>
       }
     >
-      <div className="stack" style={{ gap: 20 }}>
-        <div className="drawer-hero">
-          <div className="hero-art">
-            {packshot ? <img src={thumb(packshot.path, 700)} alt={item.title} /> : photos[0] ? <img src={thumb(photos[0].path, 700)} alt="" style={{ objectFit: 'cover' }} /> : <CategoryIcon category={item.category} size={28} />}
-            {packshot && <span className="tl"><Badge tone="glass">packshot · реконструкція</Badge></span>}
-          </div>
-          <div className="stack" style={{ gap: 10 }}>
-            <div className="row wrap">
-              <Badge tone={STATUS_TONE[item.status]}>{STATUS_LABEL[item.status]}</Badge>
-              <Badge>{CATEGORY_LABEL[item.category]}</Badge>
-              {item.mergedInto && <Badge>обʼєднано в {item.mergedInto}</Badge>}
-              {item.splitFrom && <Badge>відокремлено від {item.splitFrom}</Badge>}
-            </div>
-            {item.confirmedFact && <div className="note ok small">{item.confirmedFact}</div>}
-            {item.observation && <div className="note small"><b>З фото:</b> {item.observation}</div>}
-            <button
-              className="btn sm"
-              disabled={Boolean(state)}
-              onClick={() => void act(() => api('POST', '/api/packshots', { itemIds: [item.id], run: true }), 'Packshot у роботі')}
-            >
-              {state ? <Loader2 size={13} className="spin" /> : <Wand2 size={13} />}
-              {state === 'running' ? 'Packshot генерується…' : state === 'queued' ? 'Packshot у черзі' : packshot ? 'Перегенерувати packshot' : 'Згенерувати packshot'}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <div className="row wrap" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
-            <div className="h2" style={{ fontSize: 15 }}>Оригінальні фото <span className="count">{photos.length}</span></div>
-            <div className="row wrap">
-              <UploadButton kind="item" params={{ item: item.id }} className="btn sm" label="Фото" />
-              <UploadButton kind="label" params={{ item: item.id }} className="btn sm" label="Етикетка" />
-              <UploadButton kind="detail" params={{ item: item.id }} className="btn sm" label="Деталь" />
-            </div>
-          </div>
-          <div className="photo-strip">
-            {photos.map((p) => (
-              <button
-                key={p.id}
-                className={`p${splitSel?.includes(p.id) ? ' sel' : ''}`}
-                onClick={() => (splitSel ? setSplitSel((s) => (s!.includes(p.id) ? s!.filter((x) => x !== p.id) : [...s!, p.id])) : window.open(media(p.path), '_blank'))}
-                title={p.observation ?? p.originalName}
-              >
-                <Img path={p.path} w={300} />
-                <span className="k"><Badge tone="glass">{p.kind === 'source' ? 'оригінал' : p.kind === 'label' ? 'етикетка' : p.kind === 'detail' ? 'деталь' : 'фото'}</Badge></span>
-              </button>
-            ))}
-            {photos.length === 0 && <span className="muted small">Фото ще немає.</span>}
-          </div>
-          {photos.length > 1 && (
-            <div className="row" style={{ marginTop: 10 }}>
-              {splitSel ? (
-                <>
-                  <span className="small muted">Вибери фото, що належать іншій речі.</span>
-                  <button className="btn sm" onClick={() => setSplitSel(null)}>Скасувати</button>
-                  <button
-                    className="btn sm primary"
-                    disabled={!splitSel.length || splitSel.length === photos.length}
-                    onClick={async () => {
-                      const ok = await act(() => api('POST', `/api/items/${item.id}/split`, { rev: item.rev, photoIds: splitSel }), 'Окрему річ створено');
-                      if (ok) setSplitSel(null);
-                    }}
-                  >
-                    Розділити
-                  </button>
-                </>
-              ) : (
-                <button className="btn sm ghost" onClick={() => setSplitSel([])}><Split size={13} /> Розділити помилкову групу</button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="grid-form">
-          <label className="field full"><span>Назва</span><input className="input" value={form.title} onChange={set('title')} /></label>
-          <label className="field">
-            <span>Категорія</span>
-            <select className="select" value={form.category} onChange={set('category')}>
-              {CATS.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
-            </select>
-          </label>
-          <label className="field"><span>Колір</span><input className="input" value={form.color} onChange={set('color')} placeholder="невідомо" /></label>
-          <label className="field"><span>Бренд</span><input className="input" value={form.brand} onChange={set('brand')} placeholder="невідомо" /></label>
-          <label className="field"><span>Модель / артикул</span><input className="input" value={form.model} onChange={set('model')} placeholder="невідомо" /></label>
-          <label className="field"><span>Склад</span><input className="input" value={form.composition} onChange={set('composition')} placeholder="з етикетки" /></label>
-          <label className="field"><span>Крій</span><input className="input" value={form.fit} onChange={set('fit')} placeholder="напр. regular tapered" /></label>
-          <label className="field full"><span>Мій розмір</span><input className="input" value={form.size} onChange={set('size')} placeholder="у системі бренду, напр. W32 L32" /><span className="hint">Невідоме лишається порожнім — сайт не вгадує бренд, склад чи розмір з фото.</span></label>
-        </div>
-
-        <div>
-          <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-            <div className="h2" style={{ fontSize: 15 }}>У підбірках і капсулах <span className="count">{looks.length}</span></div>
-            {item.status !== 'inactive' && (
-              <button
-                className="btn sm primary"
-                onClick={async () => {
-                  const ok = await act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи з цією річчю — зʼявляться в «Підбірках»');
-                  if (ok) onClose();
-                }}
-              >
-                <Sparkles size={13} /> Скласти образ з нею
-              </button>
-            )}
-          </div>
-          {looks.length === 0 && <span className="muted small">Ще не використовується в образах.</span>}
-          {db.needs.filter((n) => n.coveredByItem === item.id).map((n) => (
-            <a key={n.id} className="row small" href={`/shopping?need=${n.id}`} style={{ marginBottom: 10 }}>
-              <Badge tone="ok">закриває покупку</Badge> {n.title}
-            </a>
-          ))}
-          <div className="stack" style={{ gap: 14 }}>
-            {groupByCapsule(db, looks).map(({ capsule, looks: ls }) => (
-              <div key={capsule?.id ?? 'own'}>
-                <a className="row small" href={capsule ? `/capsules/${capsule.id}` : '/capsules?tab=looks'} style={{ marginBottom: 8, fontWeight: 560 }}>
-                  {capsule?.name ?? 'Мої комбінації'} {capsule?.kind === 'selection' && <Badge tone="ok">з моїх речей</Badge>}
-                </a>
-                <div className="appears">
-                  {ls.map((l) => {
-                    return (
-                      <a key={l.id} className="appear" href={`/looks/${l.id}`} title={l.name}>
-                        <span className="ai"><LookArt look={l} w={200} max={2} /></span>
-                        <span className="an">{l.name}</span>
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-          {item.status === 'inactive' && looks.length > 0 && <div className="note warn" style={{ marginTop: 8 }}>Річ неактуальна, але є в образах — заміни її в Примірці.</div>}
-        </div>
-
-        <div>
-          <div className="h2" style={{ fontSize: 15, marginBottom: 8 }}>Історія</div>
-          <div className="stack small">
-            {item.history.slice().reverse().slice(0, 6).map((h, i) => (
-              <div key={i} className="row"><span className="faint">{fmtDate(h.at)}</span><span>{h.action}</span>{h.note && <span className="muted">{h.note}</span>}</div>
-            ))}
-          </div>
-        </div>
+      <div className="grid-form">
+        <label className="field full"><span>Назва</span><input className="input" value={form.title} onChange={set('title')} /></label>
+        <label className="field">
+          <span>Категорія</span>
+          <select className="select" value={form.category} onChange={set('category')}>
+            {CATS.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+          </select>
+        </label>
+        {field('color', 'Колір')}
+        {field('brand', 'Бренд')}
+        {field('size', 'Розмір')}
+        {field('model', 'Модель')}
+        {field('composition', 'Склад')}
+        {field('fit', 'Крій')}
       </div>
-    </DetailPage>
+    </Modal>
   );
 }
 
@@ -309,7 +233,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const missing = db.items.filter((i) => !i.packshotId && i.status !== 'inactive' && !busy.has(i.id)).length;
   const title = view === 'new' ? 'Нові з фото' : cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі';
   // An item opens as its own page, not a side panel over the grid.
-  if (open) return <ItemPage item={open} onClose={() => go('/wardrobe')} />;
+  if (open) return <ItemPage item={open} />;
 
   return (
     <div className="page">

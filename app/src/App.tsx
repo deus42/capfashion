@@ -72,24 +72,30 @@ export default function App() {
 
   return (
     <div className="shell">
+      <nav className="rail" aria-label="Розділи">
+        <a href="/home" className="rail-logo" aria-label="Cap Fashion">
+          <Shirt size={18} />
+        </a>
+        <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
+        <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
+        <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
+        <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
+        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} desk />
+        <div className="rail-spacer" />
+        <a href="/profile" className={`rail-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
+          {avatar ? <Img path={avatar.path} w={120} /> : <User size={18} />}
+        </a>
+      </nav>
       <div className="frame">
         {(activeJobs > 0 || runner.running) && <div className="busy-bar app-progress" role="progressbar" aria-label="Обробка" />}
-        {/* No side panels anywhere (owner rule): sections sit in the top bar, a bottom bar on phones. */}
         <header className="topbar">
-          <a href="/home" className="wordmark">Cap Fashion</a>
-          <nav className="rail" aria-label="Розділи">
-            <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
-            <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
-            <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
-            <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
-            <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} />
-          </nav>
+          <a href="/home" className="wordmark m-only">Cap Fashion</a>
           <div className="grow" />
           <button className="btn primary sm" onClick={intake.pick} disabled={intake.busy}>
             {intake.busy ? <Loader2 size={14} className="spin" /> : <Camera size={14} />} Додати фото
           </button>
           {intake.field}
-          <a href="/profile" className={`top-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
+          <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}
           </a>
         </header>

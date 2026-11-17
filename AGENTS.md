@@ -101,12 +101,15 @@
 
 ### Interface — owner rules, 17 November 2026
 
-- NEVER use side panels: no drawers, slide-overs, side sheets, side detail panels or sidebars (including sidebar navigation), no bottom detail panels. Details open as their own page or inline; navigation is a top bar (bottom bar on phones). Global source: `/Users/deus/Projects/Vault-Tec/34 Preferences/Interface and frontend preferences.md`.
+- ALWAYS minimal design: the fewest elements that do the job; no explanatory text, duplicate buttons/selectors, history, IDs or debug data on owner screens; editing and secondary actions behind one pencil modal. Before shipping a screen, remove everything that does not block the main task.
+- NEVER a panel that slides out from the side on click (drawer, slide-over, side sheet) for details or forms; open details as their own page (the wardrobe item is a page). The established layout stays: the left navigation rail (bottom bar on phones), filter columns and the gallery are not side panels. Global source: `/Users/deus/Projects/Vault-Tec/34 Preferences/Interface and frontend preferences.md`.
+- Change only what the owner asked; never redesign the layout or other screens on your own. When the request is unclear, ask the owner (in Ukrainian) before changing anything.
 - Everything visible: no accordions, collapsible sections or show-more toggles. Help is inline (info mark next to a term, hover or tap), never a separate page.
 - Minimal screens: one look screen (best picture or the look's pieces, «Це я?», swap pieces, accessory options); no queue or background-processing controls — show a thin progress bar while work runs.
 - For UI work apply the shared `frontend-skill`; the rules above override any skill or template suggesting drawers or sidebars.
 
 ### Mandatory original-photo identity — owner instruction, 17 November 2026
+
 
 - LATEST STOP, 17 November: after rejecting the Photo 5 render and the montage direction, the owner ordered the bad face removed. Personal render generation is STOPPED until a new explicit request. Keep the identity setup disabled. Rejected face attempts are retained locally as history but marked `hiddenAt` and excluded from all site views/result links/comparisons; never restore them through retries or automatic queue repair. Do not display another face attempt in the chat. Original personal reference photos remain protected; belt/polo catalogue updates remain active.
 

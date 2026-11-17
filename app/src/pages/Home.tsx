@@ -53,7 +53,7 @@ export function useIntake() {
 }
 
 function processing(db: DB) {
-  const recent = Date.now() - 3 * 3600 * 1000;
+  const recent = Date.now() - 15 * 60 * 1000;
   return db.jobs
     .filter(
       (j) =>
@@ -61,7 +61,18 @@ function processing(db: DB) {
         (j.state === 'queued' || j.state === 'running' || (j.state === 'error' && !db.jobs.some((x) => x.retryOf === j.id)) || (j.kind === 'intake' && j.state === 'done' && new Date(j.finishedAt ?? 0).getTime() > recent)),
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 8);
+    .slice(0, 6);
+}
+
+/** Short outcome label for a finished upload. */
+function outcome(db: DB, j: Job) {
+  const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
+  const parts: string[] = [];
+  if (photo?.kind === 'base') parts.push(photo.meetsStandard ? 'Твоє фото ✓' : 'Твоє фото');
+  if (photo?.kind === 'label') parts.push('Етикетка');
+  const n = j.createdItemIds?.length ?? 0;
+  if (n) parts.push(`+${n} ${n === 1 ? 'річ' : n < 5 ? 'речі' : 'речей'}`);
+  return parts.join(' · ') || 'Без змін';
 }
 
 function ProcCard({ j }: { j: Job }) {
@@ -80,7 +91,7 @@ function ProcCard({ j }: { j: Job }) {
           </Badge>
         </span>
       </div>
-      <span className="t">{done || j.state === 'error' ? j.stateNote : j.kind === 'analyze' ? 'Підбірка образів' : 'Розбираю фото…'}</span>
+      <span className="t">{done ? (j.kind === 'intake' ? outcome(db, j) : 'Підбірка готова') : j.state === 'error' ? 'Помилка — відкрий чергу' : j.kind === 'analyze' ? 'Підбірка образів' : 'Розбираю фото…'}</span>
     </a>
   );
 }

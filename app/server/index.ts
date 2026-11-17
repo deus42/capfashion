@@ -6,7 +6,7 @@ import { createStore, HttpError } from './store.ts';
 import { buildSeed } from './seed.ts';
 import { createRunner } from './runner.ts';
 import { dispatch, upload } from './routes.ts';
-import { CONTENT_TYPES, MAX_UPLOAD_BYTES, resolveAllowed, thumbnail } from './media.ts';
+import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, thumbnail } from './media.ts';
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROJECT_ROOT = path.resolve(APP_DIR, '..');
@@ -127,7 +127,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const rel = decodeURIComponent(url.pathname.slice('/thumb/'.length));
     const file = resolveAllowed(PROJECT_ROOT, DATA_DIR, rel);
     if (!fs.existsSync(file)) return send(res, 404, { error: 'Файл не знайдено' });
-    const size = Math.min(1600, Math.max(160, Number(url.searchParams.get('w')) || 720));
+    const size = snapWidth(Number(url.searchParams.get('w')) || 480);
     const thumb = await thumbnail(PROJECT_ROOT, DATA_DIR, rel, rel, size);
     return sendFile(res, thumb, 'private, max-age=86400');
   }
@@ -151,6 +151,11 @@ const server = http.createServer((req, res) => {
 });
 
 const interrupted = await runner.recover();
+// Warm the thumbnail cache for everything the UI shows, in the background.
+{
+  const db = store.read();
+  prewarm(PROJECT_ROOT, DATA_DIR, [...db.photos.map((p) => p.path), ...db.results.map((r) => r.imagePath)]);
+}
 server.listen(PORT, HOST, () => {
   console.log(`${new Date().toISOString()} Cap Fashion: http://${HOST}:${PORT}  (дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${runner.state.codexBin})`);
   // A run was in progress when the server stopped: continue it. Jobs that were only queued wait for "Запустити".

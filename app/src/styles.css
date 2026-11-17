@@ -202,7 +202,7 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 /* ── Image tiles, gallery, collages ───────────────────── */
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
 .gtile { position: relative; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); cursor: zoom-in; display: block; text-align: left; width: 100%; }
-.gtile img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
+.gtile img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; background: var(--sunken); }
 .gtile.contain img { object-fit: contain; padding: 10px; }
 .gtile:hover img { transform: scale(1.03); }
 .gtile .tl { position: absolute; top: 8px; left: 8px; display: flex; gap: 5px; }
@@ -351,7 +351,7 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .studio-card .tl { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; max-width: 80%; z-index: 3; }
 .studio-card .tr { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 3; }
 .studio-card > .collage { position: absolute; inset: 0; opacity: .45; }
-.studio-card.plain { flex: none; width: min(560px, calc((100vh - 290px) * 2 / 3)); }
+.studio-center .studio-card { flex: none; width: min(560px, calc((100vh - 330px) * 2 / 3)); }
 .studio-card.plain > .collage { opacity: 1; }
 .studio-cta { position: absolute; left: 0; right: 0; bottom: 20px; display: flex; justify-content: center; z-index: 3; }
 .slot-chip { display: inline-flex; align-items: center; gap: 9px; height: 46px; padding: 0 14px 0 5px; border-radius: 13px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; color: var(--ink-2); white-space: nowrap; box-shadow: var(--shadow-sm); flex: none; }
@@ -401,7 +401,7 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .scrim { position: fixed; inset: 0; background: rgba(24, 24, 27, 0.32); z-index: 50; display: flex; animation: fade .15s ease; }
 @keyframes fade { from { opacity: 0; } }
 .drawer { margin-left: auto; width: min(600px, 100%); height: 100%; background: var(--surface); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; animation: slide .2s ease; }
-@keyframes slide { from { transform: translateX(24px); opacity: .6; } }
+@keyframes slide { from { transform: translateX(24px); } }
 .drawer-head, .modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .drawer-head h2, .modal-head h2 { font-size: 17px; font-weight: 620; flex: 1; min-width: 0; }
 .drawer-body, .modal-body { padding: 22px 20px; overflow: auto; flex: 1; }

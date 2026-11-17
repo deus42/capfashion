@@ -23,9 +23,12 @@ export function QueuePage() {
   const { act, state } = useApp();
   const [log, setLog] = useState<Job | null>(null);
   const [kind, setKind] = useState<'all' | 'tryon' | 'packshot'>('all');
+  const [history, setHistory] = useState(false);
+  const replaced = new Set(db.jobs.map((j) => j.retryOf).filter(Boolean));
   const order = { running: 0, queued: 1, error: 2, needs_data: 3, done: 4 } as const;
   const jobs = db.jobs
-    .filter((j) => kind === 'all' || (j.kind ?? 'tryon') === kind)
+    .filter((j) => kind === 'all' || (j.kind ?? 'tryon') === kind || (kind === 'tryon' && (j.kind === 'intake' || j.kind === 'analyze')))
+    .filter((j) => history || !(replaced.has(j.id) && j.state !== 'queued' && j.state !== 'running'))
     .slice()
     .sort((a, b) => order[a.state] - order[b.state] || b.createdAt.localeCompare(a.createdAt));
   const queued = jobs.filter((j) => j.state === 'queued').length;
@@ -48,6 +51,7 @@ export function QueuePage() {
           <button className={kind === 'tryon' ? 'on' : ''} onClick={() => setKind('tryon')}>Примірки</button>
           <button className={kind === 'packshot' ? 'on' : ''} onClick={() => setKind('packshot')}>Packshot</button>
         </div>
+        <button className={`chip${history ? ' active' : ''}`} onClick={() => setHistory((v) => !v)}>Історія повторів</button>
         <span className="grow" />
         <span className="small muted">{db.jobs.filter((j) => j.state === 'done').length} готово · {db.jobs.filter((j) => j.state === 'queued' || j.state === 'running').length} у роботі й черзі · {db.jobs.filter((j) => j.state === 'error').length} помилок</span>
       </div>
@@ -70,11 +74,13 @@ export function QueuePage() {
                 </a>
                 <div className="grow stack" style={{ gap: 4 }}>
                   <div className="row wrap">
-                    <span className="title">{j.snapshot.lookName || look?.name}</span>
+                    <span className="title">{j.kind === 'intake' ? 'Розбір фото' : j.kind === 'analyze' ? 'Підбірка з моїх речей' : j.snapshot.lookName || look?.name}</span>
                     {j.kind === 'packshot' && <Badge tone="info">packshot</Badge>}
                     <Badge tone={JOB_TONE[j.state]}>{JOB_LABEL[j.state]}</Badge>
                     {result && <Badge tone={REVIEW_TONE[result.review]}>{REVIEW_LABEL[result.review]}</Badge>}
-                    {j.kind !== 'packshot' && <span className="small faint">v{j.lookVersion}</span>}
+                    {(j.kind ?? 'tryon') === 'tryon' && <span className="small faint">v{j.lookVersion}</span>}
+                    {j.kind === 'intake' && <Badge>фото</Badge>}
+                    {j.kind === 'analyze' && <Badge>підбірка</Badge>}
                     {j.origin === 'import' && <Badge>імпорт</Badge>}
                   </div>
                   {j.stateNote && <span className="small muted">{j.stateNote}</span>}

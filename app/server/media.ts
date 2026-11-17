@@ -44,15 +44,57 @@ export async function saveUpload(projectRoot: string, dataDir: string, id: strin
   };
 }
 
-/** Lazily builds a cached JPEG thumbnail for any allowed image. */
+/** Thumbnails come in three sizes so caching and prewarming cover every request. */
+export function snapWidth(w: number) {
+  if (w <= 200) return 160;
+  if (w <= 600) return 480;
+  return 960;
+}
+
+const warmQueue: { projectRoot: string; dataDir: string; rel: string; size: number }[] = [];
+let warming = 0;
+function pumpWarm() {
+  while (warming < 2 && warmQueue.length) {
+    const t = warmQueue.shift()!;
+    warming += 1;
+    thumbnail(t.projectRoot, t.dataDir, t.rel, t.rel, t.size)
+      .catch(() => undefined)
+      .finally(() => {
+        warming -= 1;
+        pumpWarm();
+      });
+  }
+}
+
+/** Generates thumbnails in the background (two sips processes at most). */
+export function prewarm(projectRoot: string, dataDir: string, rels: string[], sizes = [160, 480]) {
+  for (const rel of rels) for (const size of sizes) warmQueue.push({ projectRoot, dataDir, rel, size });
+  pumpWarm();
+}
+
+const inflight = new Map<string, Promise<string>>();
+
+/** Lazily builds a cached JPEG thumbnail; concurrent requests for one file share a single sips run. */
 export async function thumbnail(projectRoot: string, dataDir: string, key: string, relPath: string, size = 720) {
   const dir = path.join(dataDir, 'media', 'thumbs');
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, `${key.replace(/[^\w.-]/g, '_')}-${size}.jpg`);
   const src = path.join(projectRoot, relPath);
   if (fs.existsSync(out) && fs.statSync(out).mtimeMs >= fs.statSync(src).mtimeMs) return out;
-  await run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '82', '-Z', String(size), src, '--out', out]);
-  return out;
+  const pending = inflight.get(out);
+  if (pending) return pending;
+  const tmp = `${out}.${process.pid}.${Math.random().toString(36).slice(2, 7)}.jpg`;
+  const job = run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '82', '-Z', String(size), src, '--out', tmp])
+    .then(() => {
+      fs.renameSync(tmp, out);
+      return out;
+    })
+    .finally(() => {
+      inflight.delete(out);
+      fs.rmSync(tmp, { force: true });
+    });
+  inflight.set(out, job);
+  return job;
 }
 
 /** Only these project folders may be served or attached to Codex jobs. */

@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import type { DB, Job, SnapshotSlot } from './schema.ts';
 import type { Store } from './store.ts';
 import { newId, now } from './store.ts';
-import { resolveAllowed, thumbnail } from './media.ts';
+import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
 import { packshotJob } from './routes.ts';
 
@@ -332,6 +332,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
           createdAt: now(),
         };
         db.photos.push(photo);
+        prewarm(projectRoot, store.dataDir, [photo.path]);
         j.photoId = photo.id;
         const item = j.itemId ? db.items.find((i) => i.id === j.itemId) : undefined;
         if (item) {
@@ -355,6 +356,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const target = path.join(rendersDir, `${j.id}.png`);
       fs.copyFileSync(image, target);
       const resultId = newId('R');
+      prewarm(projectRoot, store.dataDir, [path.relative(projectRoot, target)], [160, 480, 960]);
       db.results.push({
         id: resultId,
         jobId: j.id,

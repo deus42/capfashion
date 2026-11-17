@@ -3,7 +3,7 @@ import type { DB, Item, Job, Look, Photo, PhotoKind, ReworkReason, SlotKey, Slot
 import { CATEGORIES, ITEM_STATUSES, MEASURE_KEYS, PHOTO_KINDS, REWORK_REASONS, SEASONS, SLOT_KEYS } from './schema.ts';
 import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
-import { saveUpload } from './media.ts';
+import { prewarm, saveUpload } from './media.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -134,6 +134,7 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
   if (!PHOTO_KINDS.includes(kind) || kind === 'source' || kind === 'packshot') throw new HttpError(400, 'Невідомий тип фото');
   const id = newId('P');
   const saved = await saveUpload(ctx.projectRoot, ctx.store.dataDir, id, buf);
+  prewarm(ctx.projectRoot, ctx.store.dataDir, [saved.path]);
   const itemId = query.get('item');
   const productId = query.get('product');
   return ctx.store.mutate((db) => {

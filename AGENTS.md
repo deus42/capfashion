@@ -110,6 +110,7 @@
 
 ### Mandatory original-photo identity — owner instruction, 17 November 2026
 
+- Latest scoped permission: one new frontal portrait preview in this chat for explicit owner approval. Site generation and identity activation remain stopped until that approval. This is not permission for a batch, site import, or reusing a rejected image as identity. Preserve the original source; keep the preview separate from originals.
 
 - LATEST STOP, 17 November: after rejecting the Photo 5 render and the montage direction, the owner ordered the bad face removed. Personal render generation is STOPPED until a new explicit request. Keep the identity setup disabled. Rejected face attempts are retained locally as history but marked `hiddenAt` and excluded from all site views/result links/comparisons; never restore them through retries or automatic queue repair. Do not display another face attempt in the chat. Original personal reference photos remain protected; belt/polo catalogue updates remain active.
 

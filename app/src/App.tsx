@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import {
-  BookOpen, Camera, ChevronsUpDown, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
+  BookOpen, Camera, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
 import { Img } from './components/ui.tsx';
@@ -91,11 +91,8 @@ export default function App() {
       <div className="frame">
         {(activeJobs > 0 || runner.running) && <div className="progress app-progress" role="progressbar" aria-label="Обробка" />}
         <header className="topbar">
-          <a href="/home" className="org-pill">
-            <small>Гардероб</small>
-            <b>Cap Fashion</b>
-            <ChevronsUpDown size={14} className="faint" />
-          </a>
+          {/* Phones have no side rail: the name is the way home. Nothing to switch, so no switcher. */}
+          <a href="/home" className="wordmark m-only">Cap Fashion</a>
           <div className="grow" />
           <span className="tag">Local</span>
           <button className="btn primary sm" onClick={intake.pick} disabled={intake.busy}>

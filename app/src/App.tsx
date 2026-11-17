@@ -1,21 +1,25 @@
 import type { ReactNode } from 'react';
-import { BookOpen, Inbox, LayoutGrid, Loader2, Shirt, ShoppingBag, Sparkles, TriangleAlert, User } from 'lucide-react';
+import {
+  BookOpen, ChevronsUpDown, House, Images, Inbox, LayoutGrid, Loader2, Shirt, ShoppingBag, Sparkles, TriangleAlert, User,
+} from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
-import { UploadButton } from './components/ui.tsx';
+import { Img, UploadButton } from './components/ui.tsx';
+import { HomePage } from './pages/Home.tsx';
 import { CapsuleDetail, CapsulesPage } from './pages/Capsules.tsx';
 import { WardrobePage } from './pages/Wardrobe.tsx';
 import { StudioPage } from './pages/Studio.tsx';
+import { GalleryPage } from './pages/Gallery.tsx';
 import { QueuePage } from './pages/Queue.tsx';
 import { ShoppingPage } from './pages/Shopping.tsx';
 import { ProfilePage } from './pages/Profile.tsx';
 import { GlossaryPage } from './pages/Glossary.tsx';
 
-function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: boolean; desk?: boolean }) {
+function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: number; desk?: boolean }) {
   return (
     <a href={`#/${to}`} className={`rail-item${active ? ' active' : ''}${desk ? ' desk' : ''}`} aria-current={active ? 'page' : undefined}>
       {icon}
       <span>{label}</span>
-      {dot && <span className="dot" />}
+      {dot ? <span className="dot">{dot > 9 ? '9+' : dot}</span> : null}
     </a>
   );
 }
@@ -23,7 +27,7 @@ function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: Re
 export default function App() {
   const { state, error } = useApp();
   const { parts, query } = useRoute();
-  const section = parts[0] ?? 'capsules';
+  const section = parts[0] ?? 'home';
 
   if (!state) {
     return (
@@ -44,48 +48,60 @@ export default function App() {
   const { db, runner } = state;
   const pendingReview = db.results.filter((r) => r.review === 'pending').length;
   const activeJobs = db.jobs.filter((j) => j.state === 'queued' || j.state === 'running').length;
-  const ic = 18;
+  const avatar = db.profile.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).find(Boolean);
+  const ic = 20;
 
   let page: ReactNode;
   if (section === 'capsules' && parts[1]) page = <CapsuleDetail id={parts[1]} />;
   else if (section === 'capsules') page = <CapsulesPage />;
   else if (section === 'wardrobe') page = <WardrobePage openId={parts[1]} />;
   else if (section === 'studio') page = <StudioPage lookId={query.get('look') ?? undefined} resultId={query.get('result') ?? undefined} />;
+  else if (section === 'gallery') page = <GalleryPage />;
   else if (section === 'queue') page = <QueuePage />;
   else if (section === 'shopping') page = <ShoppingPage focus={query.get('need') ?? undefined} />;
-  else if (section === 'profile') page = <ProfilePage />;
+  else if (section === 'profile') page = <ProfilePage tab={parts[1]} />;
   else if (section === 'glossary') page = <GlossaryPage focus={query.get('term') ?? undefined} />;
-  else page = <CapsulesPage />;
+  else page = <HomePage />;
 
   return (
     <div className="shell">
       <nav className="rail" aria-label="Розділи">
-        <a href="#/capsules" className="rail-logo" aria-label="Cap Fashion">
+        <a href="#/home" className="rail-logo" aria-label="Cap Fashion">
           <Shirt size={18} />
         </a>
+        <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
         <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules'} />
+        <RailItem to="studio" icon={<Sparkles size={ic} />} label="Примірка" active={section === 'studio'} dot={pendingReview} />
+        <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
         <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
-        <RailItem to="studio" icon={<Sparkles size={ic} />} label="Примірка" active={section === 'studio'} dot={pendingReview > 0} />
-        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} />
-        <RailItem to="profile" icon={<User size={ic} />} label="Профіль" active={section === 'profile'} />
+        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} desk />
         <div className="rail-spacer" />
-        <RailItem to="queue" icon={<Inbox size={ic} />} label="Черга" active={section === 'queue'} dot={activeJobs > 0} />
+        <RailItem to="queue" icon={<Inbox size={ic} />} label="Черга" active={section === 'queue'} dot={activeJobs} desk />
         <RailItem to="glossary" icon={<BookOpen size={ic} />} label="Довідка" active={section === 'glossary'} desk />
+        <a href="#/profile" className={`rail-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
+          {avatar ? <Img path={avatar.path} w={120} /> : <User size={18} />}
+        </a>
       </nav>
       <div className="frame">
         <header className="topbar">
-          <div className="org-pill">
+          <a href="#/home" className="org-pill">
             <small>Гардероб</small>
             <b>Cap Fashion</b>
-          </div>
+            <ChevronsUpDown size={14} className="faint" />
+          </a>
           <div className="grow" />
           <span className="tag">Local</span>
-          <button className="meta btn ghost sm" onClick={() => go('/queue')} title="Черга примірок">
-            {runner.running ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}
-            Codex · {db.settings.codexModel.replace(/^gpt-/, '')}
-            {activeJobs > 0 && <b> · {activeJobs} в черзі</b>}
+          <button className="credits" onClick={() => go('/queue')} title="Черга примірок і packshot">
+            {runner.running ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+            <span className="lbl">
+              Codex · <b>{db.settings.codexModel.replace(/^gpt-/, '')}</b>
+            </span>
+            {activeJobs > 0 && <b>{activeJobs} в роботі</b>}
           </button>
-          <UploadButton kind="item" className="btn primary sm" label="Додати фото" onDone={() => go('/wardrobe')} />
+          <UploadButton kind="base" className="btn primary sm" label="Додати фото" onDone={() => go('/profile')} />
+          <a href="#/profile" className="top-avatar m-only" aria-label="Мій профіль">
+            {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}
+          </a>
         </header>
         {state.recovered && (
           <div className="banner warn">

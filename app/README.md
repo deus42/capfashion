@@ -1,6 +1,6 @@
 # Cap Fashion — local site
 
-Personal capsule-wardrobe site from the [v1 specification](../docs/superpowers/specs/2026-11-15-cap-fashion-design.md): capsules, wardrobe, try-on studio, shopping list, profile, try-on queue and legend. The UI follows FASHN's layout in simplified form, without FASHN's logo, name or assets.
+Personal capsule-wardrobe site from the [v1 specification](../docs/superpowers/specs/2026-11-15-cap-fashion-design.md). Sections: Home, Capsules, Try-on studio, Gallery, Wardrobe (Elements-style), Shopping, Queue, Legend; Profile opens from the avatar. The UI follows FASHN's layout and visual language in simplified form: icon rail, serif display titles (self-hosted Noto Serif Display), Geist UI type, image-first tiles. FASHN's logo, name and assets are not used.
 
 ## Run
 
@@ -29,6 +29,10 @@ Checks: `npm run check`, which runs typecheck, server tests (acceptance A02, A04
 - Model and effort are set in Профіль → Генерація.
 - The result is saved as "На перевірці". The owner chooses "Прийняти" or "Переробити" with a reason, which queues a linked retry.
 
+## Packshots and concept images
+
+Wardrobe items get a clean catalogue image generated from their original photos (`POST /api/packshots`, `{all:true}` or `itemIds`). Desired item types (needs) get a concept image (`{allNeeds:true}`). Both are labelled as generative reconstructions and stored apart from the originals in `media/packshots/`. Capsule and look covers use these as a flat-lay until a try-on exists. Jobs share the queue; `settings.concurrency` (default 2) controls how many Codex runs execute at once.
+
 ## iPhone access (Tailscale)
 
 The server listens only on `127.0.0.1`. To open it from the iPhone inside the tailnet:
@@ -43,5 +47,7 @@ The server listens only on `127.0.0.1`. To open it from the iPhone inside the ta
 3. Open `https://<this-mac>.<tailnet>.ts.net:10443` on the iPhone.
 
 Requests whose Host is not loopback, or that carry proxy headers, must have a `Tailscale-User-Login` header equal to the configured login; otherwise they get 403. Mutating API calls also require the site's `x-capfashion` header, which blocks cross-site form posts. Never use `tailscale funnel` for this site.
+
+Enabled 17 November 2026 with the owner's approval: `https://<this-mac>.<tailnet>.ts.net:10443`, owner login set in settings. The server must be running (`npm start`) for the phone to connect.
 
 Rollback: `tailscale serve --https=10443 off`.

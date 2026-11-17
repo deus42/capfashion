@@ -9,20 +9,36 @@ import { resolveAllowed } from './media.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
+const BUNDLED_CODEX = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 
 export interface RunnerState {
   running: boolean;
   currentJobId: string | null;
+  activeJobIds: string[];
   lastError: string | null;
+  codexBin: string;
 }
 
+/** Prefers the Codex bundled with the ChatGPT desktop app: it knows the current models (e.g. Sol). */
+export function findCodex() {
+  if (process.env.CAPFASHION_CODEX_BIN) return process.env.CAPFASHION_CODEX_BIN;
+  if (fs.existsSync(BUNDLED_CODEX)) return BUNDLED_CODEX;
+  return 'codex';
+}
+
+const REPLY_RULES = [
+  'When the PNG is saved at the path above, reply with JSON only: {"status":"done","notes":"<one short sentence on visible deviations>"}',
+  'If image generation is unavailable or fails, reply with JSON only: {"status":"error","reason":"<why>"}',
+];
+
 export function buildPrompt(job: Job, resultFile: string) {
+  if (job.kind === 'packshot') return buildPackshotPrompt(job, resultFile);
   const outfit = job.snapshot.slots
     .map((s: SnapshotSlot) => {
       const ref = s.photoPaths.length
         ? ` Garment reference photos attached (${s.photoPaths.map((p) => path.basename(p)).join(', ')}): copy ONLY this garment's colour and visible construction from them, ignore everything else in those photos.`
         : ' No photo: render as a plain, unbranded concept from the description.';
-      return `- ${SLOT_LABEL[s.slot]}: ${s.title}. ${s.description}${s.owned ? ' (the owner\'s own item)' : ' (proposed item, concept by description)'}.${ref}`;
+      return `- ${SLOT_LABEL[s.slot]}: ${s.title}. ${s.description}${s.owned ? " (the owner's own item)" : ' (proposed item, concept by description)'}.${ref}`;
     })
     .join('\n');
   return [
@@ -38,8 +54,27 @@ export function buildPrompt(job: Job, resultFile: string) {
     job.instructions ? `Owner instructions: ${job.instructions}` : '',
     'Do not make him younger, slimmer, taller or more muscular; no beauty retouching or face replacement. Calm, quality, minimal-branding relaxed smart casual; natural fabric drape.',
     '',
-    'When the PNG is saved at the path above, reply with JSON only: {"status":"done","notes":"<one short sentence on visible deviations>"}',
-    'If image generation is unavailable or fails, reply with JSON only: {"status":"error","reason":"<why>"}',
+    ...REPLY_RULES,
+  ]
+    .filter((l) => l !== '')
+    .join('\n');
+}
+
+export function buildPackshotPrompt(job: Job, resultFile: string) {
+  const s = job.snapshot.slots[0];
+  const fromPhotos = s.photoPaths.length > 0;
+  return [
+    'You are the Cap Fashion catalogue worker running unattended. Do exactly one task and finish.',
+    `Task: create ONE photorealistic e-commerce packshot with your built-in image generation tool and save it as a PNG file at this exact path: ${resultFile}`,
+    '',
+    `Garment: ${s.title}.${s.description ? ` Notes: ${s.description}.` : ''}`,
+    fromPhotos
+      ? `Reference photos attached (${s.photoPaths.map((p) => path.basename(p)).join(', ')}). They are personal snapshots: find this garment as worn or held by the man who appears in them (the owner). Ignore other people, their clothes, the phone, mirror and background. Copy the garment's colour, material look, construction details and any visible logo placement faithfully; reconstruct hidden parts plausibly and conservatively. Do not invent brand names or text that are not visible.`
+      : 'No photo exists: render a plain, unbranded, high-quality example of this garment type exactly as described.',
+    'Image standard: only the garment (or the pair of shoes / single accessory); centred front view; ghost-mannequin style for tops, outerwear and trousers, neatly presented for shoes and accessories; pure white (#FFFFFF) seamless background; soft even studio light; subtle natural shadow; no person, no hanger, no text, no watermark; square composition with generous margin.',
+    job.instructions ? `Owner instructions: ${job.instructions}` : '',
+    '',
+    ...REPLY_RULES,
   ]
     .filter((l) => l !== '')
     .join('\n');
@@ -74,25 +109,24 @@ function parseReply(text: string): { status?: string; notes?: string; reason?: s
 }
 
 /**
- * Sequential queue worker. Each job runs an isolated `codex exec`: personal
- * Codex config ignored, workspace-write sandbox limited to the job folder,
- * inputs attached as images, ephemeral session.
+ * Queue worker pool. Each job runs an isolated `codex exec`: personal Codex
+ * config ignored, workspace-write sandbox limited to the job folder, inputs
+ * attached as images, ephemeral session. Up to `settings.concurrency` jobs
+ * (default 2) run at once.
  */
-const BUNDLED_CODEX = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
-
-/** Prefers the Codex bundled with the ChatGPT desktop app: it knows the current models (e.g. Sol). */
-export function findCodex() {
-  if (process.env.CAPFASHION_CODEX_BIN) return process.env.CAPFASHION_CODEX_BIN;
-  if (fs.existsSync(BUNDLED_CODEX)) return BUNDLED_CODEX;
-  return 'codex';
-}
-
 export function createRunner(store: Store, projectRoot: string, codexBin = findCodex()) {
-  const state: RunnerState & { codexBin: string } = { running: false, currentJobId: null, lastError: null, codexBin };
+  const active = new Set<string>();
+  const state: RunnerState = { running: false, currentJobId: null, activeJobIds: [], lastError: null, codexBin };
+  const sync = () => {
+    state.activeJobIds = [...active];
+    state.running = active.size > 0;
+    state.currentJobId = state.activeJobIds[0] ?? null;
+  };
 
   async function runOne(jobId: string) {
     const db0 = store.read();
     const job = db0.jobs.find((j) => j.id === jobId)!;
+    const isPackshot = job.kind === 'packshot';
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
     fs.mkdirSync(jobDir, { recursive: true });
     const resultFile = path.join(jobDir, 'result.png');
@@ -154,7 +188,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const reply = fs.existsSync(lastMsg) ? parseReply(fs.readFileSync(lastMsg, 'utf8')) : {};
     let image = fs.existsSync(resultFile) ? resultFile : null;
     let note = reply.notes;
-    if (!image && reply.status !== 'error') {
+    // The global fallback is unsafe with parallel jobs, so only use it when this job ran alone.
+    if (!image && reply.status !== 'error' && active.size <= 1) {
       const fallback = newestGeneratedSince(started);
       if (fallback) {
         fs.copyFileSync(fallback, resultFile);
@@ -166,82 +201,128 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     await store.mutate((db: DB) => {
       const j = db.jobs.find((x) => x.id === jobId)!;
       j.finishedAt = now();
-      if (image) {
-        const rendersDir = path.join(store.dataDir, 'media', 'renders');
-        fs.mkdirSync(rendersDir, { recursive: true });
-        const target = path.join(rendersDir, `${j.id}.png`);
-        fs.copyFileSync(image, target);
-        const resultId = newId('R');
-        db.results.push({
-          id: resultId,
-          jobId: j.id,
-          lookId: j.lookId,
-          lookVersion: j.lookVersion,
-          imagePath: path.relative(projectRoot, target),
-          tool: 'Codex CLI exec · built-in image generation',
-          model: settings.codexModel,
-          prompt,
-          sources: uniqueImages.map((p) => path.relative(projectRoot, p)),
-          usedItemPhotos: j.snapshot.slots.some((s) => s.photoPaths.length > 0),
-          notes: note,
-          review: 'pending',
-          favorite: false,
-          createdAt: now(),
-        });
-        j.resultId = resultId;
-        j.state = 'done';
-        j.stateNote = 'Готово — чекає твоєї перевірки';
-      } else {
+      if (!image) {
         j.state = 'error';
         j.stateNote =
           reply.reason ||
           exit.err ||
           (exit.code === 0 ? 'Codex завершив роботу, але не зберіг зображення' : `Codex завершився з кодом ${String(exit.code)} — див. журнал`);
+        return;
       }
+      if (isPackshot) {
+        const dir = path.join(store.dataDir, 'media', 'packshots');
+        fs.mkdirSync(dir, { recursive: true });
+        const target = path.join(dir, `${j.id}.png`);
+        fs.copyFileSync(image, target);
+        const title = j.snapshot.slots[0]?.title ?? 'Річ';
+        const photo = {
+          id: newId('P'),
+          kind: 'packshot' as const,
+          path: path.relative(projectRoot, target),
+          originalName: `${title} — packshot`,
+          source: 'generated' as const,
+          note: `Генеративна реконструкція (${settings.codexModel}); не доказ складу, розміру чи прихованих деталей.${note ? ` ${note}` : ''}`,
+          createdAt: now(),
+        };
+        db.photos.push(photo);
+        j.photoId = photo.id;
+        const item = j.itemId ? db.items.find((i) => i.id === j.itemId) : undefined;
+        if (item) {
+          item.packshotId = photo.id;
+          item.rev += 1;
+          item.updatedAt = now();
+          item.history.push({ at: now(), action: 'packshot', note: photo.id });
+        }
+        const need = j.needId ? db.needs.find((n) => n.id === j.needId) : undefined;
+        if (need) {
+          need.conceptPhotoId = photo.id;
+          need.rev += 1;
+          need.updatedAt = now();
+        }
+        j.state = 'done';
+        j.stateNote = 'Packshot готовий';
+        return;
+      }
+      const rendersDir = path.join(store.dataDir, 'media', 'renders');
+      fs.mkdirSync(rendersDir, { recursive: true });
+      const target = path.join(rendersDir, `${j.id}.png`);
+      fs.copyFileSync(image, target);
+      const resultId = newId('R');
+      db.results.push({
+        id: resultId,
+        jobId: j.id,
+        lookId: j.lookId!,
+        lookVersion: j.lookVersion,
+        imagePath: path.relative(projectRoot, target),
+        tool: 'Codex CLI exec · built-in image generation',
+        model: settings.codexModel,
+        prompt,
+        sources: uniqueImages.map((p) => path.relative(projectRoot, p)),
+        usedItemPhotos: j.snapshot.slots.some((s) => s.photoPaths.length > 0),
+        notes: note,
+        review: 'pending',
+        favorite: false,
+        createdAt: now(),
+      });
+      j.resultId = resultId;
+      j.state = 'done';
+      j.stateNote = 'Готово — чекає твоєї перевірки';
     });
   }
 
-  async function drain() {
-    if (state.running) return;
-    state.running = true;
-    state.lastError = null;
+  async function runSafe(jobId: string) {
     try {
-      for (;;) {
-        const next = store
-          .read()
-          .jobs.filter((j) => j.state === 'queued')
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-        if (!next) break;
-        state.currentJobId = next.id;
-        try {
-          await runOne(next.id);
-        } catch (e) {
-          state.lastError = (e as Error).message;
-          await store.mutate((db) => {
-            const j = db.jobs.find((x) => x.id === next.id);
-            if (j && j.state !== 'done') {
-              j.state = 'error';
-              j.stateNote = (e as Error).message;
-              j.finishedAt = now();
-            }
-          });
-        }
-      }
-    } finally {
-      state.running = false;
-      state.currentJobId = null;
+      await runOne(jobId);
+    } catch (e) {
+      state.lastError = (e as Error).message;
+      await store
+        .mutate((db) => {
+          const j = db.jobs.find((x) => x.id === jobId);
+          if (j && j.state !== 'done') {
+            j.state = 'error';
+            j.stateNote = (e as Error).message;
+            j.finishedAt = now();
+          }
+        })
+        .catch(() => undefined);
     }
   }
 
-  /** Jobs left "running" by a crash are surfaced as errors on startup. */
+  let draining = false;
+  async function drain() {
+    if (draining) return;
+    draining = true;
+    state.lastError = null;
+    try {
+      for (;;) {
+        const db = store.read();
+        const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
+        const queued = db.jobs.filter((j) => j.state === 'queued' && !active.has(j.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        if (!queued.length && active.size === 0) break;
+        while (active.size < limit && queued.length) {
+          const next = queued.shift()!;
+          active.add(next.id);
+          sync();
+          void runSafe(next.id).finally(() => {
+            active.delete(next.id);
+            sync();
+          });
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } finally {
+      draining = false;
+      sync();
+    }
+  }
+
+  /** Jobs left "running" by a restart go back to the queue; their snapshot is unchanged. */
   async function recover() {
-    const stuck = store.read().jobs.some((j) => j.state === 'running');
-    if (!stuck) return;
+    if (!store.read().jobs.some((j) => j.state === 'running')) return;
     await store.mutate((db) => {
       for (const j of db.jobs) if (j.state === 'running') {
-        j.state = 'error';
-        j.stateNote = 'Сервер перезапустився під час генерації — спробуй ще раз';
-        j.finishedAt = now();
+        j.state = 'queued';
+        j.stateNote = 'Повернуто в чергу після перезапуску сервера';
       }
     });
   }

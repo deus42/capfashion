@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, Plus, Ruler, Settings, Trash2, TriangleAlert, User, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Camera, Check, CircleCheck, Heart, KeyRound, Plus, Ruler, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { Category, KnownSize, MeasureKey } from '../api.ts';
-import { api } from '../api.ts';
-import { useApp, useDb } from '../store.tsx';
-import { Badge, Dropzone, Img, PhotoPicker } from '../components/ui.tsx';
+import { api, thumb } from '../api.ts';
+import { go, useApp, useDb } from '../store.tsx';
+import { Badge, Dropzone, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
 import { CATEGORY_LABEL, MEASURES, fmtDay } from '../lib.ts';
 
 const STANDARD = [
@@ -14,185 +15,81 @@ const STANDARD = [
   'Плюс одне крупне фото обличчя спереду',
 ];
 
-export function ProfilePage() {
+const TABS = [
+  { key: 'base', label: 'Базові фото', icon: <Camera size={17} /> },
+  { key: 'measurements', label: 'Мірки', icon: <Ruler size={17} /> },
+  { key: 'sizes', label: 'Розміри брендів', icon: <Tag size={17} /> },
+  { key: 'preferences', label: 'Побажання', icon: <Heart size={17} /> },
+  { key: 'access', label: 'Генерація і доступ', icon: <KeyRound size={17} /> },
+];
+
+function Section({ title, sub, actions, children }: { title: string; sub?: string; actions?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="card lg">
+      <div className="row" style={{ alignItems: 'flex-start', marginBottom: 22, gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <h2 className="display" style={{ fontSize: 28 }}>{title}</h2>
+          {sub && <p className="muted" style={{ marginTop: 6, maxWidth: 560 }}>{sub}</p>}
+        </div>
+        {actions && <div className="row">{actions}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function BasePhotos() {
   const db = useDb();
   const { act } = useApp();
   const prof = db.profile;
   const [picker, setPicker] = useState(false);
-  const [measures, setMeasures] = useState<Record<MeasureKey, string>>(() => Object.fromEntries(MEASURES.map((m) => [m.key, prof.measurements[m.key].value?.toString() ?? ''])) as Record<MeasureKey, string>);
-  const [sizes, setSizes] = useState<KnownSize[]>(prof.knownSizes);
-  const [prefs, setPrefs] = useState(prof.preferences);
-  const [settings, setSettings] = useState(db.settings);
-  useEffect(() => {
-    setMeasures(Object.fromEntries(MEASURES.map((m) => [m.key, prof.measurements[m.key].value?.toString() ?? ''])) as Record<MeasureKey, string>);
-    setSizes(prof.knownSizes);
-    setPrefs(prof.preferences);
-  }, [prof.rev]);
-  const settingsKey = JSON.stringify(db.settings);
-  useEffect(() => setSettings(db.settings), [settingsKey]);
-
   const base = prof.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
-  const okCount = base.filter((p) => p.meetsStandard).length;
-  const saveProfile = (body: Record<string, unknown>, msg: string) => act(() => api('PATCH', '/api/profile', { rev: prof.rev, ...body }), msg);
-
+  const ok = base.filter((p) => p.meetsStandard).length;
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Мій профіль</h1>
-          <p>Базові фото для примірки, мірки, відомі розміри й побажання. Усе заповнюється поступово — відсутні дані не блокують сайт.</p>
-        </div>
-      </div>
-
-      <div className="card pad" style={{ marginBottom: 16 }}>
-        <div className="row wrap" style={{ marginBottom: 12 }}>
-          <div className="section-title" style={{ margin: 0, flex: 1 }}>
-            <User size={15} /> Базові фото <span className="count">{base.length}</span>
-            {base.length > 0 && <Badge tone={okCount >= 2 ? 'ok' : 'warn'}>{okCount} за стандартом</Badge>}
-          </div>
-          <button className="btn sm" onClick={() => setPicker(true)}>Вибрати з наявних</button>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 16 }} className="profile-base">
-          <div className="stack" style={{ gap: 12 }}>
-            {base.length > 0 && (
-              <div className="photo-strip">
-                {base.map((p) => (
-                  <div key={p.id} className="stack" style={{ gap: 6, width: 120, flex: 'none' }}>
-                    <div className="p" style={{ width: 120, height: 150 }}>
-                      <Img path={p.path} w={360} />
-                    </div>
-                    <div className="row" style={{ gap: 4 }}>
-                      <button
-                        className={`btn sm${p.meetsStandard ? ' primary' : ''}`}
-                        style={{ flex: 1, padding: 0 }}
-                        title="Відповідає стандарту"
-                        onClick={() => void act(() => api('PATCH', `/api/photos/${p.id}`, { meetsStandard: !p.meetsStandard }))}
-                      >
-                        {p.meetsStandard ? <Check size={13} /> : p.meetsStandard === false ? <TriangleAlert size={13} /> : '?'} стандарт
+    <Section
+      title="Базові фото"
+      sub="З цих фото береться твоє обличчя й пропорції в кожній примірці. Попередні рендери ніколи не використовуються як опора."
+      actions={<button className="btn" onClick={() => setPicker(true)}>Вибрати з наявних</button>}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 24 }} className="profile-base">
+        <div className="stack" style={{ gap: 18 }}>
+          <Dropzone kind="base" text="Перетягни фото сюди або вибери файли. На iPhone — зніми камерою чи вибери з галереї." />
+          {base.length > 0 && (
+            <div className="photo-grid">
+              {base.map((p) => (
+                <div key={p.id} className="ptile">
+                  <div className="img">
+                    <img src={thumb(p.path, 480)} alt="" />
+                    <span className="tl">
+                      <Badge tone={`${p.meetsStandard ? 'ok' : p.meetsStandard === false ? 'warn' : ''} glass`}>
+                        {p.meetsStandard ? 'за стандартом' : p.meetsStandard === false ? 'не за стандартом' : 'не перевірено'}
+                      </Badge>
+                    </span>
+                    <span className="tr">
+                      <button className="icon-btn" aria-label="Прибрати з базових" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }), 'Прибрано')}>
+                        <X size={14} />
                       </button>
-                      <button className="btn sm ghost" title="Прибрати з базових" onClick={() => void saveProfile({ basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }, 'Прибрано')}>
-                        <X size={13} />
-                      </button>
-                    </div>
+                    </span>
                   </div>
-                ))}
-              </div>
-            )}
-            <Dropzone kind="base" text="Перетягни сюди нові базові фото або вибери файли. З iPhone — зніми камерою чи вибери з галереї." />
-          </div>
-          <div className="note">
-            <b className="small">Стандарт базового фото</b>
-            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }} className="small">
-              {STANDARD.map((s) => <li key={s}>{s}</li>)}
-            </ul>
-            <p className="small muted" style={{ marginTop: 8 }}>Обличчя в кожній примірці береться лише з цих оригіналів, ніколи з попередніх рендерів.</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="card pad" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ marginBottom: 12 }}>
-          <div className="section-title" style={{ margin: 0, flex: 1 }}>
-            <Ruler size={15} /> Мірки, см
-          </div>
-          <button
-            className="btn sm primary"
-            onClick={() => void saveProfile({ measurements: Object.fromEntries(MEASURES.map((m) => [m.key, { value: measures[m.key] }])) }, 'Мірки збережено')}
-          >
-            Зберегти мірки
-          </button>
-        </div>
-        <div className="measure-grid">
-          {MEASURES.map((m) => {
-            const saved = prof.measurements[m.key];
-            return (
-              <label key={m.key} className="field">
-                <span>
-                  {m.label} {saved.value === null ? <span className="faint">· ще не заповнено</span> : <span className="faint">· {fmtDay(saved.date)}</span>}
-                </span>
-                <input className="input" inputMode="decimal" value={measures[m.key]} onChange={(e) => setMeasures((x) => ({ ...x, [m.key]: e.target.value }))} placeholder="см" />
-                <span className="hint">{m.how}</span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="card pad" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ marginBottom: 12 }}>
-          <div className="section-title" style={{ margin: 0, flex: 1 }}>Відомі розміри за брендом</div>
-          <button className="btn sm" onClick={() => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }])}>
-            <Plus size={13} /> Рядок
-          </button>
-          <button className="btn sm primary" onClick={() => void saveProfile({ knownSizes: sizes }, 'Розміри збережено')}>Зберегти</button>
-        </div>
-        <div className="stack">
-          {sizes.length === 0 && <span className="muted small">Ще немає. Розміри зберігаються в оригінальній системі бренду, напр. W32 L32 чи EU 43.</span>}
-          {sizes.map((s, i) => (
-            <div key={i} className="row wrap">
-              <input className="input" style={{ width: 160 }} placeholder="Бренд" value={s.brand} onChange={(e) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, brand: e.target.value } : x)))} />
-              <select className="select" style={{ width: 170 }} value={s.category} onChange={(e) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, category: e.target.value as Category } : x)))}>
-                {(Object.keys(CATEGORY_LABEL) as Category[]).map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
-              </select>
-              <input className="input" style={{ width: 120 }} placeholder="Розмір" value={s.size} onChange={(e) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, size: e.target.value } : x)))} />
-              <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="Примітка" value={s.note ?? ''} onChange={(e) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} />
-              <button className="btn sm ghost" aria-label="Видалити" onClick={() => setSizes((l) => l.filter((_, j) => j !== i))}>
-                <Trash2 size={13} />
-              </button>
+                  <button className={`btn sm${p.meetsStandard ? ' primary' : ''}`} onClick={() => void act(() => api('PATCH', `/api/photos/${p.id}`, { meetsStandard: !p.meetsStandard }))}>
+                    {p.meetsStandard ? <Check size={13} /> : <TriangleAlert size={13} />} {p.meetsStandard ? 'Відповідає' : 'Позначити як відповідне'}
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-      </div>
-
-      <div className="card pad" style={{ marginBottom: 16 }}>
-        <div className="row" style={{ marginBottom: 12 }}>
-          <div className="section-title" style={{ margin: 0, flex: 1 }}>Побажання</div>
-          <button className="btn sm primary" onClick={() => void saveProfile({ preferences: prefs }, 'Побажання збережено')}>Зберегти</button>
-        </div>
-        <div className="grid-form">
-          {(
-            [
-              ['comfort', 'Комфорт'],
-              ['materials', 'Матеріали'],
-              ['fit', 'Посадка'],
-              ['branding', 'Брендування'],
-            ] as const
-          ).map(([k, label]) => (
-            <label key={k} className="field">
-              <span>{label}</span>
-              <textarea className="textarea" value={prefs[k]} onChange={(e) => setPrefs((p) => ({ ...p, [k]: e.target.value }))} />
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="card pad">
-        <div className="row" style={{ marginBottom: 12 }}>
-          <div className="section-title" style={{ margin: 0, flex: 1 }}>
-            <Settings size={15} /> Генерація та доступ
+        <div className="note" style={{ padding: 18, alignSelf: 'start' }}>
+          <div className="row" style={{ marginBottom: 12 }}>
+            <b>Стандарт фото</b>
+            <span style={{ flex: 1 }} />
+            <Badge tone={ok >= 2 ? 'ok' : 'warn'}>{ok}/2 готово</Badge>
           </div>
-          <button className="btn sm primary" onClick={() => void act(() => api('PATCH', '/api/settings', settings), 'Налаштування збережено')}>Зберегти</button>
-        </div>
-        <div className="grid-form">
-          <label className="field">
-            <span>Модель Codex</span>
-            <input className="input" value={settings.codexModel} onChange={(e) => setSettings((s) => ({ ...s, codexModel: e.target.value }))} />
-            <span className="hint">Sol = gpt-6.1-sol. Запуск ізольований: без особистого конфігу Codex, запис лише в каталог завдання.</span>
-          </label>
-          <label className="field">
-            <span>Глибина міркувань</span>
-            <select className="select" value={settings.reasoningEffort} onChange={(e) => setSettings((s) => ({ ...s, reasoningEffort: e.target.value as typeof s.reasoningEffort }))}>
-              {['low', 'medium', 'high', 'xhigh'].map((x) => <option key={x}>{x}</option>)}
-            </select>
-          </label>
-          <label className="field full">
-            <span>Tailscale-логін власника (для доступу з iPhone)</span>
-            <input className="input" value={settings.tailscaleLogin} onChange={(e) => setSettings((s) => ({ ...s, tailscaleLogin: e.target.value }))} placeholder="login@example.com" />
-            <span className="hint">Порожньо — віддалений доступ вимкнено. Сервер слухає лише 127.0.0.1; телефон заходить через `tailscale serve` у межах tailnet.</span>
-          </label>
+          <ul className="checklist">
+            {STANDARD.map((s) => <li key={s}><CircleCheck size={15} />{s}</li>)}
+          </ul>
         </div>
       </div>
-
       {picker && (
         <PhotoPicker
           title="Базові фото з наявних"
@@ -201,10 +98,175 @@ export function ProfilePage() {
           onClose={() => setPicker(false)}
           onSave={(ids) => {
             setPicker(false);
-            void saveProfile({ basePhotoIds: ids }, 'Базові фото оновлено');
+            void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: ids }), 'Базові фото оновлено');
           }}
         />
       )}
+    </Section>
+  );
+}
+
+function Measurements() {
+  const db = useDb();
+  const { act } = useApp();
+  const prof = db.profile;
+  const load = () => Object.fromEntries(MEASURES.map((m) => [m.key, prof.measurements[m.key].value?.toString() ?? ''])) as Record<MeasureKey, string>;
+  const [values, setValues] = useState(load);
+  useEffect(() => setValues(load()), [prof.rev]);
+  const filled = MEASURES.filter((m) => prof.measurements[m.key].value !== null).length;
+  return (
+    <Section
+      title="Мірки"
+      sub={`Сантиметри. Заповнено ${filled} з ${MEASURES.length}; відсутні мірки нічого не блокують, але без них розмір не рекомендується.`}
+      actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, measurements: Object.fromEntries(MEASURES.map((m) => [m.key, { value: values[m.key] }])) }), 'Мірки збережено')}>Зберегти мірки</button>}
+    >
+      <div className="measure-grid">
+        {MEASURES.map((m) => {
+          const saved = prof.measurements[m.key];
+          return (
+            <label key={m.key} className="field">
+              <span className="row" style={{ justifyContent: 'space-between' }}>
+                {m.label}
+                <span className="small faint" style={{ fontWeight: 400 }}>{saved.value === null ? 'ще не заповнено' : fmtDay(saved.date)}</span>
+              </span>
+              <div style={{ position: 'relative' }}>
+                <input className="input" inputMode="decimal" value={values[m.key]} onChange={(e) => setValues((x) => ({ ...x, [m.key]: e.target.value }))} placeholder="—" style={{ paddingRight: 44 }} />
+                <span className="faint small" style={{ position: 'absolute', right: 14, top: 13 }}>см</span>
+              </div>
+              <span className="hint">{m.how}</span>
+            </label>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function Sizes() {
+  const db = useDb();
+  const { act } = useApp();
+  const prof = db.profile;
+  const [sizes, setSizes] = useState<KnownSize[]>(prof.knownSizes);
+  useEffect(() => setSizes(prof.knownSizes), [prof.rev]);
+  const upd = (i: number, patch: Partial<KnownSize>) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  return (
+    <Section
+      title="Розміри брендів"
+      sub="Розміри в оригінальній системі бренду: W/L штанів, EU/US взуття, S–XL. Без перерахунку в «універсальну» шкалу."
+      actions={
+        <>
+          <button className="btn" onClick={() => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }])}><Plus size={15} /> Додати</button>
+          <button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, knownSizes: sizes }), 'Розміри збережено')}>Зберегти</button>
+        </>
+      }
+    >
+      {sizes.length === 0 ? (
+        <div className="dropzone" style={{ padding: 26 }}>
+          <Tag size={20} style={{ margin: '0 auto' }} />
+          <b>Ще немає жодного розміру</b>
+          Додай, наприклад, «Levi's · Штани · W32 L32» або «Adidas · Взуття · EU 43».
+        </div>
+      ) : (
+        <div className="stack" style={{ gap: 12 }}>
+          {sizes.map((s, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 0.8fr 1.6fr auto', gap: 10 }} className="size-row">
+              <input className="input" placeholder="Бренд" value={s.brand} onChange={(e) => upd(i, { brand: e.target.value })} />
+              <select className="select" value={s.category} onChange={(e) => upd(i, { category: e.target.value as Category })}>
+                {(Object.keys(CATEGORY_LABEL) as Category[]).map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+              </select>
+              <input className="input" placeholder="Розмір" value={s.size} onChange={(e) => upd(i, { size: e.target.value })} />
+              <input className="input" placeholder="Примітка (модель, як сидить)" value={s.note ?? ''} onChange={(e) => upd(i, { note: e.target.value })} />
+              <button className="btn ghost" aria-label="Видалити" onClick={() => setSizes((l) => l.filter((_, j) => j !== i))}><Trash2 size={15} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function Preferences() {
+  const db = useDb();
+  const { act } = useApp();
+  const prof = db.profile;
+  const [prefs, setPrefs] = useState(prof.preferences);
+  useEffect(() => setPrefs(prof.preferences), [prof.rev]);
+  const fields = [
+    ['comfort', 'Комфорт', 'Як має відчуватися одяг протягом дня.'],
+    ['materials', 'Матеріали', 'Тканини, яким віддаєш перевагу або яких уникаєш.'],
+    ['fit', 'Посадка', 'Крій штанів, сорочок, верхнього одягу; довжина.'],
+    ['branding', 'Брендування', 'Наскільки помітними можуть бути логотипи.'],
+  ] as const;
+  return (
+    <Section title="Побажання" sub="Агент враховує їх у капсулах, примірках і підборі товарів." actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
+      <div className="grid-form">
+        {fields.map(([k, label, hint]) => (
+          <label key={k} className="field">
+            <span>{label}</span>
+            <textarea className="textarea" value={prefs[k]} onChange={(e) => setPrefs((p) => ({ ...p, [k]: e.target.value }))} />
+            <span className="hint">{hint}</span>
+          </label>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function Access() {
+  const db = useDb();
+  const { act, state } = useApp();
+  const [s, setS] = useState(db.settings);
+  const key = JSON.stringify(db.settings);
+  useEffect(() => setS(db.settings), [key]);
+  return (
+    <Section title="Генерація і доступ" sub="Примірки й packshot генерує локальний Codex на цьому Mac без чату. Сайт доступний з iPhone лише через твою приватну мережу Tailscale." actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/settings', s), 'Налаштування збережено')}>Зберегти</button>}>
+      <div className="grid-form">
+        <label className="field">
+          <span>Модель Codex</span>
+          <input className="input" value={s.codexModel} onChange={(e) => setS((x) => ({ ...x, codexModel: e.target.value }))} />
+          <span className="hint">Sol = gpt-6.1-sol. Бінарник: {state?.runner.codexBin ?? '—'}</span>
+        </label>
+        <label className="field">
+          <span>Глибина міркувань</span>
+          <select className="select" value={s.reasoningEffort} onChange={(e) => setS((x) => ({ ...x, reasoningEffort: e.target.value as typeof x.reasoningEffort }))}>
+            {['low', 'medium', 'high', 'xhigh'].map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <span className="hint">medium достатньо для генерації зображень.</span>
+        </label>
+        <label className="field">
+          <span>Одночасних генерацій</span>
+          <select className="select" value={String(s.concurrency ?? 2)} onChange={(e) => setS((x) => ({ ...x, concurrency: Number(e.target.value) }))}>
+            {[1, 2, 3, 4].map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Tailscale-логін власника</span>
+          <input className="input" value={s.tailscaleLogin} onChange={(e) => setS((x) => ({ ...x, tailscaleLogin: e.target.value }))} placeholder="порожньо — віддалений доступ вимкнено" />
+          <span className="hint">Лише цей логін пропускається через tailscale serve.</span>
+        </label>
+      </div>
+      <div className="note" style={{ marginTop: 22 }}>
+        Запуск ізольований: без особистого конфігу Codex, запис лише в каталог завдання. Сервер слухає тільки 127.0.0.1; телефон відкриває <b>https://…ts.net:10443</b> у межах tailnet.
+      </div>
+    </Section>
+  );
+}
+
+export function ProfilePage({ tab }: { tab?: string }) {
+  const current = TABS.some((t) => t.key === tab) ? tab! : 'base';
+  return (
+    <div className="page">
+      <PageHead title="Мій профіль" sub="Фото, мірки, розміри й побажання — заповнюються поступово, нічого не блокують." />
+      <div className="split">
+        <SubNav value={current} onChange={(k) => go(`/profile/${k}`)} groups={[{ items: TABS }]} />
+        <div>
+          {current === 'base' && <BasePhotos />}
+          {current === 'measurements' && <Measurements />}
+          {current === 'sizes' && <Sizes />}
+          {current === 'preferences' && <Preferences />}
+          {current === 'access' && <Access />}
+        </div>
+      </div>
     </div>
   );
 }

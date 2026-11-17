@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Heart, ImageOff, Pencil, Plus, Search, ShoppingBag, Sparkles } from 'lucide-react';
+import { Heart, ImageOff, Pencil, Plus, Search, ShoppingBag, Sparkles } from 'lucide-react';
 import type { Capsule, Look, Season, SlotKey } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, Empty, KindDot, KindLegend, Modal } from '../components/ui.tsx';
+import { Badge, Empty, KindDot, KindLegend, LookCollage, Modal } from '../components/ui.tsx';
 import { REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, SLOT_LABEL, capsuleCover, coverForLook, looksUsing, resolveRef } from '../lib.ts';
 
 const SEASON_FILTERS: (Season | 'any')[] = ['any', 'all', 'warm', 'transitional', 'cold'];
@@ -24,7 +24,7 @@ export function CapsulesPage() {
       <div className="page-head">
         <div>
           <h1>Капсули</h1>
-          <p>Набори сумісних речей із кількома образами. Відкрий капсулу, щоб побачити себе в образах, склад і що докупити.</p>
+          <p>Набори сумісних речей, по 4–6 образів. Поки примірки немає, обкладинка показує речі образу.</p>
         </div>
         <div className="actions">
           <button className="btn" onClick={() => go('/shopping')}>
@@ -59,17 +59,11 @@ export function CapsulesPage() {
         <div className="capsule-grid">
           {list.map((c) => {
             const cover = capsuleCover(db, c.lookIds);
+            const first = db.looks.find((l) => l.id === c.lookIds[0]);
             return (
-              <a key={c.id} href={`#/capsules/${c.id}`} className="card capsule-card">
+              <a key={c.id} href={`#/capsules/${c.id}`} className="capsule-card">
                 <div className="cover">
-                  {cover ? (
-                    <img src={thumb(cover.imagePath, 900)} alt={c.name} />
-                  ) : (
-                    <div className="empty-cover">
-                      <ImageOff size={28} />
-                      Примірка ще не створена
-                    </div>
-                  )}
+                  {cover ? <img src={thumb(cover.imagePath, 900)} alt={c.name} /> : first && <LookCollage slots={first.slots} />}
                   {cover && (
                     <div className="corner">
                       <Badge tone={REVIEW_TONE[cover.review]}>{REVIEW_LABEL[cover.review]}</Badge>
@@ -88,10 +82,10 @@ export function CapsulesPage() {
                     </button>
                   </div>
                 </div>
-                <div className="body">
+                <div>
                   <h3>{c.name}</h3>
-                  <div className="row small muted">
-                    <span>{SEASON_LABEL[c.season]}</span>·<span>{c.lookIds.length} образів</span>
+                  <div className="meta">
+                    <span>{SEASON_LABEL[c.season]}</span>·<span>{c.lookIds.length} образів</span>{!cover && <>·<span>примірки ще немає</span></>}
                   </div>
                 </div>
               </a>
@@ -108,22 +102,16 @@ function LookCard({ look }: { look: Look }) {
   const cover = coverForLook(db, look);
   const stale = cover && cover.lookVersion !== look.version;
   return (
-    <div className="card look-card" style={{ overflow: 'hidden' }}>
+    <div className="look-card">
       <a className="cover" href={`#/studio?look=${look.id}`}>
-        {cover ? (
-          <img src={thumb(cover.imagePath, 700)} alt={look.name} />
-        ) : (
-          <div className="empty-cover">
-            <ImageOff size={24} />
-            Примірка ще не створена
-          </div>
-        )}
+        {cover ? <img src={thumb(cover.imagePath, 700)} alt={look.name} /> : <LookCollage slots={look.slots} />}
         <div className="corner">
-          {cover && <Badge tone={REVIEW_TONE[cover.review]}>{REVIEW_LABEL[cover.review]}</Badge>}
+          {cover ? <Badge tone={`${REVIEW_TONE[cover.review]} glass`}>{REVIEW_LABEL[cover.review]}</Badge> : <Badge tone="glass">без примірки</Badge>}
           {stale && <Badge tone="warn">для версії {cover.lookVersion}</Badge>}
         </div>
+        <span className="go btn sm primary"><Sparkles size={13} /> {cover ? 'Відкрити' : 'Приміряти'}</span>
       </a>
-      <div className="body">
+      <div className="stack" style={{ gap: 8 }}>
         <div className="row">
           <h4 style={{ flex: 1 }}>{look.name}</h4>
           {look.origin === 'agent' && <Badge tone="info">пропозиція агента</Badge>}
@@ -144,10 +132,7 @@ function LookCard({ look }: { look: Look }) {
             }),
           )}
         </div>
-        {look.note && <div className="small muted">{look.note}</div>}
-        <a className="btn sm" href={`#/studio?look=${look.id}`}>
-          <Sparkles size={13} /> Відкрити в примірці
-        </a>
+        {look.note && <div className="small faint">{look.note}</div>}
       </div>
     </div>
   );
@@ -225,15 +210,11 @@ export function CapsuleDetail({ id }: { id: string }) {
 
   return (
     <div className="page">
-      <a href="#/capsules" className="btn ghost sm" style={{ marginBottom: 12 }}>
-        <ArrowLeft size={14} /> Капсули
-      </a>
+      <div className="crumb"><a href="#/capsules">Капсули</a> / <span>{capsule.name}</span></div>
       <div className="page-head">
         <div>
-          <div className="row">
-            <h1>{capsule.name}</h1>
-            <Badge>{SEASON_LABEL[capsule.season]}</Badge>
-          </div>
+          <h1>{capsule.name}</h1>
+          <div className="row" style={{ marginTop: 10 }}><Badge>{SEASON_LABEL[capsule.season]}</Badge><Badge>{looks.length} образів</Badge></div>
           <p>{capsule.description}</p>
           {capsule.situations.length > 0 && (
             <div className="chips" style={{ marginTop: 10 }}>

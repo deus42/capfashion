@@ -9,7 +9,7 @@ export type Category = (typeof CATEGORIES)[number];
 export const ITEM_STATUSES = ['needs_confirmation', 'confirmed', 'inactive'] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
-export const PHOTO_KINDS = ['source', 'base', 'item', 'label', 'detail', 'product'] as const;
+export const PHOTO_KINDS = ['source', 'base', 'item', 'label', 'detail', 'product', 'packshot'] as const;
 export type PhotoKind = (typeof PHOTO_KINDS)[number];
 
 export const SLOT_KEYS = ['top', 'layer', 'bottom', 'shoes', 'accessories'] as const;
@@ -72,6 +72,8 @@ export interface Item {
   mergedInto?: string;
   splitFrom?: string;
   purchasedFromProduct?: string;
+  /** Generated catalogue image (reconstruction, not evidence). */
+  packshotId?: string;
   history: HistoryEntry[];
   createdAt: string;
   updatedAt: string;
@@ -90,6 +92,8 @@ export interface Need {
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   coveredByItem?: string;
+  /** Generated concept image of the desired type. */
+  conceptPhotoId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -177,7 +181,12 @@ export interface SnapshotSlot {
 
 export interface Job {
   id: string;
-  lookId: string;
+  /** Missing kind means a try-on (records created before packshots). */
+  kind?: 'tryon' | 'packshot';
+  lookId?: string;
+  itemId?: string;
+  needId?: string;
+  photoId?: string;
   lookVersion: number;
   snapshot: {
     lookName: string;
@@ -252,6 +261,7 @@ export interface Settings {
   codexModel: string;
   reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh';
   tailscaleLogin: string;
+  concurrency?: number;
 }
 
 export interface DB {
@@ -310,8 +320,12 @@ export function validateDb(db: unknown): string | null {
     if (!ITEM_STATUSES.includes(i.status)) return `Річ ${i.id}: невідомий статус`;
     if (!i.title?.trim()) return `Річ ${i.id}: порожня назва`;
     for (const pid of i.photoIds) if (!has('photos', pid)) return `Річ ${i.id}: немає фото ${pid}`;
+    if (i.packshotId && !has('photos', i.packshotId)) return `Річ ${i.id}: немає packshot`;
   }
-  for (const n of d.needs) if (!CATEGORIES.includes(n.category)) return `Потреба ${n.id}: невідома категорія`;
+  for (const n of d.needs) {
+    if (!CATEGORIES.includes(n.category)) return `Потреба ${n.id}: невідома категорія`;
+    if (n.conceptPhotoId && !has('photos', n.conceptPhotoId)) return `Потреба ${n.id}: немає концепт-фото`;
+  }
   for (const p of d.products) {
     if (!has('needs', p.needId)) return `Товар ${p.id}: немає потреби ${p.needId}`;
     if (p.photoId && !has('photos', p.photoId)) return `Товар ${p.id}: немає фото`;
@@ -333,7 +347,9 @@ export function validateDb(db: unknown): string | null {
   }
   for (const j of d.jobs) {
     if (!JOB_STATES.includes(j.state)) return `Завдання ${j.id}: невідомий стан`;
-    if (!has('looks', j.lookId)) return `Завдання ${j.id}: немає образу`;
+    if ((j.kind ?? 'tryon') === 'tryon' && !(j.lookId && has('looks', j.lookId))) return `Завдання ${j.id}: немає образу`;
+    if (j.kind === 'packshot' && !((j.itemId && has('items', j.itemId)) || (j.needId && has('needs', j.needId)))) return `Завдання ${j.id}: немає речі`;
+    if (j.photoId && !has('photos', j.photoId)) return `Завдання ${j.id}: немає фото результату`;
     if (j.retryOf && !has('jobs', j.retryOf)) return `Завдання ${j.id}: немає попередньої спроби`;
     if (j.resultId && !has('results', j.resultId)) return `Завдання ${j.id}: немає результату`;
   }

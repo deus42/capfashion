@@ -48,6 +48,9 @@ export interface ResolvedRef {
   ref: SlotRef;
   title: string;
   kind: RefKind;
+  category?: Category;
+  /** Clean catalogue image: packshot, concept or product photo. */
+  art?: string;
   photo?: string;
   missing?: boolean;
   inactive?: boolean;
@@ -58,15 +61,18 @@ export function resolveRef(db: DB, ref: SlotRef): ResolvedRef {
     const it = db.items.find((i) => i.id === ref.id);
     if (!it) return { ref, title: ref.id, kind: 'candidate', missing: true };
     const photo = it.photoIds.map((id) => db.photos.find((p) => p.id === id)?.path).find(Boolean);
-    return { ref, title: it.title, kind: it.status === 'confirmed' ? 'owned' : 'candidate', photo, inactive: it.status === 'inactive' };
+    const art = it.packshotId ? db.photos.find((p) => p.id === it.packshotId)?.path : undefined;
+    return { ref, title: it.title, kind: it.status === 'confirmed' ? 'owned' : 'candidate', category: it.category, art, photo, inactive: it.status === 'inactive' };
   }
   if (ref.kind === 'need') {
     const n = db.needs.find((x) => x.id === ref.id);
-    return { ref, title: n?.title ?? ref.id, kind: 'need', missing: !n };
+    const art = n?.conceptPhotoId ? db.photos.find((p) => p.id === n.conceptPhotoId)?.path : undefined;
+    return { ref, title: n?.title ?? ref.id, kind: 'need', category: n?.category, art, missing: !n };
   }
   const p = db.products.find((x) => x.id === ref.id);
   const photo = p?.photoId ? db.photos.find((ph) => ph.id === p.photoId)?.path : undefined;
-  return { ref, title: p ? `${p.brand} ${p.model}`.trim() : ref.id, kind: 'product', photo, missing: !p };
+  const cat = p ? db.needs.find((n) => n.id === p.needId)?.category : undefined;
+  return { ref, title: p ? `${p.brand} ${p.model}`.trim() : ref.id, kind: 'product', category: cat, art: photo, photo, missing: !p };
 }
 
 export function resultsForLook(db: DB, lookId: string) {
@@ -87,6 +93,18 @@ export function capsuleCover(db: DB, lookIds: string[]) {
 
 export function looksUsing(db: DB, kind: SlotRef['kind'], id: string) {
   return db.looks.filter((l) => Object.values(l.slots).some((refs) => refs.some((r) => r.kind === kind && r.id === id)));
+}
+
+export function piecesOf(db: DB, slots: Look['slots']): ResolvedRef[] {
+  return (['layer', 'top', 'bottom', 'shoes', 'accessories'] as SlotKey[]).flatMap((k) => slots[k].map((r) => resolveRef(db, r)));
+}
+
+export function itemArt(db: DB, itemId: string) {
+  const it = db.items.find((i) => i.id === itemId);
+  if (!it) return {};
+  const art = it.packshotId ? db.photos.find((p) => p.id === it.packshotId)?.path : undefined;
+  const photo = it.photoIds.map((id) => db.photos.find((p) => p.id === id)?.path).find(Boolean);
+  return { art, photo };
 }
 
 export function fmtDate(iso?: string) {

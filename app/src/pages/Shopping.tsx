@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Check, ExternalLink, Plus, ShoppingBag, Store } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
-import { api } from '../api.ts';
+import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, fmtDay, looksUsing } from '../lib.ts';
 import { TermLinks } from './Glossary.tsx';
 
@@ -196,6 +196,16 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   return (
     <div id={`need-${need.id}`} className="card need-card" style={focus ? { outline: '2px solid var(--ink)' } : undefined}>
+      <div className="art">
+        {need.conceptPhotoId && db.photos.find((p) => p.id === need.conceptPhotoId) ? (
+          <img src={thumb(db.photos.find((p) => p.id === need.conceptPhotoId)!.path, 360)} alt={need.title} />
+        ) : covered?.packshotId && db.photos.find((p) => p.id === covered.packshotId) ? (
+          <img src={thumb(db.photos.find((p) => p.id === covered.packshotId)!.path, 360)} alt={need.title} />
+        ) : (
+          <CategoryIcon category={need.category} size={30} />
+        )}
+      </div>
+      <div className="stack" style={{ gap: 14, minWidth: 0 }}>
       <div className="need-head">
         <div className="grow stack" style={{ gap: 4 }}>
           <div className="row wrap">
@@ -247,6 +257,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
         </div>
       )}
       {products.length > 1 && <span className="small faint">Альтернативи — це варіанти однієї покупки, не кілька обовʼязкових.</span>}
+      </div>
       {adding && <ProductEditor need={need} onClose={() => setAdding(false)} />}
     </div>
   );
@@ -266,9 +277,9 @@ export function ShoppingPage({ focus }: { focus?: string }) {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Список покупок</h1>
+          <h1>Покупки</h1>
           <p>
-            Одна потреба на всі капсули — без дублів. {core} основних відкритих потреб. Пошук товарів — лише магазини Tower Center Rijeka; наявність і ціни перевіряються окремо з датою.
+            Одна потреба на всі капсули — без дублів. {core} основних відкритих потреб. Товари — лише з магазинів Tower Center Rijeka; ціни й наявність з датою перевірки.
           </p>
         </div>
         <div className="actions chips">

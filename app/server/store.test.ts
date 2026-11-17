@@ -7,7 +7,7 @@ import type { DB } from './schema.ts';
 import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
 import { dispatch, snapshotSlots } from './routes.ts';
-import { buildPrompt } from './runner.ts';
+import { buildPrompt, createRunner } from './runner.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 
@@ -175,4 +175,44 @@ test('prompt carries the frozen outfit and the image standard', () => {
   assert.match(prompt, /#FFFFFF/);
   assert.match(prompt, /eyes looking into the camera/);
   assert.match(prompt, /Navy chinos/);
+});
+
+test('runner processes packshot and try-on jobs in parallel without chat (A13)', async () => {
+  const { dir, store, call } = setup();
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(
+    fake,
+    '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\nsleep 0.3\nprintf "PNG" > "$d/result.png"\necho \'{"status":"done","notes":"fake"}\' > "$o"\n',
+    { mode: 0o755 },
+  );
+  const runner = createRunner(store, dir, fake);
+  const pk = await call('POST', '/api/packshots', { itemIds: ['W-1'] });
+  assert.equal(pk.created, 1);
+  const again = await call('POST', '/api/packshots', { itemIds: ['W-1'] });
+  assert.equal(again.created, 0, 'no duplicate while one is queued');
+  await call('POST', '/api/jobs', { lookId: 'L-1', basePhotoIds: ['P-1'] });
+  await runner.drain();
+  const db = store.read();
+  const item = db.items.find((i) => i.id === 'W-1')!;
+  const packshot = db.photos.find((p) => p.id === item.packshotId)!;
+  assert.equal(packshot.kind, 'packshot');
+  assert.deepEqual(item.photoIds, ['P-1', 'P-2'], 'originals untouched');
+  assert.equal(db.results.length, 1);
+  assert.ok(db.jobs.every((j) => j.state === 'done'));
+  const prompt = fs.readFileSync(path.join(dir, 'jobs', pk.jobIds[0], 'prompt.txt'), 'utf8');
+  assert.match(prompt, /packshot/);
+  assert.match(prompt, /Navy chinos/);
+});
+
+test('failed Codex run becomes an explained error and retry links (A13, A06)', async () => {
+  const { store, call } = setup();
+  const runner = createRunner(store, store.dataDir, '/usr/bin/false');
+  const pk = await call('POST', '/api/packshots', { itemIds: ['W-2'] });
+  await runner.drain();
+  const job = store.read().jobs.find((j) => j.id === pk.jobIds[0])!;
+  assert.equal(job.state, 'error');
+  assert.match(job.stateNote ?? '', /код/);
+  const retry = await call('POST', `/api/jobs/${job.id}/retry`, {});
+  assert.equal(retry.kind, 'packshot');
+  assert.equal(retry.retryOf, job.id);
 });

@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Check, ImagePlus, Loader2, Upload, X } from 'lucide-react';
-import type { Photo, PhotoKind } from '../api.ts';
+import { Check, Footprints, ImagePlus, Layers, Loader2, Shirt, Upload, Watch, X } from 'lucide-react';
+import type { Category, Photo, PhotoKind, Slots } from '../api.ts';
 import { thumb, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { REF_KIND_LABEL } from '../lib.ts';
+import { REF_KIND_LABEL, piecesOf } from '../lib.ts';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 
 export function KindDot({ kind }: { kind: ResolvedRef['kind'] }) {
-  return <span className={`kind-dot ${kind}`} title={REF_KIND_LABEL[kind]} />;
+  return <span className={`kind-dot k-${kind}`} title={REF_KIND_LABEL[kind]} />;
 }
 
 export function KindLegend() {
@@ -216,5 +216,87 @@ export function Empty({ icon, title, children }: { icon: ReactNode; title: strin
       <b>{title}</b>
       {children && <div className="muted" style={{ marginTop: 6 }}>{children}</div>}
     </div>
+  );
+}
+
+export function CategoryIcon({ category, size = 18 }: { category?: Category; size?: number }) {
+  if (category === 'shoes') return <Footprints size={size} />;
+  if (category === 'accessories') return <Watch size={size} />;
+  if (category === 'outerwear') return <Layers size={size} />;
+  return <Shirt size={size} />;
+}
+
+export function Piece({ r, w = 520 }: { r: ResolvedRef; w?: number }) {
+  if (r.art) {
+    return (
+      <div className="piece" title={`${r.title} — ${REF_KIND_LABEL[r.kind]}`}>
+        <img src={thumb(r.art, w)} alt={r.title} loading="lazy" />
+      </div>
+    );
+  }
+  return (
+    <div className="piece ph" title={r.title}>
+      <span className="ico"><CategoryIcon category={r.category} size={17} /></span>
+      <span>{r.title}</span>
+      <span className="faint" style={{ fontSize: 10.5 }}>{REF_KIND_LABEL[r.kind]}</span>
+    </div>
+  );
+}
+
+/** Flat-lay of an outfit's pieces: used wherever a try-on does not exist yet. */
+export function LookCollage({ slots, max = 5 }: { slots: Slots; max?: number }) {
+  const db = useDb();
+  const pieces = piecesOf(db, slots).slice(0, max);
+  if (pieces.length === 0) return <div className="collage n1"><div className="piece ph"><Shirt size={20} /><span>Образ порожній</span></div></div>;
+  if (pieces.length <= 2) return <div className={`collage n${pieces.length}`}>{pieces.map((r) => <Piece key={r.ref.id} r={r} />)}</div>;
+  const [first, ...rest] = pieces;
+  return (
+    <div className="collage">
+      <Piece r={first} w={720} />
+      <div className="side" style={{ gridTemplateRows: `repeat(${rest.length}, minmax(0, 1fr))` }}>
+        {rest.map((r) => <Piece key={`${r.ref.kind}-${r.ref.id}`} r={r} w={360} />)}
+      </div>
+    </div>
+  );
+}
+
+export interface SubNavItem {
+  key: string;
+  label: string;
+  icon?: ReactNode;
+  n?: number;
+}
+
+export function SubNav({ groups, value, onChange }: { groups: { label?: string; items: SubNavItem[] }[]; value: string; onChange: (key: string) => void }) {
+  return (
+    <nav className="subnav">
+      {groups.map((g, i) => (
+        <div key={i} style={{ display: 'contents' }}>
+          {g.label && <div className="label">{g.label}</div>}
+          {g.items.map((it) => (
+            <button key={it.key} className={`subnav-item${value === it.key ? ' on' : ''}`} onClick={() => onChange(it.key)}>
+              {it.icon}
+              <span>{it.label}</span>
+              {it.n !== undefined && <span className="n">{it.n}</span>}
+            </button>
+          ))}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+export function PageHead({ crumb, title, sub, actions }: { crumb?: ReactNode; title: ReactNode; sub?: ReactNode; actions?: ReactNode }) {
+  return (
+    <>
+      {crumb && <div className="crumb">{crumb}</div>}
+      <div className="page-head">
+        <div>
+          <h1>{title}</h1>
+          {sub && <p>{sub}</p>}
+        </div>
+        {actions && <div className="actions">{actions}</div>}
+      </div>
+    </>
   );
 }

@@ -85,6 +85,25 @@ function createJob(db: DB, look: Look, basePhotoIds: string[], instructions: str
   return job;
 }
 
+const ITEM_SLOT: Record<Item['category'], SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
+
+function packshotJob(db: DB, target: { itemId?: string; needId?: string }, instructions = '', retryOf?: string, frozen?: Job['snapshot']): Job {
+  let snapshot = frozen;
+  if (!snapshot && target.itemId) {
+    const item = findOr404(db.items, target.itemId, 'Річ');
+    const photos = item.photoIds.slice(0, 3).map((pid) => findOr404(db.photos, pid, 'Фото').path);
+    const description = [item.color, item.brand, item.model, item.fit, item.observation].filter(Boolean).join('; ');
+    snapshot = { lookName: item.title, slots: [{ slot: ITEM_SLOT[item.category], kind: 'item', id: item.id, title: item.title, description, owned: true, photoPaths: photos }], basePhotoIds: [], basePhotoPaths: [] };
+  } else if (!snapshot && target.needId) {
+    const need = findOr404(db.needs, target.needId, 'Потреба');
+    snapshot = { lookName: need.title, slots: [{ slot: ITEM_SLOT[need.category], kind: 'need', id: need.id, title: need.title, description: need.description, owned: false, photoPaths: [] }], basePhotoIds: [], basePhotoPaths: [] };
+  }
+  if (!snapshot) throw new HttpError(400, 'Не вказано річ для packshot');
+  const job: Job = { id: newId('J'), kind: 'packshot', itemId: target.itemId, needId: target.needId, lookVersion: 0, snapshot, instructions, state: 'queued', origin: 'site', retryOf, createdAt: now() };
+  db.jobs.push(job);
+  return job;
+}
+
 function replaceRefs(db: DB, match: (r: SlotRef) => boolean, replacement: SlotRef, note: string) {
   for (const look of db.looks) {
     const next = cleanSlots(look.slots);
@@ -277,13 +296,28 @@ on('POST', '/api/jobs/:id/retry', async (ctx, [id], b) => {
   const job = await ctx.store.mutate((db) => {
     const prev = findOr404(db.jobs, id, 'Завдання');
     if (prev.state === 'queued' || prev.state === 'running') throw new HttpError(409, 'Завдання ще виконується');
-    const look = findOr404(db.looks, prev.lookId, 'Образ');
+    if (prev.kind === 'packshot') return packshotJob(db, { itemId: prev.itemId, needId: prev.needId }, [prev.instructions, str(b.instructions)].filter(Boolean).join('\n'), prev.id, prev.snapshot);
+    const look = findOr404(db.looks, prev.lookId ?? '', 'Образ');
     const extra = str(b.instructions);
     const instructions = [prev.instructions, extra].filter(Boolean).join('\n');
     return createJob(db, look, prev.snapshot.basePhotoIds, instructions, prev.id, prev.origin === 'import' ? undefined : prev.snapshot);
   });
   if (b.run) ctx.drain();
   return job;
+});
+
+on('POST', '/api/packshots', async (ctx, _p, b) => {
+  const out = await ctx.store.mutate((db) => {
+    const pending = new Set(db.jobs.filter((j) => j.kind === 'packshot' && (j.state === 'queued' || j.state === 'running')).map((j) => j.itemId ?? j.needId));
+    const itemIds = b.all ? db.items.filter((i) => i.status !== 'inactive' && !i.packshotId).map((i) => i.id) : Array.isArray(b.itemIds) ? (b.itemIds as string[]) : [];
+    const needIds = b.allNeeds ? db.needs.filter((n) => n.status === 'open' && !n.conceptPhotoId).map((n) => n.id) : Array.isArray(b.needIds) ? (b.needIds as string[]) : [];
+    const jobs: Job[] = [];
+    for (const id of itemIds) if (!pending.has(id)) jobs.push(packshotJob(db, { itemId: id }, str(b.instructions)));
+    for (const id of needIds) if (!pending.has(id)) jobs.push(packshotJob(db, { needId: id }, str(b.instructions)));
+    return { created: jobs.length, jobIds: jobs.map((j) => j.id) };
+  });
+  if (b.run) ctx.drain();
+  return out;
 });
 
 on('POST', '/api/runner/run', (ctx) => {
@@ -313,7 +347,7 @@ on('POST', '/api/results/:id/review', async (ctx, [id], b) => {
     let retry: Job | undefined;
     if (r.review === 'rework') {
       const prev = findOr404(db.jobs, r.jobId, 'Завдання');
-      const look = findOr404(db.looks, prev.lookId, 'Образ');
+      const look = findOr404(db.looks, prev.lookId ?? '', 'Образ');
       const fix = `Переробити: ${REASON_TEXT[r.reviewReason!]}${r.reviewNote ? ` — ${r.reviewNote}` : ''}.`;
       const base = prev.origin === 'import' || !prev.snapshot.basePhotoIds.length ? db.profile.basePhotoIds : prev.snapshot.basePhotoIds;
       retry = createJob(db, look, base, [prev.origin === 'import' ? '' : prev.instructions, fix].filter(Boolean).join('\n'), prev.id, prev.origin === 'import' || !prev.snapshot.slots.length ? undefined : prev.snapshot);

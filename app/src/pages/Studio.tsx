@@ -5,7 +5,7 @@ import {
 import type { DB, Job, Look, Result, ReworkReason, SlotKey, SlotRef, Slots } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, Img, KindDot, PhotoPicker } from '../components/ui.tsx';
+import { Badge, Img, KindDot, LookCollage, PhotoPicker } from '../components/ui.tsx';
 import {
   CATEGORY_LABEL, JOB_LABEL, REASON_LABEL, REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SLOT_CATEGORIES, SLOT_LABEL, fmtDate, resolveRef, resultsForLook,
 } from '../lib.ts';
@@ -19,7 +19,7 @@ interface CompLine {
 }
 
 /** Composition of exactly the version a result was rendered for. */
-function compositionFor(db: DB, result: Result | undefined, look: Look): { lines: CompLine[]; version: number } {
+export function compositionFor(db: DB, result: Result | undefined, look: Look): { lines: CompLine[]; version: number } {
   if (result) {
     const job = db.jobs.find((j) => j.id === result.jobId);
     if (job?.snapshot.slots.length) {
@@ -38,7 +38,7 @@ function linesFromSlots(db: DB, slots: Slots): CompLine[] {
   }));
 }
 
-function Composition({ lines, version, title = 'Склад' }: { lines: CompLine[]; version: number; title?: string }) {
+export function Composition({ lines, version, title = 'Склад' }: { lines: CompLine[]; version: number; title?: string }) {
   return (
     <div className="composition">
       <h5>
@@ -137,7 +137,7 @@ function SlotPicker({ look, slot, anchor, onClose }: { look: Look; slot: SlotKey
   );
 }
 
-function ReviewBar({ result }: { result: Result }) {
+export function ReviewBar({ result }: { result: Result }) {
   const { act } = useApp();
   const [mode, setMode] = useState<'idle' | 'rework'>('idle');
   const [reason, setReason] = useState<ReworkReason | null>(null);
@@ -217,8 +217,9 @@ function ResultCard({ result, look }: { result: Result | undefined; look: Look }
   if (!result) {
     return (
       <div className="studio-card">
+        <LookCollage slots={look.slots} />
         <div className="studio-empty">
-          {running ? <Loader2 size={28} className="spin" /> : <Sparkles size={28} />}
+          {running ? <Loader2 size={26} className="spin" /> : <Sparkles size={26} />}
           <b>{running ? JOB_LABEL[running.state] : 'Примірка ще не створена'}</b>
           <span className="small">{running ? running.stateNote ?? 'Codex генерує зображення…' : 'Перевір склад унизу й натисни «Запустити». Генерація йде через локальний Codex без чату.'}</span>
         </div>

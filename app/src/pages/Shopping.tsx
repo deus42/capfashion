@@ -7,8 +7,6 @@ import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } f
 import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
-const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
-const AVAIL_TOWER = { unknown: 'Tower: не перевірено', confirmed: 'Tower: підтверджено', not_found: 'Tower: не знайдено' } as const;
 const STALE_DAYS = 14;
 
 type ProductForm = Record<'store' | 'brand' | 'model' | 'sku' | 'url' | 'composition' | 'fit' | 'price' | 'currency' | 'recommendedSize' | 'sizeBasis' | 'checkedAt' | 'sources' | 'onlineAvailability' | 'towerAvailability', string>;
@@ -34,7 +32,7 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
   });
   const set = (k: keyof ProductForm) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   const save = async () => {
-    const body = { ...f, needId: need.id, rev: product?.rev };
+    const body = { ...f, checkedAt: new Date().toISOString().slice(0, 10), needId: need.id, rev: product?.rev };
     const ok = await act(() => (product ? api('PATCH', `/api/products/${product.id}`, body) : api('POST', '/api/products', body)), 'Товар збережено');
     if (ok) onClose();
   };
@@ -59,30 +57,10 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
         {field('store', 'Магазин у Tower Center Rijeka', 'напр. Massimo Dutti')}
         {field('brand', 'Бренд')}
         {field('model', 'Модель', 'назва моделі')}
-        {field('sku', 'Артикул')}
         {field('url', 'URL', 'https://…', true)}
-        {field('composition', 'Склад', 'напр. 100% бавовна')}
-        {field('fit', 'Заявлений крій', 'напр. regular tapered')}
         {field('price', 'Ціна', '0.00')}
-        {field('currency', 'Валюта')}
-        <label className="field">
-          <span>Онлайн-наявність</span>
-          <select className="select" value={f.onlineAvailability} onChange={set('onlineAvailability')}>
-            {Object.entries(AVAIL_ONLINE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>Наявність у Tower</span>
-          <select className="select" value={f.towerAvailability} onChange={set('towerAvailability')}>
-            {Object.entries(AVAIL_TOWER).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </label>
-        {field('recommendedSize', 'Рекомендований розмір', 'порожньо, якщо даних немає')}
-        {field('sizeBasis', 'Підстава розміру', 'мірки + сітка бренду, дата')}
-        {field('checkedAt', 'Дата перевірки', 'YYYY-MM-DD')}
-        {field('sources', 'Джерела', 'посилання, примітки', true)}
+        {field('recommendedSize', 'Розмір')}
       </div>
-      <p className="small faint" style={{ marginTop: 10 }}>Присутність магазину в Tower не підтверджує наявність конкретного товару чи розміру. Без даних розмір не вигадується.</p>
     </Modal>
   );
 }
@@ -121,7 +99,6 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
         <div className="row">
           <UploadButton kind="item" multiple={false} className="btn sm" label={photoId ? 'Фото додано ✓' : 'Додати своє фото'} onDone={(ids) => setPhotoId(ids[0])} />
         </div>
-        <p className="small faint">Це не підтвердження фізичної посадки — лише запис покупки.</p>
       </div>
     </Modal>
   );
@@ -142,28 +119,14 @@ function ProductCard({ p, need }: { p: Product; need: Need }) {
         </div>
         <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
           <b>{p.brand} {p.model}</b>
-          <span className="small muted">
-            <Store size={11} /> {p.store}
-            {p.sku ? ` · ${p.sku}` : ''}
-          </span>
+          <span className="small muted"><Store size={11} /> {p.store}</span>
           <span className="small">{p.price != null ? `${p.price} ${p.currency ?? ''}` : 'Ціна невідома'}</span>
         </div>
         {p.status === 'chosen' && <Badge tone="dark">вибрано</Badge>}
         {p.status === 'purchased' && <Badge tone="ok">куплено</Badge>}
       </div>
-      <div className="row wrap">
-        <Badge tone={p.onlineAvailability === 'in_stock' ? 'ok' : p.onlineAvailability === 'out_of_stock' ? 'bad' : ''}>{AVAIL_ONLINE[p.onlineAvailability]}</Badge>
-        <Badge tone={p.towerAvailability === 'confirmed' ? 'ok' : p.towerAvailability === 'not_found' ? 'bad' : ''}>{AVAIL_TOWER[p.towerAvailability]}</Badge>
-      </div>
-      {(p.composition || p.fit) && <span className="small muted">{[p.composition, p.fit].filter(Boolean).join(' · ')}</span>}
-      <span className="small">
-        Розмір: {p.recommendedSize ? <b>{p.recommendedSize}</b> : <span className="muted">не визначено</span>}
-        {p.sizeBasis && <span className="muted"> — {p.sizeBasis}</span>}
-      </span>
-      <span className={`small ${stale ? '' : 'faint'}`} style={stale ? { color: 'var(--warn)' } : undefined}>
-        Перевірено: {p.checkedAt ? fmtDay(p.checkedAt) : 'ніколи'}
-        {stale && ' — дані застаріли'}
-      </span>
+      {p.recommendedSize && <span className="small">Розмір <b>{p.recommendedSize}</b></span>}
+      {stale && <span className="small" style={{ color: 'var(--warn)' }}>Ціну перевірено {fmtDay(p.checkedAt!)}</span>}
       <div className="row wrap" style={{ marginTop: 4 }}>
         {p.url && (
           <a className="btn sm ghost" href={p.url} target="_blank" rel="noreferrer">
@@ -229,8 +192,8 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
   );
 }
 
-const inLooks = (n: number) => `в ${n} ${n === 1 ? 'образі' : 'образах'}`;
-const willComplete = (n: number) => (n === 1 ? '1 стане повним' : `${n} стануть повними`);
+const inLooks = (n: number) => `у ${n} ${n === 1 ? 'образі' : 'образах'}`;
+const willComplete = (n: number) => (n === 1 ? '1 стане готовим' : `${n} стануть готовими`);
 
 /** The one purchase that helps most right now (owner, 17.11): it completes or brings closer the most looks. */
 export function NextPurchase() {
@@ -260,13 +223,14 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   const bought = products.some((p) => p.status === 'purchased');
   const replacedIn = need.coveredLookIds?.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is NonNullable<typeof l> => Boolean(l)) ?? [];
-  const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : distinctLooks(db, looksUsing(db, 'need', need.id));
+  const visible = distinctLooks(db, db.looks);
+  const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : visible.filter((l) => looksUsing(db, 'need', need.id).some((x) => x.id === l.id));
   const uncover = async () => {
     const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/uncover`));
     if (r) toast(coverToast('Повернуто в покупки', r));
   };
   return (
-    <div id={`need-${need.id}`} className="card need-card" style={focus ? { outline: '2px solid var(--ink)' } : undefined}>
+    <div id={`need-${need.id}`} className="card need-card">
       <div className="art">
         {need.conceptPhotoId && db.photos.find((p) => p.id === need.conceptPhotoId) ? (
           <img src={thumb(db.photos.find((p) => p.id === need.conceptPhotoId)!.path, 360)} alt={need.title} />
@@ -284,7 +248,6 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <h3>{need.title}<TermInfo texts={[need.title, need.description]} /></h3>
             {need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}
           </div>
-          <span className="muted small">{need.description}</span>
         </div>
         {need.status === 'open' && (
           <>
@@ -292,7 +255,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
               <Check size={13} /> Вже маю
             </button>
             <button className="btn sm" onClick={() => setAdding(true)}>
-              <Plus size={13} /> Товар
+              <Plus size={13} /> <span className="d-only">Товар</span>
             </button>
           </>
         )}

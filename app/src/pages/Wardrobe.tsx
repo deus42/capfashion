@@ -243,7 +243,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
             <>
               {missing > 0 && (
                 <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), 'Роблю фото речей')} title="Фото речей">
-                  <Wand2 size={15} /> {missing}
+                  <Wand2 size={15} /> Фото {missing}
                 </button>
               )}
               <button className="icon-btn" onClick={() => startMode('merge')} title="Обʼєднати дублікати"><Merge size={15} /></button>

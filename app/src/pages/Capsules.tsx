@@ -34,7 +34,7 @@ export function CapsulesPage() {
         <div className="actions">
           <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
             <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
-            <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>З моїх речей <span className="faint">{selections.length}</span></button>
+            <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>Підбірки <span className="faint">{selections.length}</span></button>
             <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{allLooks.length}</span></button>
             {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> Приховані <span className="faint">{hiddenCount}</span></button>}
           </div>
@@ -197,10 +197,9 @@ export function CapsuleDetail({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{capsule.name}</h1>
-          {readyLine(db, capsule) && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
+          {readyLine(db, capsule) && !(isSelection && readyLine(db, capsule) === 'усі готові') && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
             <Badge>{SEASON_LABEL[capsule.season]}</Badge>
-            {isSelection && <Badge tone="ok">лише мої речі</Badge>}
             {hidden && <Badge>приховано</Badge>}
             {capsule.situations.filter((s) => s.length <= 24).slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
           </div>

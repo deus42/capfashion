@@ -25,7 +25,7 @@ export function CapsuleTile({ c }: { c: Capsule }) {
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{readyLine(db, c) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
+        <div className="meta">{(c.kind === 'selection' && readyLine(db, c) === 'усі готові' ? '' : readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
       </div>
     </a>
   );

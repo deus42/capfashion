@@ -633,3 +633,18 @@ button.wtile { border: 0; background: none; padding: 0; font: inherit; color: in
 .miss-n { flex: none; }
 .next-buy .miss { display: block; }
 .eyebrow-sm { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.next-buy .eyebrow { margin: 0; }
+.next-buy .eyebrow::after { display: none; }
+.next-buy { max-width: 860px; margin-inline: auto; }
+.lb-name { font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sib .miss { margin-top: -5px; }
+@media (max-width: 1100px) { .lightbox { grid-template-rows: minmax(0, 1fr) auto; } }
+@media (max-width: 820px) {
+  .btn.sm, .chip { min-height: 44px; }
+  .kv .chips .badge { padding: 8px 12px; }
+  .section-head a { padding: 12px 0; }
+}
+@media (max-width: 600px) {
+  .d-only { display: none; }
+  .subnav-item svg { display: none; }
+}

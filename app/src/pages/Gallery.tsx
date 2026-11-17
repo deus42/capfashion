@@ -5,7 +5,6 @@ import { api, media, thumb } from '../api.ts';
 import { useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, Overlay, PageHead, RateButtons } from '../components/ui.tsx';
 import { hiddenLookIds } from '../rating.ts';
-import { REVIEW_LABEL, REVIEW_TONE, fmtDate } from '../lib.ts';
 import './Gallery.css';
 
 type Entry = { kind: 'tryon'; r: Result; at: string } | { kind: 'packshot' | 'inspiration' | 'original'; p: Photo; at: string; itemId?: string };
@@ -46,9 +45,8 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
         <div className="lightbox simple" role="dialog" aria-modal="true">
           <div className="lb-img"><img src={media(r.imagePath)} alt={look?.name} /></div>
           <div className="lb-bar">
-            <b className="grow">{look?.name ?? 'Примірка'}</b>
+            {look ? <a className="grow lb-name" href={`/looks/${look.id}`} onClick={onClose}>{look.name}</a> : <b className="grow">Примірка</b>}
             {look && <RateButtons kind="look" target={look} size="sm" />}
-            {look && <a className="btn sm" href={`/looks/${look.id}`} onClick={onClose}>Образ</a>}
             <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
           </div>
         </div>
@@ -59,7 +57,7 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const job = db.jobs.find((j) => j.photoId === entry.p.id);
   const inspiration = entry.p.inspiration;
   const original = entry.kind === 'original';
-  const title = inspiration?.title ?? item?.title ?? entry.p.originalName;
+  const title = inspiration?.title ?? item?.title ?? (original ? 'Моє фото' : 'Фото');
   return (
     <Overlay onClose={onClose}>
       <div className={`lightbox${inspiration || original ? ' inspiration-lightbox' : ''}`} role="dialog" aria-modal="true">
@@ -70,9 +68,6 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
             <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
           </div>
           <div className="body">
-            <div className="row wrap">
-              <span className="small faint">{fmtDate(entry.p.createdAt)}</span>
-            </div>
             {inspiration?.sourceNote && <div className="note small">{inspiration.sourceNote}</div>}
             {inspiration && <div className="row wrap">{inspiration.tags.map((t) => <Badge key={t}>{t}</Badge>)}</div>}
           </div>
@@ -149,7 +144,7 @@ export function GalleryPage() {
                 ['any', 'Усі'],
                 ['pending', 'На перевірці'],
                 ['accepted', 'Прийняті'],
-                ['fav', 'Подобаються'],
+                ['fav', '👍'],
               ] as const
             ).map(([k, l]) => (
               <button key={k} className={`chip${filter === k ? ' active' : ''}`} onClick={() => setFilter(k)}>{l}</button>
@@ -168,15 +163,12 @@ export function GalleryPage() {
                 e.kind === 'tryon' ? (
                   <button key={e.r.id} className="gtile" onClick={() => setOpen(e)}>
                     <img src={thumb(e.r.imagePath, 520)} alt="" loading="lazy" style={{ objectPosition: 'top' }} />
-                    <span className="tl"><Badge tone={`${REVIEW_TONE[e.r.review]} glass`}>{REVIEW_LABEL[e.r.review]}</Badge></span>
                     {db.looks.find((l) => l.id === e.r.lookId)?.favorite && <span className="tr liked-mark" aria-label="Подобається"><ThumbsUp size={12} fill="currentColor" /></span>}
                     <span className="cap">{db.looks.find((l) => l.id === e.r.lookId)?.name}</span>
                   </button>
                 ) : (
                   <button key={e.p.id} className="gtile contain" onClick={() => setOpen(e)}>
                     <img src={thumb(e.p.path, 520)} alt={e.p.inspiration?.title ?? ''} loading="lazy" />
-                    {e.kind === 'inspiration' && <span className="tl"><Badge tone="glass">Натхнення</Badge></span>}
-                    {e.kind === 'original' && <span className="tl"><Badge tone="glass">{e.p.referenceRole === 'face' ? 'Обличчя · оригінал' : 'Оригінал'}</Badge></span>}
                     <span className="cap">{e.p.inspiration?.title ?? db.items.find((i) => i.id === e.itemId)?.title ?? e.p.originalName}</span>
                   </button>
                 ),

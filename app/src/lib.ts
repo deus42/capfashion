@@ -208,10 +208,11 @@ export const rankCapsules = (db: DB, caps: Capsule[]) =>
  */
 export function purchaseRanking(db: DB) {
   const open = db.needs.filter((n) => n.status === 'open');
+  const visible = distinctLooks(db, db.looks);
   return open
     .map((n) => {
-      // Same looks as everywhere else: visible, near-copies folded into one.
-      const looks = distinctLooks(db, db.looks.filter((l) => missingNeeds(db, l).includes(n.id)));
+      // Same cards as everywhere else: the visible looks with near-copies folded once for the whole site.
+      const looks = visible.filter((l) => missingNeeds(db, l).includes(n.id));
       let completes = 0;
       let closer = 0;
       let liked = 0;

@@ -37,6 +37,8 @@ The site runs as the user LaunchAgent `ai.deus.capfashion` (`~/Library/LaunchAge
   Identity is never inferred by comparing faces, and confirmed items are never changed. A packshot is queued for each new item.
 - **Підібрати образи** (`POST /api/analyze {prompt}`) asks Codex to build 4–6 outfits from existing items only. The result is saved as a capsule of kind `selection` («Підбірки»); ids outside the wardrobe are dropped.
 - Interactive jobs (intake, analyzer, try-on) run before batch packshots.
+- Every look should show the owner: new selections queue a try-on per look, and `POST /api/renders/missing` queues one for every look without a render (needs base photos). Covers show the render or an explicit generating/queued state; capsule pages list their items separately.
+- Variety: the analyzer receives existing looks and selection names to avoid; an empty request gets an unused theme; the server drops looks that repeat an existing one except for a single piece and numbers repeated names.
 
 ## Editing and deleting
 

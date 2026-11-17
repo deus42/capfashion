@@ -46,17 +46,18 @@ function BasePhotos() {
   const [picker, setPicker] = useState(false);
   const intake = useIntake();
   const busy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
-  const base = prof.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
+  const base = (prof.identity ? [prof.identity.sourcePhotoId] : prof.basePhotoIds).map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
   const ok = base.filter((p) => p.meetsStandard).length;
   return (
     <Section
       title="Базові фото"
-      sub="Обличчя для примірок береться лише з цих фото."
-      actions={<button className="btn" onClick={() => setPicker(true)}>Вибрати з наявних</button>}
+      sub={prof.identity ? `${base[0]?.originalName ?? 'Оригінал'} — опора обличчя. ${prof.identity.preserveHeadAngle ? 'Оригінальний ракурс.' : 'Прямий погляд, голова рівно.'} ${prof.identity.noGlasses ? 'Без окулярів.' : ''} ${prof.identity.hairstyle ?? ''}` : 'Обличчя для примірок береться лише з цих фото.'}
+      actions={!prof.identity && <button className="btn" onClick={() => setPicker(true)}>Вибрати з наявних</button>}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 24 }} className="profile-base">
         <div className="stack" style={{ gap: 18 }}>
           {intake.field}
+          <a className="btn" href="#/gallery?type=original">Усі мої оригінали й референси</a>
           <button className="dropzone" onClick={intake.pick} disabled={intake.busy} style={{ cursor: 'pointer', width: '100%' }}>
             {intake.busy || busy ? <Loader2 size={22} className="spin" style={{ margin: '0 auto' }} /> : <Camera size={22} style={{ margin: '0 auto' }} />}
             <b>{busy ? `Розбираю фото: ${busy}` : 'Додати фото'}</b>
@@ -73,11 +74,11 @@ function BasePhotos() {
                         {p.meetsStandard ? 'за стандартом' : p.meetsStandard === false ? 'не за стандартом' : 'не перевірено'}
                       </Badge>
                     </span>
-                    <span className="tr">
+                    {!prof.identity && <span className="tr">
                       <button className="icon-btn" aria-label="Прибрати з базових" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }), 'Прибрано')}>
                         <X size={14} />
                       </button>
-                    </span>
+                    </span>}
                   </div>
                   <button className={`btn sm${p.meetsStandard ? ' primary' : ''}`} onClick={() => void act(() => api('PATCH', `/api/photos/${p.id}`, { meetsStandard: !p.meetsStandard }))}>
                     {p.meetsStandard ? <Check size={13} /> : <TriangleAlert size={13} />} {p.meetsStandard ? 'Відповідає' : 'Позначити як відповідне'}

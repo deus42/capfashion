@@ -279,7 +279,7 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
 
   if (!look) return <div className="page">Образів ще немає.</div>;
   const result = results.find((r) => r.id === selected) ?? results[0];
-  const baseIds = baseOverride ?? db.profile.basePhotoIds;
+  const baseIds = db.profile.identity ? [db.profile.identity.sourcePhotoId] : baseOverride ?? db.profile.basePhotoIds;
   const basePhotos = baseIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as DB['photos'];
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
   const problem = jobs.find((j) => j.state === 'needs_data' || j.state === 'error');
@@ -328,8 +328,9 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
                     {p.meetsStandard === false && <span className="warn"><TriangleAlert size={10} /></span>}
                   </div>
                 ))}
-                <button className="input-thumb add" onClick={() => setBasePicker(true)} aria-label="Вибрати фото"><ImagePlus size={18} /></button>
+                {!db.profile.identity && <button className="input-thumb add" onClick={() => setBasePicker(true)} aria-label="Вибрати фото"><ImagePlus size={18} /></button>}
               </div>
+              {db.profile.identity && <p className="small muted">{basePhotos[0]?.originalName} · закріплені оригінали обличчя й статури · {db.profile.identity.preserveHeadAngle ? 'оригінальний ракурс' : 'прямий погляд'}{db.profile.identity.noGlasses ? ' · без окулярів' : ''}</p>}
             </div>
           </div>
 

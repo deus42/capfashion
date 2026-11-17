@@ -36,6 +36,30 @@ export interface HistoryEntry {
   note?: string;
 }
 
+export interface HashedFile { path: string; sha256: string }
+
+/** Owner-confirmed original and exact-pixel crops; frozen into each new try-on. */
+export interface IdentityReference {
+  sourcePhotoId: string;
+  original: HashedFile;
+  face: HashedFile;
+  body: HashedFile;
+  preserveHeadAngle: boolean;
+  hairstyle?: string;
+  noGlasses?: boolean;
+  bodyOriginal?: HashedFile;
+  hair?: { sourcePhotoId: string; original: HashedFile; crop: HashedFile };
+  confirmedAt: string;
+}
+
+export function validHashedFile(file: HashedFile): boolean {
+  return !!file && typeof file.path === 'string' && !!file.path && !file.path.startsWith('/') && !file.path.split(/[\\/]/).includes('..') && /^[a-f0-9]{64}$/.test(file.sha256);
+}
+
+export function validIdentity(ref: IdentityReference): boolean {
+  return !!ref && typeof ref.sourcePhotoId === 'string' && typeof ref.preserveHeadAngle === 'boolean' && !!ref.confirmedAt && [ref.original, ref.face, ref.body, ...(ref.bodyOriginal ? [ref.bodyOriginal] : []), ...(ref.hair ? [ref.hair.original, ref.hair.crop] : [])].every(validHashedFile) && new Set([ref.original.path, ref.face.path, ref.body.path]).size === 3;
+}
+
 export interface Photo {
   id: string;
   kind: PhotoKind;
@@ -45,6 +69,8 @@ export interface Photo {
   originalPath?: string;
   originalName: string;
   source: 'chat-2026-11-14' | 'upload' | 'generated';
+  /** Keep personal originals available as references, independently of item/base selection. */
+  preserveAsReference?: boolean;
   observation?: string;
   /** Owner's check against the base-photo standard; null = not checked. */
   meetsStandard?: boolean | null;
@@ -82,6 +108,8 @@ export interface Item {
   purchasedFromProduct?: string;
   /** Generated catalogue image (reconstruction, not evidence). */
   packshotId?: string;
+  /** Face-free crop of an original garment photo, never an identity reference. */
+  tryonReference?: HashedFile & { source: HashedFile };
   history: HistoryEntry[];
   createdAt: string;
   updatedAt: string;
@@ -194,6 +222,8 @@ export interface SnapshotSlot {
   description: string;
   owned: boolean;
   photoPaths: string[];
+  originalPhotoPaths?: string[];
+  photoHashes?: HashedFile[];
 }
 
 export interface Job {
@@ -218,6 +248,7 @@ export interface Job {
     slots: SnapshotSlot[];
     basePhotoIds: string[];
     basePhotoPaths: string[];
+    identity?: IdentityReference;
   };
   instructions: string;
   state: JobState;
@@ -277,6 +308,7 @@ export interface KnownSize {
 export interface Profile {
   rev: number;
   basePhotoIds: string[];
+  identity?: IdentityReference;
   measurements: Record<MeasureKey, Measurement>;
   knownSizes: KnownSize[];
   preferences: { comfort: string; materials: string; fit: string; branding: string };
@@ -346,6 +378,10 @@ export function validateDb(db: unknown): string | null {
     if (!i.title?.trim()) return `Річ ${i.id}: порожня назва`;
     for (const pid of i.photoIds) if (!has('photos', pid)) return `Річ ${i.id}: немає фото ${pid}`;
     if (i.packshotId && !has('photos', i.packshotId)) return `Річ ${i.id}: немає packshot`;
+    if (i.tryonReference) {
+      const crop = i.tryonReference;
+      if (!validHashedFile(crop) || !validHashedFile(crop.source) || !i.photoIds.some((id) => d.photos.some((p) => p.id === id && p.path === crop.source.path && p.source !== 'generated' && !p.inspiration))) return `Річ ${i.id}: некоректний кроп власного оригіналу`;
+    }
   }
   for (const n of d.needs) {
     if (!CATEGORIES.includes(n.category)) return `Потреба ${n.id}: невідома категорія`;
@@ -385,6 +421,7 @@ export function validateDb(db: unknown): string | null {
     for (const id of j.requiredItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає речі ${id}`;
     if (j.retryOf && !has('jobs', j.retryOf)) return `Завдання ${j.id}: немає попередньої спроби`;
     if (j.resultId && !has('results', j.resultId)) return `Завдання ${j.id}: немає результату`;
+    if (j.snapshot.identity && !validIdentity(j.snapshot.identity)) return `Завдання ${j.id}: некоректний оригінал зовнішності`;
   }
   for (const r of d.results) {
     if (!has('jobs', r.jobId)) return `Результат ${r.id}: немає завдання`;
@@ -396,6 +433,14 @@ export function validateDb(db: unknown): string | null {
   }
   if (!d.profile || !Array.isArray(d.profile.basePhotoIds)) return 'Профіль пошкоджений';
   for (const pid of d.profile.basePhotoIds) if (!has('photos', pid)) return `Профіль: немає базового фото ${pid}`;
+  if (d.profile.identity) {
+    const ref = d.profile.identity;
+    const p = d.photos.find((p) => p.id === ref.sourcePhotoId);
+    if (!validIdentity(ref) || !p || p.source === 'generated' || p.inspiration || ref.original.path !== p.path) return 'Профіль: зовнішність повинна походити з власного оригіналу';
+    const originalPhoto = (file: HashedFile) => d.photos.some((p) => p.source !== 'generated' && !p.inspiration && p.path === file.path);
+    if (ref.bodyOriginal && !originalPhoto(ref.bodyOriginal)) return 'Профіль: статура повинна походити з власного оригіналу';
+    if (ref.hair && !d.photos.some((p) => p.id === ref.hair!.sourcePhotoId && p.source !== 'generated' && !p.inspiration && p.path === ref.hair!.original.path)) return 'Профіль: зачіска повинна походити з власного оригіналу';
+  }
   for (const k of MEASURE_KEYS) if (!d.profile.measurements?.[k]) return `Профіль: немає мірки ${k}`;
   if (!d.settings?.codexModel) return 'Налаштування: немає моделі Codex';
   return null;

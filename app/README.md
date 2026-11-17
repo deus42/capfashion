@@ -42,7 +42,7 @@ The site runs as the user LaunchAgent `ai.deus.capfashion` (`~/Library/LaunchAge
 
 ## Editing and deleting
 
-Capsules, selections, looks, items, renders, packshots, products, needs and queue jobs can be edited or deleted from their cards; deletes need confirmation and cascade (`DELETE /api/<collection>/:id`). Chat originals cannot be deleted. Inactive and merged items are hidden except in the «Неактуальні» filter.
+Capsules, selections, looks, items, renders, packshots, products, needs and queue jobs can be edited or deleted from their cards; deletes need confirmation and cascade (`DELETE /api/<collection>/:id`). Chat originals and uploads retained as references cannot be deleted from the photo archive. Inactive and merged items are hidden except in the «Неактуальні» filter.
 
 ## Performance
 
@@ -68,6 +68,8 @@ API responses and static assets are gzip-compressed (state ≈ 28 KB on the wire
 - Isolation: `codex exec --ignore-user-config --ephemeral -s workspace-write -C .local/app-data/jobs/<id>`. Personal Codex config (including its env block) is not loaded. Inputs are attached with `-i`; the model writes only into the job folder.
 - Model and effort are set in Профіль → Генерація.
 - The result is saved as "На перевірці". The owner chooses "Прийняти" or "Переробити" with a reason, which queues a linked retry.
+- Identity is pinned in `profile.identity`: untouched originals, exact-pixel face/body crops, optional hair-only crop, SHA-256 and owner presentation choices (current: direct front gaze, neat original-length/colour hair, no glasses). New jobs freeze this contract; the runner verifies bytes before calling the image tool and sends identity references first, then face-free garments, at most five files total. Full-person clothing photographs cannot compete with the pinned face. Actual selected input paths are recorded in `jobs/<id>/references.json` and result sources. Old attempts without this contract require a fresh try-on. Prior renders never supply identity or physique.
+- All personal originals remain reference material (`preserveAsReference`), separate from generated media. Gallery «Мої фото» shows original records; «Згенероване» contains try-ons/packshots and «Натхнення» holds styling references. New uploads retain original bytes (including HEIC alongside display JPEGs), and removing an item/base selection does not remove the reference archive. Local checksum inventory: `.local/personal-photo-references.json`.
 
 ## Packshots and concept images
 

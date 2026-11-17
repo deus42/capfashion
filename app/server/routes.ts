@@ -57,14 +57,17 @@ export function snapshotSlots(db: DB, slots: Slots): SnapshotSlot[] {
       if (ref.kind === 'item') {
         const item = findOr404(db.items, ref.id, 'Річ');
         const photos = item.photoIds.slice(0, 2).map((pid) => findOr404(db.photos, pid, 'Фото').path);
-        const details = [item.color, item.brand, item.model, item.fit, item.composition].filter(Boolean).join(', ');
-        out.push({ slot, kind: 'item', id: item.id, title: item.title, description: details || item.observation || '', owned: item.status !== 'inactive', photoPaths: photos });
+        const details = [item.color, item.brand, item.model, item.fit, item.composition, item.observation].filter(Boolean).join(', ');
+        const crop = item.tryonReference;
+        // A pinned face must never compete with faces in full garment snapshots.
+        const photoPaths = db.profile.identity ? (crop ? [crop.path] : []) : photos;
+        out.push({ slot, kind: 'item', id: item.id, title: item.title, description: details, owned: item.status !== 'inactive', photoPaths, originalPhotoPaths: photos, photoHashes: crop ? [crop, crop.source] : undefined });
       } else if (ref.kind === 'need') {
         const need = findOr404(db.needs, ref.id, 'Потреба');
         out.push({ slot, kind: 'need', id: need.id, title: need.title, description: need.description, owned: false, photoPaths: [] });
       } else {
         const p = findOr404(db.products, ref.id, 'Товар');
-        const photo = p.photoId ? [findOr404(db.photos, p.photoId, 'Фото').path] : [];
+        const photo = p.photoId && !db.profile.identity ? [findOr404(db.photos, p.photoId, 'Фото').path] : [];
         out.push({ slot, kind: 'product', id: p.id, title: `${p.brand} ${p.model}`.trim(), description: [p.composition, p.fit].filter(Boolean).join(', '), owned: false, photoPaths: photo });
       }
     }
@@ -73,8 +76,10 @@ export function snapshotSlots(db: DB, slots: Slots): SnapshotSlot[] {
 }
 
 export function createJob(db: DB, look: Look, basePhotoIds: string[], instructions: string, retryOf?: string, frozen?: Job['snapshot']): Job {
-  const basePaths = basePhotoIds.map((id) => findOr404(db.photos, id, 'Базове фото').path);
-  const snapshot = frozen ?? { lookName: look.name, slots: snapshotSlots(db, look.slots), basePhotoIds, basePhotoPaths: basePaths };
+  const identity = db.profile.identity;
+  const selectedIds = identity ? [identity.sourcePhotoId] : basePhotoIds;
+  const basePaths = identity ? [identity.face.path, identity.body.path, ...(identity.hair ? [identity.hair.crop.path] : [])] : selectedIds.map((id) => findOr404(db.photos, id, 'Базове фото').path);
+  const snapshot = structuredClone(frozen ?? { lookName: look.name, slots: snapshotSlots(db, look.slots), basePhotoIds: selectedIds, basePhotoPaths: basePaths, identity });
   const job: Job = { id: newId('J'), lookId: look.id, lookVersion: frozen ? (db.jobs.find((j) => j.id === retryOf)?.lookVersion ?? look.version) : look.version, snapshot, instructions, state: 'queued', origin: 'site', retryOf, createdAt: now() };
   if (!snapshot.basePhotoIds.length) {
     job.state = 'needs_data';
@@ -140,7 +145,7 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
   const itemId = query.get('item');
   const productId = query.get('product');
   return ctx.store.mutate((db) => {
-    const photo: Photo = { id, kind, path: saved.path, originalPath: saved.originalPath, originalName: path.basename(filename || 'upload').slice(0, 200), source: 'upload', meetsStandard: kind === 'base' ? null : undefined, createdAt: now() };
+    const photo: Photo = { id, kind, path: saved.path, originalPath: saved.originalPath, originalName: path.basename(filename || 'upload').slice(0, 200), source: 'upload', preserveAsReference: true, meetsStandard: kind === 'base' ? null : undefined, createdAt: now() };
     db.photos.push(photo);
     if (kind === 'base') {
       db.profile.basePhotoIds.push(id);
@@ -235,6 +240,10 @@ const routes: [string, RegExp, Handler][] = [];
 const on = (method: string, pattern: string, h: Handler) => routes.push([method, new RegExp(`^${pattern.replace(/:\w+/g, '([^/]+)')}$`), h]);
 
 // ── Wardrobe ───────────────────────────────────────────────────────────────
+function clearDetachedCrop(db: DB, item: Item) {
+  if (item.tryonReference && !item.photoIds.some((id) => db.photos.some((p) => p.id === id && p.path === item.tryonReference!.source.path))) delete item.tryonReference;
+}
+
 on('POST', '/api/items', (ctx, _p, b) =>
   ctx.store.mutate((db) => {
     const category = str(b.category) as Item['category'];
@@ -256,6 +265,7 @@ on('PATCH', '/api/items/:id', (ctx, [id], b) =>
     if (b.category && CATEGORIES.includes(b.category as never)) item.category = b.category as Item['category'];
     if (b.status && ITEM_STATUSES.includes(b.status as never)) item.status = b.status as Item['status'];
     if (Array.isArray(b.photoIds)) item.photoIds = (b.photoIds as string[]).filter((pid) => db.photos.some((p) => p.id === pid));
+    clearDetachedCrop(db, item);
     if (!item.title) throw new HttpError(400, 'Назва не може бути порожньою');
     history(item, before !== item.status ? `status:${item.status}` : 'edited');
     return item;
@@ -303,6 +313,7 @@ on('POST', '/api/items/:id/split', (ctx, [id], b) =>
     const at = now();
     const part: Item = { id: newId('W'), rev: 1, category: item.category, title: str(b.title, 200) || `${item.title} (окрема)`, status: 'needs_confirmation', photoIds, observation: item.observation, origin: 'split', splitFrom: item.id, history: [{ at, action: 'split', note: `Відокремлено від ${item.id}` }], createdAt: at, updatedAt: at };
     item.photoIds = item.photoIds.filter((p) => !photoIds.includes(p));
+    clearDetachedCrop(db, item);
     bump(item, b.rev);
     history(item, 'split', `Фото ${photoIds.join(', ')} → ${part.id}`);
     db.items.push(part);
@@ -691,9 +702,11 @@ on('DELETE', '/api/photos/:id', (ctx, [id]) =>
   ctx.store.mutate((db) => {
     const p = findOr404(db.photos, id, 'Фото');
     if (p.kind === 'source') throw new HttpError(409, 'Оригінали з чату не видаляються');
+    if (p.preserveAsReference) throw new HttpError(409, 'Оригінал збережено як референс. Його можна прибрати з базових фото або речі, але не видалити з архіву.');
     if (db.jobs.some((j) => j.inputPhotoIds?.includes(id) && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Фото ще в обробці');
     for (const i of db.items) {
       if (i.photoIds.includes(id)) i.photoIds = i.photoIds.filter((x) => x !== id);
+      clearDetachedCrop(db, i);
       if (i.packshotId === id) delete i.packshotId;
     }
     for (const n of db.needs) if (n.conceptPhotoId === id) delete n.conceptPhotoId;

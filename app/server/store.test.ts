@@ -6,7 +6,8 @@ import path from 'node:path';
 import type { DB } from './schema.ts';
 import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
-import { dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
+import { createJob, dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
+import { verifyReferenceFiles } from './identity.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
 import { analyzePrompt, applyAnalyze, applyIntake } from './analysis.ts';
 import { hiddenLookIds, isCapsuleHidden, sameLook } from '../src/rating.ts';
@@ -221,7 +222,7 @@ test('prompt carries the frozen outfit and the image standard', () => {
   const prompt = buildPrompt(job, '/tmp/x/result.png');
   assert.match(prompt, /\/tmp\/x\/result\.png/);
   assert.match(prompt, /#FFFFFF/);
-  assert.match(prompt, /eyes looking into the camera/);
+  assert.match(prompt, /preserve the original head angle/);
   assert.match(prompt, /Navy chinos/);
 });
 
@@ -475,7 +476,7 @@ test('try-on prompt sends original base photos to the image tool before garments
   const list = JSON.parse(prompt.match(/parameter \(in this order\): (\[[^\]]*\])/)![1]);
   assert.deepEqual(list, ['/abs/assets/photos/a.jpeg', '/abs/assets/photos/b.jpeg'], 'identity first, then garments');
   assert.ok(!/renders\//.test(prompt), 'no generated render is used as a reference');
-  assert.match(prompt, /recognisably this person/);
+  assert.match(prompt, /exact facial features/);
 });
 
 test('image references never exceed the tool limit and keep identity first', () => {
@@ -489,6 +490,90 @@ test('image references never exceed the tool limit and keep identity first', () 
   const packshot = pickRefs(job, true, (p) => `/abs/${p}`);
   assert.equal(packshot.identity.length, 0);
   assert.ok(packshot.garments.length <= MAX_IMAGE_REFS);
+});
+
+test('pinned original freezes face/body crops and excludes faces from garment photos', () => {
+  const db = fixture();
+  const file = (p: string) => ({ path: p, sha256: 'a'.repeat(64) });
+  db.profile.identity = { sourcePhotoId: 'P-1', original: file('assets/photos/a.jpeg'), face: file('.local/media/face.png'), body: file('.local/media/body.png'), preserveHeadAngle: true, confirmedAt: at };
+  db.items[0].tryonReference = { ...file('.local/media/trousers.png'), source: file('assets/photos/b.jpeg') };
+  const job = createJob(db, db.looks[0], ['P-2'], '');
+  assert.deepEqual(job.snapshot.basePhotoIds, ['P-1']);
+  const refs = pickRefs(job, false, (p) => '/abs/' + p);
+  assert.deepEqual(refs.identity, ['/abs/.local/media/face.png', '/abs/.local/media/body.png']);
+  assert.deepEqual(refs.garments, ['/abs/.local/media/trousers.png']);
+  const prompt = buildPrompt(job, '/tmp/result.png', refs);
+  assert.match(prompt, /KEEP the original head tilt, rotation, gaze direction/);
+  assert.doesNotMatch(prompt, /head level|eyes looking into the camera|Ignore their pose/);
+  db.profile.identity.face.path = '.local/media/other-face.png';
+  assert.equal(job.snapshot.identity!.face.path, '.local/media/face.png', 'profile edits cannot rewrite past attempts');
+  delete db.items[0].tryonReference;
+  assert.deepEqual(snapshotSlots(db, db.looks[0].slots)[1].photoPaths, [], 'unreviewed full-person garment images stay out');
+  assert.equal(validateDb(db), null);
+  db.photos[0].source = 'generated';
+  assert.match(validateDb(db)!, /власного оригіналу/);
+});
+
+test('pinned reference integrity fails before generation when a file changes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capfashion-identity-'));
+  try {
+    const file = (p: string) => { fs.writeFileSync(path.join(dir, p), p); return { path: p, sha256: createHash('sha256').update(p).digest('hex') }; };
+    const db = fixture();
+    db.profile.identity = { sourcePhotoId: 'P-1', original: file('original.png'), face: file('face.png'), body: file('body.png'), preserveHeadAngle: true, confirmedAt: at };
+    const job = createJob(db, db.looks[0], [], '');
+    verifyReferenceFiles(job, (p) => path.join(dir, p));
+    fs.writeFileSync(path.join(dir, 'face.png'), 'changed');
+    assert.throws(() => verifyReferenceFiles(job, (p) => path.join(dir, p)), /Змінено закріплений файл: face.png/);
+    fs.unlinkSync(path.join(dir, 'face.png'));
+    assert.throws(() => verifyReferenceFiles(job, (p) => path.join(dir, p)), /ENOENT/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('front gaze, hair-only styling and no glasses freeze with original identity sources', () => {
+  const db = fixture();
+  const file = (p: string) => ({ path: p, sha256: 'b'.repeat(64) });
+  db.profile.identity = { sourcePhotoId: 'P-1', original: file(db.photos[0].path), face: file('.local/media/face.png'), body: file('.local/media/body.png'), bodyOriginal: file(db.photos[1].path), hair: { sourcePhotoId: 'P-2', original: file(db.photos[1].path), crop: file('.local/media/hair.png') }, preserveHeadAngle: false, hairstyle: 'Same length and colour, neatly swept back and slightly sideways', noGlasses: true, confirmedAt: at };
+  const job = createJob(db, db.looks[0], ['P-2'], '');
+  const refs = pickRefs(job, false, (p) => p);
+  assert.deepEqual(refs.identity, ['.local/media/face.png', '.local/media/body.png', '.local/media/hair.png']);
+  assert.deepEqual(job.snapshot.basePhotoPaths, refs.identity);
+  const prompt = buildPrompt(job, '/tmp/control.png', refs);
+  assert.match(prompt, /head upright and facing directly forward/);
+  assert.match(prompt, /both eyes open and looking straight into the camera/);
+  assert.match(prompt, /ORIGINAL HAIR-ONLY crop/);
+  assert.match(prompt, /ABSOLUTELY NO GLASSES/);
+  assert.doesNotMatch(prompt, /KEEP the original head tilt/);
+  assert.equal(validateDb(db), null);
+  db.profile.identity.noGlasses = false;
+  assert.equal(job.snapshot.identity!.noGlasses, true);
+  db.photos[1].source = 'generated';
+  assert.match(validateDb(db)!, /статура.*власного оригіналу/);
+  delete db.profile.identity.bodyOriginal;
+  assert.match(validateDb(db)!, /зачіска.*власного оригіналу/);
+});
+
+test('retained uploaded originals survive attempted deletion independently of base selection', async () => {
+  const { store, call } = setup();
+  await store.mutate((db) => {
+    db.photos.push({ id: 'P-selfie', kind: 'base', path: '.local/media/selfie.jpg', originalName: 'selfie.jpg', source: 'upload', preserveAsReference: true, createdAt: at });
+    db.profile.basePhotoIds = [];
+  });
+  await assert.rejects(call('DELETE', '/api/photos/P-selfie'), (e: any) => e.status === 409);
+  assert.ok(store.read().photos.some((p) => p.id === 'P-selfie'));
+});
+
+test('detaching or splitting a garment source clears its stale crop and keeps the original archive', async () => {
+  const { store, call } = setup();
+  const crop = { path: '.local/media/trousers.png', sha256: 'a'.repeat(64), source: { path: 'assets/photos/a.jpeg', sha256: 'b'.repeat(64) } };
+  await store.mutate((db) => { db.items[0].tryonReference = crop; });
+  await call('PATCH', '/api/items/W-1', { photoIds: ['P-2'] });
+  assert.equal(store.read().items[0].tryonReference, undefined);
+  await store.mutate((db) => { db.items[0].photoIds = ['P-1', 'P-2']; db.items[0].tryonReference = crop; });
+  await call('POST', '/api/items/W-1/split', { photoIds: ['P-1'] });
+  const db = store.read();
+  assert.equal(db.items[0].tryonReference, undefined);
+  assert.equal(db.photos.length, 2, 'both originals remain references');
+  assert.equal(validateDb(db), null);
 });
 
 test('restart re-queues only jobs this runner started, never a job running elsewhere', async () => {

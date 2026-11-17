@@ -266,7 +266,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
               <button className="icon-btn" onClick={() => setMergeSel([])} title="Обʼєднати дублікати"><Merge size={15} /></button>
               <button className="icon-btn" onClick={() => setCreating(true)} title="Додати вручну"><Plus size={16} /></button>
               <button className="btn primary" onClick={intake.pick} disabled={intake.busy}>
-                {intake.busy || intakeBusy ? <Loader2 size={16} className="spin" /> : <Camera size={16} />} Фото одягу{intakeBusy ? ` · ${intakeBusy}` : ''}
+                {intake.busy || intakeBusy ? <Loader2 size={16} className="spin" /> : <Camera size={16} />} Додати фото{intakeBusy ? ` · ${intakeBusy}` : ''}
               </button>
             </>
           )

@@ -100,7 +100,7 @@ export default function App() {
             {activeJobs > 0 && <b>{activeJobs} в роботі</b>}
           </button>
           <button className="btn primary sm" onClick={intake.pick} disabled={intake.busy}>
-            {intake.busy ? <Loader2 size={14} className="spin" /> : <Camera size={14} />} Фото одягу
+            {intake.busy ? <Loader2 size={14} className="spin" /> : <Camera size={14} />} Додати фото
           </button>
           {intake.field}
           <a href="#/profile" className="top-avatar m-only" aria-label="Мій профіль">

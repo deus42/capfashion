@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Camera, Check, CircleCheck, Heart, KeyRound, Plus, Ruler, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Camera, Check, CircleCheck, Heart, KeyRound, Loader2, Plus, Ruler, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { Category, KnownSize, MeasureKey } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, Dropzone, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
+import { Badge, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
+import { useIntake } from './Home.tsx';
 import { CATEGORY_LABEL, MEASURES, fmtDay } from '../lib.ts';
 
 const STANDARD = [
@@ -43,6 +44,8 @@ function BasePhotos() {
   const { act } = useApp();
   const prof = db.profile;
   const [picker, setPicker] = useState(false);
+  const intake = useIntake();
+  const busy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const base = prof.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
   const ok = base.filter((p) => p.meetsStandard).length;
   return (
@@ -53,7 +56,12 @@ function BasePhotos() {
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 24 }} className="profile-base">
         <div className="stack" style={{ gap: 18 }}>
-          <Dropzone kind="base" text="Перетягни фото сюди або вибери файли. На iPhone — зніми камерою чи вибери з галереї." />
+          {intake.field}
+          <button className="dropzone" onClick={intake.pick} disabled={intake.busy} style={{ cursor: 'pointer', width: '100%' }}>
+            {intake.busy || busy ? <Loader2 size={22} className="spin" style={{ margin: '0 auto' }} /> : <Camera size={22} style={{ margin: '0 auto' }} />}
+            <b>{busy ? `Розбираю фото: ${busy}` : 'Додати фото'}</b>
+            Сайт сам визначить: твоє фото для примірок, одяг чи етикетка.
+          </button>
           {base.length > 0 && (
             <div className="photo-grid">
               {base.map((p) => (

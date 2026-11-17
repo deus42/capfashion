@@ -176,7 +176,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     if (job.kind === 'intake') {
       const photos = (job.inputPhotoIds ?? []).map((id) => db0.photos.find((p) => p.id === id)!).filter(Boolean);
       for (const p of photos) images.push(resolveAllowed(projectRoot, store.dataDir, p.path));
-      prompt = intakePrompt(db0, job, photos.map((p) => p.originalName));
+      prompt = intakePrompt(db0, job, photos.map((p) => path.basename(p.path)));
       fs.writeFileSync(schemaFile, JSON.stringify(INTAKE_SCHEMA));
     } else {
       const dir = path.join(jobDir, 'items');
@@ -231,11 +231,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         return;
       }
       if (j.kind === 'intake') {
-        const created = applyIntake(db, j, reply as never);
-        j.createdItemIds = created;
-        for (const id of created) packshotJob(db, { itemId: id });
-        j.state = created.length ? 'done' : 'error';
-        j.stateNote = created.length ? `Знайдено речей: ${created.length} — packshot у черзі` : 'На фото не знайдено одягу';
+        const outcome = applyIntake(db, j, reply as never);
+        j.createdItemIds = outcome.created;
+        for (const id of outcome.created) packshotJob(db, { itemId: id });
+        j.state = 'done';
+        j.stateNote = outcome.note;
         return;
       }
       const capsuleId = applyAnalyze(db, j, reply as never);
@@ -411,7 +411,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
           .sort((a, b) => batch(a.kind) - batch(b.kind) || a.createdAt.localeCompare(b.createdAt));
         if (!queued.length && active.size === 0) break;
         while (active.size < limit && queued.length) {
-          const next = queued.shift()!;
+          // Uploads are triaged one at a time so the same garment on several photos is recognised as one item.
+          const intakeActive = [...active].some((id) => db.jobs.find((x) => x.id === id)?.kind === 'intake');
+          const idx = queued.findIndex((j) => !(intakeActive && j.kind === 'intake'));
+          if (idx < 0) break;
+          const next = queued.splice(idx, 1)[0];
           active.add(next.id);
           sync();
           void runSafe(next.id).finally(() => {

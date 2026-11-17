@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Camera, Loader2, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
+import { ArrowRight, Camera, Check, Loader2, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
 import type { Capsule, DB, Job } from '../api.ts';
 import { api, thumb, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
@@ -43,7 +43,7 @@ export function useIntake() {
         setBusy(true);
         await act(async () => {
           for (const f of files) await uploadFile(f, { kind: 'intake' });
-        }, files.length > 1 ? `${files.length} фото в обробці` : 'Фото в обробці — речі з’являться в гардеробі');
+        }, files.length > 1 ? `${files.length} фото в обробці — сайт сам розбереться` : 'Фото в обробці — сайт сам розбереться');
         setBusy(false);
         if (input.current) input.current.value = '';
       }}
@@ -53,8 +53,13 @@ export function useIntake() {
 }
 
 function processing(db: DB) {
+  const recent = Date.now() - 3 * 3600 * 1000;
   return db.jobs
-    .filter((j) => (j.kind === 'intake' || j.kind === 'analyze') && (j.state === 'queued' || j.state === 'running' || (j.state === 'error' && !db.jobs.some((x) => x.retryOf === j.id))))
+    .filter(
+      (j) =>
+        (j.kind === 'intake' || j.kind === 'analyze') &&
+        (j.state === 'queued' || j.state === 'running' || (j.state === 'error' && !db.jobs.some((x) => x.retryOf === j.id)) || (j.kind === 'intake' && j.state === 'done' && new Date(j.finishedAt ?? 0).getTime() > recent)),
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 8);
 }
@@ -62,18 +67,20 @@ function processing(db: DB) {
 function ProcCard({ j }: { j: Job }) {
   const db = useDb();
   const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
+  const done = j.state === 'done';
+  const href = j.kind === 'analyze' ? '#/capsules?tab=selections' : photo?.kind === 'base' ? '#/profile/base' : j.createdItemIds?.[0] ? `#/wardrobe/${j.createdItemIds[0]}` : '#/wardrobe';
   return (
-    <a className="proc-card" href={j.kind === 'analyze' ? '#/capsules?tab=selections' : '#/queue'} title={j.stateNote}>
+    <a className="proc-card" href={href} title={j.stateNote}>
       <div className="img">
         {photo ? <img src={thumb(photo.path, 300)} alt="" /> : <Wand2 size={26} />}
         <span className="st">
-          <Badge tone={j.state === 'error' ? 'bad glass' : 'glass'}>
-            {j.state === 'error' ? <TriangleAlert size={11} /> : <Loader2 size={11} className={j.state === 'running' ? 'spin' : ''} />}
-            {j.state === 'error' ? 'помилка' : j.state === 'running' ? 'аналіз' : 'черга'}
+          <Badge tone={j.state === 'error' ? 'bad glass' : done ? 'ok glass' : 'glass'}>
+            {j.state === 'error' ? <TriangleAlert size={11} /> : done ? <Check size={11} /> : <Loader2 size={11} className={j.state === 'running' ? 'spin' : ''} />}
+            {j.state === 'error' ? 'помилка' : done ? 'готово' : j.state === 'running' ? 'аналіз' : 'черга'}
           </Badge>
         </span>
       </div>
-      <span className="t">{j.kind === 'analyze' ? 'Підбірка образів' : 'Розпізнавання речей'}</span>
+      <span className="t">{done || j.state === 'error' ? j.stateNote : j.kind === 'analyze' ? 'Підбірка образів' : 'Розбираю фото…'}</span>
     </a>
   );
 }
@@ -105,7 +112,7 @@ export function HomePage() {
         </div>
         <div className="big-actions">
           <button className="big-action" onClick={intake.pick} disabled={intake.busy}>
-            {intake.busy ? <Loader2 size={20} className="spin" /> : <Camera size={20} />} Фото одягу
+            {intake.busy ? <Loader2 size={20} className="spin" /> : <Camera size={20} />} Додати фото
           </button>
           <button className="big-action primary" onClick={() => void analyze()} disabled={analyzing}>
             {analyzing ? <Loader2 size={20} className="spin" /> : <Sparkles size={20} />} {analyzing ? 'Підбираю…' : 'Підібрати образи'}

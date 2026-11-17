@@ -4,6 +4,7 @@ import type { DB, Job, Look, Result, ReworkReason, SlotKey, SlotRef, Slots } fro
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Img, KindDot, LookCollage, PhotoPicker } from '../components/ui.tsx';
+import { useIntake } from './Home.tsx';
 import { CATEGORY_LABEL, JOB_LABEL, REASON_LABEL, REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SLOT_CATEGORIES, SLOT_LABEL, fmtDate, resolveRef, resultsForLook } from '../lib.ts';
 
 const SLOTS = Object.keys(SLOT_LABEL) as SlotKey[];
@@ -179,6 +180,7 @@ export function ReviewBar({ result }: { result: Result }) {
 function ResultCard({ result, look, onRun, canRun }: { result: Result | undefined; look: Look; onRun?: () => void; canRun?: boolean }) {
   const db = useDb();
   const { act } = useApp();
+  const intake = useIntake();
   const running = db.jobs.find((j) => j.lookId === look.id && (j.state === 'running' || j.state === 'queued'));
   if (!result) {
     return (
@@ -190,7 +192,10 @@ function ResultCard({ result, look, onRun, canRun }: { result: Result | undefine
           ) : canRun ? (
             <button className="btn lg primary" onClick={onRun}><Sparkles size={17} /> Приміряти на мені</button>
           ) : (
-            <a className="btn lg primary" href="#/profile/base"><ImagePlus size={17} /> Додати своє фото</a>
+            <>
+              {intake.field}
+              <button className="btn lg primary" onClick={intake.pick} disabled={intake.busy}>{intake.busy ? <Loader2 size={17} className="spin" /> : <ImagePlus size={17} />} Додати своє фото</button>
+            </>
           )}
         </div>
       </div>

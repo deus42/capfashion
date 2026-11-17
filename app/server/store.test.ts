@@ -8,7 +8,7 @@ import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
 import { dispatch, snapshotSlots } from './routes.ts';
 import { buildPrompt, createRunner } from './runner.ts';
-import { applyAnalyze } from './analysis.ts';
+import { applyAnalyze, applyIntake } from './analysis.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 
@@ -233,12 +233,13 @@ test('intake recognises garments into candidates and queues their packshots', as
   const db = store.read();
   const job = db.jobs.find((j) => j.id === 'J-in')!;
   assert.equal(job.state, 'done');
-  assert.equal(job.createdItemIds?.length, 2);
+  assert.equal(job.createdItemIds?.length, 1, 'the duplicate of an unconfirmed candidate becomes extra evidence, not a new item');
   const shirt = db.items.find((i) => i.title === 'Біла оксфорд-сорочка')!;
   assert.equal(shirt.status, 'needs_confirmation');
   assert.deepEqual(shirt.photoIds, ['P-1']);
-  assert.match(db.items.find((i) => i.title === 'Темно-сині чіноси')!.observation ?? '', /W-1/);
-  assert.ok(db.items.find((i) => i.id === 'W-1')!.status !== 'confirmed', 'no automatic merge or confirmation');
+  assert.ok(!db.items.some((i) => i.title === 'Темно-сині чіноси'));
+  assert.ok(db.items.find((i) => i.id === 'W-1')!.status !== 'confirmed', 'no automatic confirmation');
+  assert.match(job.stateNote ?? '', /нових речей: 1/);
   assert.ok(job.createdItemIds!.every((id) => db.items.find((i) => i.id === id)!.packshotId), 'packshots generated for new items');
 });
 
@@ -264,5 +265,40 @@ test('analyzer keeps only owned items and complete looks (selection)', async () 
     const look = db.looks.find((l) => l.id === cap.lookIds[0])!;
     assert.deepEqual(look.slots.top, [], 'needs (not owned) are dropped');
     assert.deepEqual(look.slots.shoes, [{ kind: 'item', id: 'W-S' }]);
+  });
+});
+
+test('one upload control: owner photo becomes a base photo, label fills only empty fields', async () => {
+  const { store } = setup();
+  await store.mutate((db) => {
+    db.photos.push({ id: 'P-up', kind: 'item', path: 'assets/photos/up.jpeg', originalName: 'up.jpeg', source: 'upload', createdAt: at });
+    db.photos.push({ id: 'P-tag', kind: 'item', path: 'assets/photos/tag.jpeg', originalName: 'tag.jpeg', source: 'upload', createdAt: at });
+    db.items.find((i) => i.id === 'W-2')!.brand = 'Known';
+    db.items.push({ id: 'W-C', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    const base = { id: 'J-b', kind: 'intake' as const, inputPhotoIds: ['P-up'], lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+    const o1 = applyIntake(db, base, {
+      status: 'done', reason: '', photoType: 'person_full_body', singlePerson: true, baseSuitable: false, baseIssues: 'окуляри',
+      label: { itemId: '', brand: '', size: '', composition: '' },
+      garments: [{ title: 'Білі кеди', category: 'shoes', color: 'білий', notes: '', duplicateOf: 'W-C' }],
+    });
+    assert.equal(o1.base, 'added_nonstandard');
+    assert.deepEqual(db.profile.basePhotoIds, ['P-up']);
+    const up = db.photos.find((p) => p.id === 'P-up')!;
+    assert.equal(up.kind, 'base');
+    assert.equal(up.meetsStandard, false);
+    assert.equal(o1.created.length, 1, 'a duplicate of a confirmed item becomes a new candidate, confirmed item untouched');
+    assert.deepEqual(db.items.find((i) => i.id === 'W-C')!.photoIds, []);
+    const tag = { ...base, id: 'J-t', inputPhotoIds: ['P-tag'] };
+    const o2 = applyIntake(db, tag, {
+      status: 'done', reason: '', photoType: 'label', singlePerson: false, baseSuitable: false, baseIssues: '',
+      label: { itemId: 'W-2', brand: 'Other', size: 'W32 L32', composition: '98% cotton' }, garments: [],
+    });
+    assert.equal(o2.labelFor, 'W-2');
+    const w2 = db.items.find((i) => i.id === 'W-2')!;
+    assert.equal(w2.brand, 'Known', 'existing values are not overwritten');
+    assert.equal(w2.size, 'W32 L32');
+    assert.equal(w2.composition, '98% cotton');
+    assert.ok(w2.photoIds.includes('P-tag'));
+    assert.equal(db.photos.find((p) => p.id === 'P-tag')!.kind, 'label');
   });
 });

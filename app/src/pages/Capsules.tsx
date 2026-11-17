@@ -136,7 +136,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           <div className="row wrap" style={{ marginTop: 12 }}>
             <Badge>{SEASON_LABEL[capsule.season]}</Badge>
             {isSelection && <Badge tone="ok">лише мої речі</Badge>}
-            {capsule.situations.slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
+            {capsule.situations.filter((s) => s.length <= 24).slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
           </div>
         </div>
         <div className="actions">

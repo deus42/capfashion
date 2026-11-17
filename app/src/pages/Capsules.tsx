@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Heart, ImageOff, Loader2, Pencil, Plus, ShoppingBag, Sparkles } from 'lucide-react';
+import { Heart, ImageOff, Loader2, Pencil, Plus, ShoppingBag, Sparkles, Trash2 } from 'lucide-react';
 import type { Capsule, Look, Season } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
-import { Badge, Empty, LookCollage, Modal, PieceStrip } from '../components/ui.tsx';
+import { Badge, ConfirmButton, Empty, LookCollage, Modal, PieceStrip } from '../components/ui.tsx';
 import { REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, coverForLook, resolveRef } from '../lib.ts';
 import { CapsuleTile } from './Home.tsx';
 
@@ -63,8 +63,55 @@ export function CapsulesPage() {
   );
 }
 
+function EditLook({ look, onClose }: { look: Look; onClose: () => void }) {
+  const db = useDb();
+  const { act } = useApp();
+  const [name, setName] = useState(look.name);
+  const [note, setNote] = useState(look.note ?? '');
+  const renders = db.results.filter((r) => r.lookId === look.id).length;
+  return (
+    <Modal
+      title="Образ"
+      onClose={onClose}
+      footer={
+        <>
+          <ConfirmButton
+            className="btn danger"
+            title="Видалити образ"
+            message={<>Видалити «{look.name}»?{renders ? ` Разом з ним зникнуть ${renders} примірок цього образу.` : ''} Речі в гардеробі залишаться.</>}
+            onConfirm={async () => {
+              const ok = await act(() => api('DELETE', `/api/looks/${look.id}`), 'Образ видалено');
+              if (ok !== undefined) onClose();
+            }}
+          >
+            <Trash2 size={15} /> Видалити
+          </ConfirmButton>
+          <span style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>Скасувати</button>
+          <button
+            className="btn primary"
+            onClick={async () => {
+              const ok = await act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, name, note }), 'Збережено');
+              if (ok) onClose();
+            }}
+          >
+            Зберегти
+          </button>
+        </>
+      }
+    >
+      <div className="grid-form">
+        <label className="field full"><span>Назва</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="field full"><span>Нотатка</span><textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      </div>
+      <a className="btn" style={{ marginTop: 16 }} href={`#/studio?look=${look.id}`} onClick={onClose}><Sparkles size={15} /> Змінити склад у примірці</a>
+    </Modal>
+  );
+}
+
 function LookCard({ look }: { look: Look }) {
   const db = useDb();
+  const [editing, setEditing] = useState(false);
   const cover = coverForLook(db, look);
   const stale = cover && cover.lookVersion !== look.version;
   return (
@@ -77,8 +124,12 @@ function LookCard({ look }: { look: Look }) {
         </div>
         <span className="go btn sm primary"><Sparkles size={13} /> {cover ? 'Відкрити' : 'Приміряти'}</span>
       </a>
-      <h4 title={look.note}>{look.name}</h4>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h4 title={look.note}>{look.name}</h4>
+        <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
+      </div>
       <PieceStrip slots={look.slots} size={40} />
+      {editing && <EditLook look={look} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -145,6 +196,17 @@ export function CapsuleDetail({ id }: { id: string }) {
             <Heart size={15} fill={capsule.favorite ? 'currentColor' : 'none'} />
           </button>
           <button className="icon-btn" aria-label="Редагувати" onClick={() => setEditing(true)}><Pencil size={14} /></button>
+          <ConfirmButton
+            className="icon-btn"
+            title={isSelection ? 'Видалити підбірку' : 'Видалити капсулу'}
+            message={<>Видалити «{capsule.name}» і {looks.length} її образів? Речі в гардеробі залишаться.</>}
+            onConfirm={async () => {
+              const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), 'Видалено');
+              if (ok !== undefined) go(isSelection ? '/capsules?tab=selections' : '/capsules');
+            }}
+          >
+            <Trash2 size={14} />
+          </ConfirmButton>
           <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> Образ</button>
         </div>
       </div>

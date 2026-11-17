@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { FileText, Inbox, Loader2, Play, RotateCcw, Sparkles } from 'lucide-react';
+import { FileText, Inbox, Loader2, Play, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import type { Job } from '../api.ts';
 import { api, getLog, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, Empty, Modal, PageHead } from '../components/ui.tsx';
+import { Badge, ConfirmButton, Empty, Modal, PageHead } from '../components/ui.tsx';
 import { JOB_LABEL, JOB_TONE, REVIEW_LABEL, REVIEW_TONE, SLOT_LABEL, fmtDate } from '../lib.ts';
 
 function LogModal({ job, onClose }: { job: Job; onClose: () => void }) {
@@ -90,6 +90,11 @@ export function QueuePage() {
                     <button className="btn sm ghost" onClick={() => setLog(j)}>
                       <FileText size={13} /> Журнал
                     </button>
+                  )}
+                  {(j.state === 'error' || j.state === 'needs_data' || j.state === 'queued') && (
+                    <ConfirmButton className="btn sm ghost" title="Прибрати завдання" message="Прибрати це завдання з черги?" confirmLabel="Прибрати" onConfirm={() => act(() => api('DELETE', `/api/jobs/${j.id}`), 'Прибрано')}>
+                      <Trash2 size={13} />
+                    </ConfirmButton>
                   )}
                   {(j.state === 'error' || j.state === 'needs_data' || j.state === 'done') && (
                     <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${j.id}/retry`, { run: true }), 'Повторна спроба запущена')}>

@@ -49,7 +49,7 @@ function authorize(req: http.IncomingMessage): string | null {
 }
 
 function send(res: http.ServerResponse, status: number, data: unknown) {
-  const body = JSON.stringify(data);
+  const body = JSON.stringify(data ?? { ok: true });
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(body);
 }

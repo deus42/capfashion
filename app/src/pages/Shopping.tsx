@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, Plus, ShoppingBag, Store } from 'lucide-react';
+import { Check, ExternalLink, Plus, ShoppingBag, Store, Trash2 } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, fmtDay, looksUsing } from '../lib.ts';
 
 const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
@@ -172,6 +172,9 @@ function ProductCard({ p, need }: { p: Product; need: Need }) {
         {p.status !== 'purchased' && (
           <>
             <button className="btn sm ghost" onClick={() => setEdit(true)}>Редагувати</button>
+            <ConfirmButton className="btn sm ghost danger" title="Видалити товар" message={`Видалити ${p.brand} ${p.model}?`} onConfirm={() => act(() => api('DELETE', `/api/products/${p.id}`), 'Товар видалено')}>
+              <Trash2 size={12} />
+            </ConfirmButton>
             <button className="btn sm" onClick={() => void act(() => api('PATCH', `/api/products/${p.id}`, { rev: p.rev, status: p.status === 'chosen' ? 'option' : 'chosen' }))}>
               {p.status === 'chosen' ? 'Зняти вибір' : 'Вибрати'}
             </button>
@@ -189,6 +192,7 @@ function ProductCard({ p, need }: { p: Product; need: Need }) {
 
 function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
   const db = useDb();
+  const { act } = useApp();
   const [adding, setAdding] = useState(false);
   const looks = looksUsing(db, 'need', need.id);
   const products = db.products.filter((p) => p.needId === need.id);
@@ -221,6 +225,9 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
             <Plus size={13} /> Товар
           </button>
         )}
+        <ConfirmButton className="icon-btn" title="Видалити потребу" message={<>Видалити «{need.title}»?{looks.length ? ` Вона зникне з ${looks.length} образів.` : ''}</>} onConfirm={() => act(() => api('DELETE', `/api/needs/${need.id}`), 'Потребу видалено')}>
+          <Trash2 size={13} />
+        </ConfirmButton>
       </div>
       <details>
       <summary className="small muted" style={{ cursor: 'pointer' }}>Навіщо й що перевірити</summary>

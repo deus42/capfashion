@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Split, Wand2, X } from 'lucide-react';
+import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Split, Trash2, Wand2, X } from 'lucide-react';
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, Drawer, Empty, Img, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, ConfirmButton, Drawer, Empty, Img, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, fmtDate, looksUsing } from '../lib.ts';
 import { TermLinks } from './Glossary.tsx';
 import { useIntake } from './Home.tsx';
@@ -42,6 +42,18 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
       onClose={onClose}
       footer={
         <>
+          <ConfirmButton
+            className="btn ghost danger"
+            title="Видалити річ"
+            message={<>Видалити «{item.title}» з гардероба?{looks.length ? ` Вона зникне з ${looks.length} образів.` : ''} Якщо річ просто більше не носиш — краще «Неактуальна».</>}
+            onConfirm={async () => {
+              const ok = await act(() => api('DELETE', `/api/items/${item.id}`), 'Річ видалено');
+              if (ok !== undefined) onClose();
+            }}
+          >
+            <Trash2 size={15} />
+          </ConfirmButton>
+          <span style={{ flex: 1 }} />
           {item.status !== 'confirmed' && (
             <button className="btn" onClick={() => void patch({ status: 'confirmed' }, 'Річ підтверджено')}>
               <Check size={15} /> Так, це моя річ
@@ -225,9 +237,11 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const status = (['needs_confirmation', 'confirmed', 'inactive'] as ItemStatus[]).includes(view as ItemStatus) ? (view as ItemStatus) : null;
   const cat = CATS.includes(view as Category) ? (view as Category) : null;
+  // Inactive items only appear in the «Неактуальні» filter.
   const list = db.items.filter(
-    (i) => (!cat || i.category === cat) && (!status ? i.status !== 'inactive' || view === 'all' : i.status === status) && `${i.title} ${i.id} ${i.brand ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
+    (i) => !i.mergedInto && (!cat || i.category === cat) && (status ? i.status === status : i.status !== 'inactive') && `${i.title} ${i.id} ${i.brand ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
+  const visible = db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto);
   const open = openId ? db.items.find((i) => i.id === openId) : undefined;
   const done = db.items.filter((i) => i.packshotId).length;
   const missing = db.items.filter((i) => !i.packshotId && i.status !== 'inactive' && !busy.has(i.id)).length;
@@ -286,14 +300,14 @@ export function WardrobePage({ openId }: { openId?: string }) {
           value={view}
           onChange={(k) => setView(k)}
           groups={[
-            { items: [{ key: 'all', label: 'Усі речі', icon: <Grid2x2 size={17} />, n: db.items.length }] },
-            { label: 'Категорії', items: CATS.map((c) => ({ key: c, label: CATEGORY_LABEL[c], icon: <CategoryIcon category={c} size={17} />, n: db.items.filter((i) => i.category === c).length })) },
+            { items: [{ key: 'all', label: 'Усі речі', icon: <Grid2x2 size={17} />, n: visible.length }] },
+            { label: 'Категорії', items: CATS.map((c) => ({ key: c, label: CATEGORY_LABEL[c], icon: <CategoryIcon category={c} size={17} />, n: visible.filter((i) => i.category === c).length })) },
             {
               label: 'Статус',
               items: [
                 { key: 'needs_confirmation', label: 'Звірити', icon: <CircleDashed size={17} />, n: db.items.filter((i) => i.status === 'needs_confirmation').length },
                 { key: 'confirmed', label: 'Мої речі', icon: <CircleCheck size={17} />, n: db.items.filter((i) => i.status === 'confirmed').length },
-                { key: 'inactive', label: 'Неактуальні', icon: <Archive size={17} />, n: db.items.filter((i) => i.status === 'inactive').length },
+                { key: 'inactive', label: 'Неактуальні', icon: <Archive size={17} />, n: db.items.filter((i) => i.status === 'inactive' && !i.mergedInto).length },
               ],
             },
           ]}

@@ -302,3 +302,37 @@ test('one upload control: owner photo becomes a base photo, label fills only emp
     assert.equal(db.photos.find((p) => p.id === 'P-tag')!.kind, 'label');
   });
 });
+
+test('deleting capsule, look, item and photo cascades without dangling references', async () => {
+  const { store, call } = setup();
+  const job = await call('POST', '/api/jobs', { lookId: 'L-1', basePhotoIds: ['P-1'] });
+  await store.mutate((db) => {
+    const j = db.jobs.find((x) => x.id === job.id)!;
+    j.state = 'done';
+    j.resultId = 'R-1';
+    db.results.push({ id: 'R-1', jobId: j.id, lookId: 'L-1', lookVersion: 1, imagePath: 'r.png', tool: 't', model: 'm', prompt: 'p', sources: [], usedItemPhotos: true, review: 'pending', favorite: false, createdAt: at });
+  });
+  await call('POST', '/api/packshots', { itemIds: ['W-2'] });
+  await call('DELETE', '/api/items/W-1');
+  let db = store.read();
+  assert.ok(!db.items.some((i) => i.id === 'W-1'));
+  assert.deepEqual(db.looks[0].slots.bottom, [], 'item removed from the look');
+  assert.equal(db.looks[0].version, 2, 'look gets a new version');
+  await call('DELETE', '/api/items/W-2');
+  db = store.read();
+  assert.ok(!db.jobs.some((j) => j.kind === 'packshot'), 'packshot job of deleted item removed');
+  await call('DELETE', '/api/capsules/C-1');
+  db = store.read();
+  assert.equal(db.capsules.length, 0);
+  assert.equal(db.looks.length, 0);
+  assert.equal(db.results.length, 0, 'renders of deleted looks removed');
+  assert.equal(db.jobs.length, 0);
+  await call('PATCH', '/api/profile', { rev: db.profile.rev, basePhotoIds: ['P-2'] });
+  await store.mutate((d) => {
+    d.photos.find((p) => p.id === 'P-2')!.kind = 'base';
+  });
+  await call('DELETE', '/api/photos/P-2');
+  db = store.read();
+  assert.deepEqual(db.profile.basePhotoIds, []);
+  await assert.rejects(call('DELETE', '/api/photos/P-1'), (e: any) => e.status === 409, 'chat originals are protected');
+});

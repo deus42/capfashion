@@ -313,3 +313,56 @@ export function PageHead({ crumb, title, sub, actions }: { crumb?: ReactNode; ti
     </>
   );
 }
+
+/** Destructive action behind a confirmation dialog. */
+export function ConfirmButton({
+  children,
+  className = 'btn danger',
+  title,
+  message,
+  confirmLabel = 'Видалити',
+  onConfirm,
+}: {
+  children: ReactNode;
+  className?: string;
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => Promise<unknown> | void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <button type="button" className={className} onClick={() => setOpen(true)} title={title} aria-label={title}>
+        {children}
+      </button>
+      {open && (
+        <Modal
+          title={title}
+          onClose={() => setOpen(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setOpen(false)}>Скасувати</button>
+              <button
+                className="btn primary"
+                style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  await onConfirm();
+                  setBusy(false);
+                  setOpen(false);
+                }}
+              >
+                {busy ? <Loader2 size={14} className="spin" /> : null} {confirmLabel}
+              </button>
+            </>
+          }
+        >
+          <div style={{ fontSize: 15 }}>{message}</div>
+        </Modal>
+      )}
+    </>
+  );
+}

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Download, Heart, Images, RotateCcw, Sparkles, X } from 'lucide-react';
+import { Download, Heart, Images, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
 import type { DB, Photo, Result } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, Empty, Overlay, PageHead } from '../components/ui.tsx';
+import { Badge, ConfirmButton, Empty, Overlay, PageHead } from '../components/ui.tsx';
 import { REVIEW_LABEL, REVIEW_TONE, fmtDate } from '../lib.ts';
 import { Composition, ReviewBar, compositionFor } from './Studio.tsx';
 
@@ -51,6 +51,10 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
               <div className="small faint">{r.tool} · {r.model}</div>
             </div>
             <div className="drawer-foot">
+              <ConfirmButton className="btn sm ghost danger" title="Видалити примірку" message="Видалити це зображення примірки? Образ і речі залишаться." onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/results/${r.id}`), 'Примірку видалено'); if (ok !== undefined) onClose(); }}>
+                <Trash2 size={13} />
+              </ConfirmButton>
+              <span style={{ flex: 1 }} />
               <button className={`btn sm${r.favorite ? ' primary' : ''}`} onClick={() => void act(() => api('PATCH', `/api/results/${r.id}`, { favorite: !r.favorite }))}>
                 <Heart size={13} fill={r.favorite ? 'currentColor' : 'none'} /> Обране
               </button>
@@ -82,6 +86,10 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
             <div className="note small">{entry.p.note ?? 'Генеративна реконструкція.'}</div>
           </div>
           <div className="drawer-foot">
+            <ConfirmButton className="btn sm ghost danger" title="Видалити packshot" message="Видалити це згенероване фото? Річ і її оригінальні фото залишаться." onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), 'Packshot видалено'); if (ok !== undefined) onClose(); }}>
+              <Trash2 size={13} />
+            </ConfirmButton>
+            <span style={{ flex: 1 }} />
             {job && (
               <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${job.id}/retry`, { run: true }), 'Новий packshot у роботі')}>
                 <RotateCcw size={13} /> Перегенерувати

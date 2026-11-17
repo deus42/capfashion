@@ -164,6 +164,66 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
   });
 }
 
+// ── Deletion with cascades (validateDb rejects anything left dangling) ────
+function busyJob(db: DB, pred: (j: Job) => boolean) {
+  if (db.jobs.some((j) => pred(j) && j.state === 'running')) throw new HttpError(409, 'Зачекай, поки завершиться генерація');
+}
+
+function dropJobs(db: DB, pred: (j: Job) => boolean) {
+  const gone = new Set(db.jobs.filter(pred).map((j) => j.id));
+  if (!gone.size) return gone;
+  const resultIds = new Set(db.results.filter((r) => gone.has(r.jobId)).map((r) => r.id));
+  db.results = db.results.filter((r) => !resultIds.has(r.id));
+  db.comparisons = db.comparisons.filter((c) => !resultIds.has(c.resultA) && !resultIds.has(c.resultB));
+  db.jobs = db.jobs.filter((j) => !gone.has(j.id));
+  for (const j of db.jobs) if (j.retryOf && gone.has(j.retryOf)) delete j.retryOf;
+  return gone;
+}
+
+export function deleteLook(db: DB, id: string) {
+  findOr404(db.looks, id, 'Образ');
+  busyJob(db, (j) => j.lookId === id);
+  dropJobs(db, (j) => j.lookId === id);
+  db.results = db.results.filter((r) => r.lookId !== id);
+  db.comparisons = db.comparisons.filter((c) => db.results.some((r) => r.id === c.resultA) && db.results.some((r) => r.id === c.resultB));
+  for (const c of db.capsules) c.lookIds = c.lookIds.filter((l) => l !== id);
+  db.looks = db.looks.filter((l) => l.id !== id);
+}
+
+export function deleteCapsule(db: DB, id: string) {
+  const c = findOr404(db.capsules, id, 'Капсула');
+  for (const lid of [...c.lookIds]) deleteLook(db, lid);
+  for (const l of db.looks) if (l.capsuleId === id) l.capsuleId = null;
+  for (const j of db.jobs) if (j.capsuleId === id) delete j.capsuleId;
+  db.capsules = db.capsules.filter((x) => x.id !== id);
+}
+
+function stripRefs(db: DB, kind: SlotRef['kind'], id: string) {
+  for (const look of db.looks) {
+    const next = cleanSlots(look.slots);
+    for (const k of SLOT_KEYS) next[k] = next[k].filter((r) => !(r.kind === kind && r.id === id));
+    if (setLookSlots(look, next, 'Видалено річ зі складу')) {
+      look.rev += 1;
+      look.updatedAt = now();
+    }
+  }
+}
+
+export function deleteItem(db: DB, id: string) {
+  const item = findOr404(db.items, id, 'Річ');
+  if (db.products.some((p) => p.purchasedItemId === id)) throw new HttpError(409, 'Річ створена покупкою — спершу видали товар у «Покупках»');
+  busyJob(db, (j) => j.itemId === id);
+  stripRefs(db, 'item', id);
+  dropJobs(db, (j) => j.kind === 'packshot' && j.itemId === id);
+  if (item.packshotId) db.photos = db.photos.filter((p) => p.id !== item.packshotId);
+  for (const j of db.jobs) if (j.createdItemIds?.includes(id)) j.createdItemIds = j.createdItemIds.filter((x) => x !== id);
+  for (const n of db.needs) if (n.coveredByItem === id) {
+    delete n.coveredByItem;
+    n.status = 'open';
+  }
+  db.items = db.items.filter((i) => i.id !== id);
+}
+
 type Handler = (ctx: Ctx, params: string[], body: Body) => unknown;
 const routes: [string, RegExp, Handler][] = [];
 const on = (method: string, pattern: string, h: Handler) => routes.push([method, new RegExp(`^${pattern.replace(/:\w+/g, '([^/]+)')}$`), h]);
@@ -549,6 +609,67 @@ on('PATCH', '/api/settings', (ctx, _p, b) =>
     if (['low', 'medium', 'high', 'xhigh'].includes(b.reasoningEffort as string)) s.reasoningEffort = b.reasoningEffort as typeof s.reasoningEffort;
     if ('tailscaleLogin' in b) s.tailscaleLogin = str(b.tailscaleLogin, 200) ?? '';
     return s;
+  }),
+);
+
+// ── Delete endpoints ───────────────────────────────────────────────────────
+on('DELETE', '/api/capsules/:id', (ctx, [id]) => ctx.store.mutate((db) => deleteCapsule(db, id)));
+on('DELETE', '/api/looks/:id', (ctx, [id]) => ctx.store.mutate((db) => deleteLook(db, id)));
+on('DELETE', '/api/items/:id', (ctx, [id]) => ctx.store.mutate((db) => deleteItem(db, id)));
+
+on('DELETE', '/api/results/:id', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    const r = findOr404(db.results, id, 'Результат');
+    db.comparisons = db.comparisons.filter((c) => c.resultA !== id && c.resultB !== id);
+    for (const j of db.jobs) if (j.resultId === id) delete j.resultId;
+    db.results = db.results.filter((x) => x.id !== r.id);
+  }),
+);
+
+on('DELETE', '/api/photos/:id', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    const p = findOr404(db.photos, id, 'Фото');
+    if (p.kind === 'source') throw new HttpError(409, 'Оригінали з чату не видаляються');
+    if (db.jobs.some((j) => j.inputPhotoIds?.includes(id) && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Фото ще в обробці');
+    for (const i of db.items) {
+      if (i.photoIds.includes(id)) i.photoIds = i.photoIds.filter((x) => x !== id);
+      if (i.packshotId === id) delete i.packshotId;
+    }
+    for (const n of db.needs) if (n.conceptPhotoId === id) delete n.conceptPhotoId;
+    for (const pr of db.products) if (pr.photoId === id) delete pr.photoId;
+    db.profile.basePhotoIds = db.profile.basePhotoIds.filter((x) => x !== id);
+    dropJobs(db, (j) => Boolean(j.inputPhotoIds?.includes(id)) || j.photoId === id || j.snapshot.basePhotoIds.includes(id));
+    db.photos = db.photos.filter((x) => x.id !== id);
+  }),
+);
+
+on('DELETE', '/api/products/:id', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    const p = findOr404(db.products, id, 'Товар');
+    if (p.status === 'purchased') throw new HttpError(409, 'Куплений товар уже в гардеробі — видали річ, якщо треба');
+    stripRefs(db, 'product', id);
+    db.products = db.products.filter((x) => x.id !== id);
+  }),
+);
+
+on('DELETE', '/api/needs/:id', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    findOr404(db.needs, id, 'Потреба');
+    if (db.products.some((p) => p.needId === id && p.status === 'purchased')) throw new HttpError(409, 'За цією потребою вже є покупка');
+    for (const p of db.products.filter((x) => x.needId === id)) stripRefs(db, 'product', p.id);
+    db.products = db.products.filter((p) => p.needId !== id);
+    stripRefs(db, 'need', id);
+    busyJob(db, (j) => j.needId === id);
+    dropJobs(db, (j) => j.needId === id);
+    db.needs = db.needs.filter((n) => n.id !== id);
+  }),
+);
+
+on('DELETE', '/api/jobs/:id', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    const j = findOr404(db.jobs, id, 'Завдання');
+    if (j.state === 'running') throw new HttpError(409, 'Завдання виконується');
+    dropJobs(db, (x) => x.id === id);
   }),
 );
 

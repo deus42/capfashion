@@ -1,4 +1,6 @@
 import type { Category, DB, Job, Look, MeasureKey, Result, Season, SlotKey, SlotRef } from './api.ts';
+import { byRating, hiddenLookIds } from './rating.ts';
+import { groupLookVariations } from './look-variation.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   outerwear: 'Верхній одяг',
@@ -86,13 +88,17 @@ export function coverForLook(db: DB, look: Look): Result | undefined {
 }
 
 export function capsuleCover(db: DB, lookIds: string[]) {
-  const looks = lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));
+  const hidden = hiddenLookIds(db);
+  const visible = lookIds.filter((id) => !hidden.has(id));
+  const looks = (visible.length ? visible : lookIds).map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));
   const all = looks.flatMap((l) => resultsForLook(db, l.id));
   return all.find((r) => r.review === 'accepted') ?? all.find((r) => r.review === 'pending') ?? undefined;
 }
 
+/** Looks (visible on the site) that use this piece. */
 export function looksUsing(db: DB, kind: SlotRef['kind'], id: string) {
-  return db.looks.filter((l) => Object.values(l.slots).some((refs) => refs.some((r) => r.kind === kind && r.id === id)));
+  const hidden = hiddenLookIds(db);
+  return db.looks.filter((l) => !hidden.has(l.id) && Object.values(l.slots).some((refs) => refs.some((r) => r.kind === kind && r.id === id)));
 }
 
 export function piecesOf(db: DB, slots: Look['slots']): ResolvedRef[] {
@@ -116,3 +122,24 @@ export function fmtDay(iso?: string) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+const lookScore = (db: DB, l: Look) => {
+  const rs = resultsForLook(db, l.id);
+  return (l.favorite ? 4 : 0) + (rs.some((r) => r.review === 'accepted') ? 2 : 0) + (rs.length ? 1 : 0);
+};
+
+/**
+ * One card per look: hidden looks are dropped and near-copies (owner's rule:
+ * identical or one piece different) fold into the best representative —
+ * liked, then with an accepted try-on, then with any try-on. Copies stay in
+ * the data. Liked looks come first; otherwise the given order is kept.
+ */
+export function distinctLooks(db: DB, looks: Look[]): Look[] {
+  const hidden = hiddenLookIds(db);
+  const visible = looks.filter((l) => !hidden.has(l.id));
+  const best = visible.map((l, i) => ({ l, i, s: lookScore(db, l) })).sort((a, b) => b.s - a.s || a.i - b.i).map((e) => e.l);
+  const reps = new Set(groupLookVariations(best).map((g) => g.primary.id));
+  return byRating(visible.filter((l) => reps.has(l.id)));
+}
+
+export const capsuleLooks = (db: DB, lookIds: string[]) => lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));

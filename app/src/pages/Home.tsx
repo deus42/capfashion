@@ -1,23 +1,30 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Check, Loader2, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
+import { ArrowRight, Check, Loader2, Sparkles, ThumbsDown, ThumbsUp, TriangleAlert, Wand2 } from 'lucide-react';
 import type { Capsule, DB, Job } from '../api.ts';
 import { api, thumb, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, RenderPlaceholder } from '../components/ui.tsx';
-import { REVIEW_LABEL, REVIEW_TONE, capsuleCover } from '../lib.ts';
+import { capsuleLooks, coverForLook, distinctLooks } from '../lib.ts';
+import { byRating, isCapsuleHidden } from '../rating.ts';
 
+/** A capsule is a set of looks: its tile shows up to four of them, each with its own try-on. */
 export function CapsuleTile({ c }: { c: Capsule }) {
   const db = useDb();
-  const cover = capsuleCover(db, c.lookIds);
+  const looks = c.disliked ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds));
+  const shownLooks = looks.slice(0, 4);
   return (
     <a href={`#/capsules/${c.id}`} className="capsule-card">
-      <div className="cover">
-        {cover ? <img src={thumb(cover.imagePath, 900)} alt={c.name} /> : <RenderPlaceholder lookIds={c.lookIds} />}
-        {cover && <div className="corner"><Badge tone={`${REVIEW_TONE[cover.review]} glass`}>{REVIEW_LABEL[cover.review]}</Badge></div>}
+      <div className={`cover mosaic n${Math.max(1, shownLooks.length)}`}>
+        {shownLooks.length === 0 ? <RenderPlaceholder lookIds={c.lookIds} /> : shownLooks.map((l) => {
+          const cover = coverForLook(db, l);
+          return <span key={l.id} className="cell">{cover ? <img src={thumb(cover.imagePath, shownLooks.length === 1 ? 900 : 480)} alt={l.name} loading="lazy" /> : <RenderPlaceholder lookIds={[l.id]} />}</span>;
+        })}
+        {c.favorite && <span className="corner-r liked-mark" aria-label="Подобається"><ThumbsUp size={14} fill="currentColor" /></span>}
+        {c.disliked && <span className="corner-r liked-mark" aria-label="Не подобається"><ThumbsDown size={14} fill="currentColor" /></span>}
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{c.lookIds.length} образів</div>
+        <div className="meta">{looks.length} {looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}</div>
       </div>
     </a>
   );
@@ -100,8 +107,9 @@ export function HomePage() {
   const { act } = useApp();
   const [text, setText] = useState('');
   const procs = processing(db);
-  const selections = db.capsules.filter((c) => c.kind === 'selection').slice().reverse();
-  const capsules = db.capsules.filter((c) => c.kind !== 'selection');
+  const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
+  const selections = byRating(shown.filter((c) => c.kind === 'selection').reverse());
+  const capsules = byRating(shown.filter((c) => c.kind !== 'selection'));
   const analyzing = db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'));
 
   const analyze = async () => {

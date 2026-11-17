@@ -6,9 +6,10 @@ import path from 'node:path';
 import type { DB } from './schema.ts';
 import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
-import { dispatch, snapshotSlots } from './routes.ts';
+import { dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
-import { applyAnalyze, applyIntake } from './analysis.ts';
+import { analyzePrompt, applyAnalyze, applyIntake } from './analysis.ts';
+import { hiddenLookIds, isCapsuleHidden, sameLook } from '../src/rating.ts';
 import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
@@ -294,12 +295,13 @@ test('analyzer keeps only owned items and complete looks (selection)', async () 
   await store.mutate((db) => {
     db.items.push({ id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
     db.items.push({ id: 'W-X', rev: 1, category: 'shoes', title: 'Old shoes', status: 'inactive', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    db.items.push({ id: 'W-J', rev: 1, category: 'outerwear', title: 'Jacket', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
     const job = { id: 'J-an', kind: 'analyze' as const, lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: 'на вихідні', state: 'running' as const, origin: 'site' as const, createdAt: at };
     db.jobs.push(job);
     const id = applyAnalyze(db, job, {
       status: 'done', reason: '', name: 'Вихідні', description: 'Легко',
       looks: [
-        { name: 'A', occasion: 'прогулянка', season: 'warm', top: ['N-1'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: 'спокійно' },
+        { name: 'A', occasion: 'прогулянка', season: 'warm', top: ['N-1'], layer: ['W-J'], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: 'спокійно' },
         { name: 'Bad shoes', occasion: '', season: 'warm', top: [], layer: [], bottom: ['W-1'], shoes: ['W-X'], accessories: [], why: '' },
         { name: 'Ghost', occasion: '', season: 'warm', top: [], layer: [], bottom: ['W-404'], shoes: ['W-S'], accessories: [], why: '' },
       ],
@@ -388,11 +390,13 @@ test('a new selection gets a try-on for every look; missing renders are queued o
   const fake = path.join(dir, 'fake-codex.sh');
   fs.writeFileSync(
     fake,
-    '#!/bin/sh\nschema=""\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; --output-schema) schema="$2"; shift;; esac; shift; done\ncat >/dev/null\nif [ -n "$schema" ]; then echo \'{"status":"done","reason":"","name":"Вихідні","description":"","looks":[{"name":"A","occasion":"","season":"all","top":[],"layer":[],"bottom":["W-1"],"shoes":["W-S"],"accessories":[],"why":""},{"name":"B","occasion":"","season":"all","top":[],"layer":[],"bottom":["W-2"],"shoes":["W-S"],"accessories":[],"why":""}]}\' > "$o"; else printf PNG > "$d/result.png"; echo \'{"status":"done"}\' > "$o"; fi\n',
+    '#!/bin/sh\nschema=""\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; --output-schema) schema="$2"; shift;; esac; shift; done\ncat >/dev/null\nif [ -n "$schema" ]; then echo \'{"status":"done","reason":"","name":"Вихідні","description":"","looks":[{"name":"A","occasion":"","season":"all","top":[],"layer":["W-J"],"bottom":["W-1"],"shoes":["W-S"],"accessories":[],"why":""},{"name":"B","occasion":"","season":"all","top":["W-T"],"layer":[],"bottom":["W-2"],"shoes":["W-S"],"accessories":[],"why":""}]}\' > "$o"; else printf PNG > "$d/result.png"; echo \'{"status":"done"}\' > "$o"; fi\n',
     { mode: 0o755 },
   );
   await store.mutate((db) => {
     db.items.push({ id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    db.items.push({ id: 'W-J', rev: 1, category: 'outerwear', title: 'Jacket', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    db.items.push({ id: 'W-T', rev: 1, category: 'tees', title: 'Tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
     db.profile.basePhotoIds = ['P-1'];
   });
   const job = await call('POST', '/api/analyze', {});
@@ -440,6 +444,7 @@ test('complete-the-look: every look keeps the picked items and adds different pi
       { id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
       { id: 'W-B', rev: 1, category: 'shoes', title: 'Boots', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
       { id: 'W-T', rev: 1, category: 'tees', title: 'Tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+      { id: 'W-J', rev: 1, category: 'outerwear', title: 'Jacket', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
     );
   });
   const job = await call('POST', '/api/analyze', { itemIds: ['W-1'] });
@@ -452,7 +457,7 @@ test('complete-the-look: every look keeps the picked items and adds different pi
       looks: [
         { name: 'a', occasion: '', season: 'all', top: ['W-T'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
         { name: 'missing pick', occasion: '', season: 'all', top: ['W-T'], layer: [], bottom: ['W-2'], shoes: ['W-B'], accessories: [], why: '' },
-        { name: 'b', occasion: '', season: 'all', top: [], layer: [], bottom: ['W-1'], shoes: ['W-B'], accessories: [], why: '' },
+        { name: 'b', occasion: '', season: 'all', top: [], layer: ['W-J'], bottom: ['W-1'], shoes: ['W-B'], accessories: [], why: '' },
       ],
     })!;
     const names = db.capsules.find((c) => c.id === id)!.lookIds.map((l) => db.looks.find((x) => x.id === l)!.name);
@@ -498,4 +503,73 @@ test('restart re-queues only jobs this runner started, never a job running elsew
   const db = store.read();
   assert.equal(db.jobs.find((j) => j.id === 'J-own')!.state, 'queued');
   assert.equal(db.jobs.find((j) => j.id === 'J-chat')!.state, 'running');
+});
+
+const lookWith = (id: string, refs: Partial<Record<'top' | 'layer' | 'bottom' | 'shoes' | 'accessories', string[]>>, extra: Partial<{ favorite: boolean; disliked: boolean; capsuleId: string | null }> = {}) => {
+  const slots = emptySlots();
+  for (const [k, ids] of Object.entries(refs)) slots[k as 'top'] = ids!.map((x) => ({ kind: 'item' as const, id: x }));
+  return { id, rev: 1, capsuleId: null, name: id, slots, version: 1, versions: [{ version: 1, slots, at }], favorite: false, origin: 'agent' as const, createdAt: at, updatedAt: at, ...extra };
+};
+
+test("owner's same-look rule: identical or one piece different is the same look; two pieces (accessories too) is a different look", () => {
+  const base = lookWith('a', { top: ['T'], bottom: ['B'], shoes: ['S'] });
+  assert.ok(sameLook(base, lookWith('b', { top: ['T'], bottom: ['B'], shoes: ['S'] })), 'identical');
+  assert.ok(sameLook(base, lookWith('b', { top: ['T'], bottom: ['B'], shoes: ['S2'] })), 'one swap');
+  assert.ok(sameLook(base, lookWith('b', { top: ['T'], bottom: ['B'], shoes: ['S'], accessories: ['belt'] })), 'one accessory added');
+  assert.ok(!sameLook(base, lookWith('b', { top: ['T'], bottom: ['B'], shoes: ['S2'], accessories: ['belt'] })), 'swap + accessory = two pieces');
+  assert.ok(!sameLook(base, lookWith('b', { top: ['T2'], bottom: ['B'], shoes: ['S2'] })), 'two swaps');
+});
+
+test('dislike hides the look, its near-copies and a disliked capsule\'s looks; a liked look stays visible', () => {
+  const db = fixture();
+  db.looks.push(
+    lookWith('L-x', { top: ['W-1'], bottom: ['W-2'], shoes: ['W-1'] }, { disliked: true }),
+    lookWith('L-near', { top: ['W-1'], bottom: ['W-2'], shoes: ['W-1'], accessories: ['W-2'] }),
+    lookWith('L-liked', { top: ['W-1'], bottom: ['W-2'] }, { favorite: true }),
+  );
+  db.capsules[0].disliked = true;
+  const hidden = hiddenLookIds(db);
+  assert.deepEqual([...hidden].sort(), ['L-1', 'L-near', 'L-x']);
+  assert.ok(isCapsuleHidden(db, db.capsules[0]));
+});
+
+test('rating route: like, dislike and clear are exclusive; invalid values are refused', async () => {
+  const { store, call } = setup();
+  const liked = await call('POST', '/api/looks/L-1/rating', { rating: 'like' });
+  assert.equal(liked.favorite, true);
+  const disliked = await call('POST', '/api/looks/L-1/rating', { rating: 'dislike' });
+  assert.equal(disliked.favorite, false);
+  assert.equal(disliked.disliked, true);
+  const cleared = await call('POST', '/api/capsules/C-1/rating', { rating: null });
+  assert.equal(cleared.disliked, undefined);
+  await assert.rejects(call('POST', '/api/looks/L-1/rating', { rating: 'meh' }), /Оцінка/);
+  const bad = store.read();
+  bad.looks[0].favorite = true;
+  assert.match(validateDb(bad) ?? '', /лайк і дизлайк/);
+});
+
+test('regeneration is checked against liked and disliked looks; hidden looks get no new renders', async () => {
+  const { store } = setup();
+  await store.mutate((db) => {
+    for (const [id, category] of [['W-S', 'shoes'], ['W-T', 'tees'], ['W-J', 'outerwear'], ['W-K', 'knitwear'], ['W-B', 'shoes']] as const)
+      db.items.push({ id, rev: 1, category, title: id, status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    db.looks.push(lookWith('L-no', { top: ['W-T'], layer: ['W-J'], bottom: ['W-1'], shoes: ['W-S'] }, { disliked: true }));
+    db.looks.push(lookWith('L-yes', { top: ['W-K'], bottom: ['W-2'], shoes: ['W-B'] }, { favorite: true }));
+    const job = { id: 'J-r', kind: 'analyze' as const, lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+    const prompt = analyzePrompt(db, job, []);
+    assert.match(prompt, /REJECTED[^\n]*\n- W-T, W-J, W-1, W-S/);
+    assert.match(prompt, /LIKED[^\n]*\n- W-K, W-2, W-B/);
+    const id = applyAnalyze(db, job, {
+      status: 'done', reason: '', name: 'Нове', description: '',
+      looks: [
+        { name: 'rejected again', occasion: '', season: 'all', top: ['W-T'], layer: ['W-J'], bottom: ['W-1'], shoes: ['W-B'], accessories: [], why: '' },
+        { name: 'liked again + belt', occasion: '', season: 'all', top: ['W-K'], layer: [], bottom: ['W-2'], shoes: ['W-B'], accessories: ['W-T'], why: '' },
+        { name: 'fresh', occasion: '', season: 'all', top: ['W-T'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: '' },
+      ],
+    })!;
+    assert.deepEqual(db.capsules.find((c) => c.id === id)!.lookIds.map((l) => db.looks.find((x) => x.id === l)!.name), ['fresh']);
+    db.profile.basePhotoIds = ['P-1'];
+    const queued = queueMissingRenders(db);
+    assert.ok(!queued.some((j) => j.lookId === 'L-no'), 'a disliked look is not rendered');
+  });
 });

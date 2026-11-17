@@ -4,7 +4,8 @@ import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Drawer, Empty, Img, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, coverForLook, fmtDate, looksUsing } from '../lib.ts';
+import { CATEGORY_LABEL, coverForLook, distinctLooks, fmtDate, looksUsing } from '../lib.ts';
+import { hiddenLookIds } from '../rating.ts';
 import type { Capsule, DB, Look } from '../api.ts';
 
 function groupByCapsule(db: DB, looks: Look[]) {
@@ -42,7 +43,7 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
   useEffect(() => setForm(blank()), [item.id, item.rev]);
   const photos = item.photoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
   const packshot = item.packshotId ? db.photos.find((p) => p.id === item.packshotId) : undefined;
-  const looks = looksUsing(db, 'item', item.id);
+  const looks = distinctLooks(db, looksUsing(db, 'item', item.id));
   const set = (k: keyof ReturnType<typeof blank>) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const patch = (body: Record<string, unknown>, msg: string) => act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...body }), msg);
   const dirty = (Object.keys(form) as (keyof ReturnType<typeof blank>)[]).some((k) => (form[k] || '') !== ((item[k as keyof Item] as string | undefined) ?? ''));
@@ -201,7 +202,7 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
                   {ls.map((l) => {
                     const cover = coverForLook(db, l);
                     return (
-                      <a key={l.id} className="appear" href={`#/studio?look=${l.id}`} title={l.name}>
+                      <a key={l.id} className="appear" href={`#/looks/${l.id}`} title={l.name}>
                         <span className="ai">{cover ? <img src={thumb(cover.imagePath, 160)} alt="" /> : <PersonStanding size={18} />}</span>
                         <span className="an">{l.name}</span>
                       </a>
@@ -286,7 +287,8 @@ export function WardrobePage({ openId }: { openId?: string }) {
   };
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : mode === 'compose' && s.length >= 4 ? s : [...s, id]));
   const useCount = new Map<string, number>();
-  for (const l of db.looks) for (const refs of Object.values(l.slots)) for (const r of refs) if (r.kind === 'item') useCount.set(r.id, (useCount.get(r.id) ?? 0) + 1);
+  const hiddenLooks = hiddenLookIds(db);
+  for (const l of db.looks) if (!hiddenLooks.has(l.id)) for (const refs of Object.values(l.slots)) for (const r of refs) if (r.kind === 'item') useCount.set(r.id, (useCount.get(r.id) ?? 0) + 1);
   const [creating, setCreating] = useState(false);
   const intake = useIntake();
   const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;

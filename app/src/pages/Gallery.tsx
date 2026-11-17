@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Download, ExternalLink, Heart, Images, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
+import { Download, ExternalLink, Images, RotateCcw, Sparkles, ThumbsUp, Trash2, X } from 'lucide-react';
 import type { DB, Photo, Result } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb, useRoute } from '../store.tsx';
-import { Badge, ConfirmButton, Empty, Overlay, PageHead } from '../components/ui.tsx';
+import { Badge, ConfirmButton, Empty, Overlay, PageHead, RateButtons } from '../components/ui.tsx';
+import { hiddenLookIds } from '../rating.ts';
 import { REVIEW_LABEL, REVIEW_TONE, fmtDate } from '../lib.ts';
 import { Composition, ReviewBar, compositionFor } from './Studio.tsx';
 import './Gallery.css';
@@ -11,7 +12,8 @@ import './Gallery.css';
 type Entry = { kind: 'tryon'; r: Result; at: string } | { kind: 'packshot' | 'inspiration'; p: Photo; at: string; itemId?: string };
 
 function entries(db: DB): Entry[] {
-  const out: Entry[] = db.results.map((r) => ({ kind: 'tryon' as const, r, at: r.createdAt }));
+  const hidden = hiddenLookIds(db);
+  const out: Entry[] = db.results.filter((r) => !hidden.has(r.lookId)).map((r) => ({ kind: 'tryon' as const, r, at: r.createdAt }));
   for (const p of db.photos) {
     if (p.inspiration) {
       out.push({ kind: 'inspiration', p, at: p.createdAt });
@@ -60,9 +62,8 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
                 <Trash2 size={13} />
               </ConfirmButton>
               <span style={{ flex: 1 }} />
-              <button className={`btn sm${r.favorite ? ' primary' : ''}`} onClick={() => void act(() => api('PATCH', `/api/results/${r.id}`, { favorite: !r.favorite }))}>
-                <Heart size={13} fill={r.favorite ? 'currentColor' : 'none'} /> Обране
-              </button>
+              {look && <RateButtons kind="look" target={look} size="sm" />}
+              {look && <a className="btn sm" href={`#/looks/${look.id}`} onClick={onClose}>Образ</a>}
               <a className="btn sm" href={media(r.imagePath)} download><Download size={13} /> Завантажити</a>
               <a className="btn sm primary" href={`#/studio?look=${r.lookId}&result=${r.id}`} onClick={onClose}><Sparkles size={13} /> У примірці</a>
             </div>
@@ -127,7 +128,7 @@ export function GalleryPage() {
     if (type === 'inspiration') return true;
     if (filter === 'any') return true;
     if (e.kind !== 'tryon') return false;
-    if (filter === 'fav') return e.r.favorite;
+    if (filter === 'fav') return Boolean(db.looks.find((l) => l.id === e.r.lookId)?.favorite);
     return e.r.review === filter;
   });
   const groups: [string, Entry[]][] = [];
@@ -163,7 +164,7 @@ export function GalleryPage() {
                 ['any', 'Усі'],
                 ['pending', 'На перевірці'],
                 ['accepted', 'Прийняті'],
-                ['fav', 'Обрані'],
+                ['fav', 'Подобаються'],
               ] as const
             ).map(([k, l]) => (
               <button key={k} className={`chip${filter === k ? ' active' : ''}`} onClick={() => setFilter(k)}>{l}</button>
@@ -183,7 +184,7 @@ export function GalleryPage() {
                   <button key={e.r.id} className="gtile" onClick={() => setOpen(e)}>
                     <img src={thumb(e.r.imagePath, 520)} alt="" loading="lazy" style={{ objectPosition: 'top' }} />
                     <span className="tl"><Badge tone={`${REVIEW_TONE[e.r.review]} glass`}>{REVIEW_LABEL[e.r.review]}</Badge></span>
-                    {e.r.favorite && <span className="tr"><Badge tone="glass"><Heart size={11} fill="currentColor" /></Badge></span>}
+                    {db.looks.find((l) => l.id === e.r.lookId)?.favorite && <span className="tr liked-mark" aria-label="Подобається"><ThumbsUp size={12} fill="currentColor" /></span>}
                     <span className="cap">{db.looks.find((l) => l.id === e.r.lookId)?.name}</span>
                   </button>
                 ) : (

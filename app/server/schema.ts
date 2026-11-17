@@ -155,7 +155,11 @@ export interface Look {
   slots: Slots;
   version: number;
   versions: LookVersion[];
+  /** Owner liked it (ranked first). */
   favorite: boolean;
+  /** Owner disliked it: hidden from the site, kept as a finished look and as a "never again" reference. */
+  disliked?: boolean;
+  ratedAt?: string;
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   createdAt: string;
@@ -172,6 +176,9 @@ export interface Capsule {
   description: string;
   situations: string[];
   favorite: boolean;
+  /** Owner disliked it: the capsule and its looks are hidden, not deleted. */
+  disliked?: boolean;
+  ratedAt?: string;
   lookIds: string[];
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
@@ -358,10 +365,14 @@ export function validateDb(db: unknown): string | null {
       for (const r of l.slots[k]) if (!refOk(r)) return `Образ ${l.id}: битий звʼязок ${r.kind}:${r.id}`;
     }
     if (!l.versions.some((v) => v.version === l.version)) return `Образ ${l.id}: немає поточної версії`;
+    if (l.disliked !== undefined && typeof l.disliked !== 'boolean') return `Образ ${l.id}: некоректна оцінка`;
+    if (l.disliked && l.favorite) return `Образ ${l.id}: лайк і дизлайк одночасно`;
   }
   for (const c of d.capsules) {
     if (!SEASONS.includes(c.season)) return `Капсула ${c.id}: невідомий сезон`;
     for (const lid of c.lookIds) if (!has('looks', lid)) return `Капсула ${c.id}: немає образу ${lid}`;
+    if (c.disliked !== undefined && typeof c.disliked !== 'boolean') return `Капсула ${c.id}: некоректна оцінка`;
+    if (c.disliked && c.favorite) return `Капсула ${c.id}: лайк і дизлайк одночасно`;
   }
   for (const j of d.jobs) {
     if (!JOB_STATES.includes(j.state)) return `Завдання ${j.id}: невідомий стан`;

@@ -6,6 +6,7 @@ import { useApp, useRoute, go } from './store.tsx';
 import { Img } from './components/ui.tsx';
 import { HomePage, useIntake } from './pages/Home.tsx';
 import { CapsuleDetail, CapsulesPage } from './pages/Capsules.tsx';
+import { LookPage } from './pages/Look.tsx';
 import { WardrobePage } from './pages/Wardrobe.tsx';
 import { StudioPage } from './pages/Studio.tsx';
 import { GalleryPage } from './pages/Gallery.tsx';
@@ -55,6 +56,7 @@ export default function App() {
   let page: ReactNode;
   if (section === 'capsules' && parts[1]) page = <CapsuleDetail id={parts[1]} />;
   else if (section === 'capsules') page = <CapsulesPage />;
+  else if (section === 'looks' && parts[1]) page = <LookPage id={parts[1]} />;
   else if (section === 'wardrobe') page = <WardrobePage openId={parts[1]} />;
   else if (section === 'studio') page = <StudioPage lookId={query.get('look') ?? undefined} resultId={query.get('result') ?? undefined} />;
   else if (section === 'gallery') page = <GalleryPage />;
@@ -71,7 +73,7 @@ export default function App() {
           <Shirt size={18} />
         </a>
         <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
-        <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules'} />
+        <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
         <RailItem to="studio" icon={<Sparkles size={ic} />} label="Примірка" active={section === 'studio'} dot={pendingReview} />
         <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
         <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />

@@ -5,6 +5,7 @@ import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
 import { prewarm, saveUpload } from './media.ts';
 import { pickTheme } from './analysis.ts';
+import { hiddenLookIds } from '../src/rating.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -316,11 +317,38 @@ on('PATCH', '/api/capsules/:id', (ctx, [id], b) =>
     bump(c, b.rev);
     pick(c, b, ['name', 'description']);
     if (!c.name) throw new HttpError(400, 'Назва не може бути порожньою');
-    if (typeof b.favorite === 'boolean') c.favorite = b.favorite;
+    if (typeof b.favorite === 'boolean') rate(c, b.favorite ? 'like' : null);
     if (b.season && SEASONS.includes(b.season as never)) c.season = b.season as typeof c.season;
     if (Array.isArray(b.situations)) c.situations = (b.situations as string[]).map((s) => String(s).trim()).filter(Boolean);
     if (Array.isArray(b.lookIds)) c.lookIds = (b.lookIds as string[]).filter((l) => db.looks.some((x) => x.id === l));
     return c;
+  }),
+);
+
+/** Like / dislike / clear. Dislike hides without deleting; like ranks first. */
+function rate(target: { favorite: boolean; disliked?: boolean; ratedAt?: string }, value: unknown) {
+  if (value !== 'like' && value !== 'dislike' && value !== null) throw new HttpError(400, 'Оцінка: like, dislike або null');
+  target.favorite = value === 'like';
+  if (value === 'dislike') target.disliked = true;
+  else delete target.disliked;
+  target.ratedAt = now();
+}
+
+on('POST', '/api/capsules/:id/rating', (ctx, [id], b) =>
+  ctx.store.mutate((db) => {
+    const c = findOr404(db.capsules, id, 'Капсула');
+    rate(c, b.rating ?? null);
+    bump(c, undefined);
+    return c;
+  }),
+);
+
+on('POST', '/api/looks/:id/rating', (ctx, [id], b) =>
+  ctx.store.mutate((db) => {
+    const look = findOr404(db.looks, id, 'Образ');
+    rate(look, b.rating ?? null);
+    bump(look, undefined);
+    return look;
   }),
 );
 
@@ -346,7 +374,7 @@ on('PATCH', '/api/looks/:id', (ctx, [id], b) =>
     const look = findOr404(db.looks, id, 'Образ');
     bump(look, b.rev);
     pick(look, b, ['name', 'note']);
-    if (typeof b.favorite === 'boolean') look.favorite = b.favorite;
+    if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
     if (b.slots) setLookSlots(look, cleanSlots(b.slots), str(b.versionNote));
     if (!look.name) throw new HttpError(400, 'Назва не може бути порожньою');
     return look;
@@ -419,9 +447,10 @@ export function queueMissingRenders(db: DB, lookIds?: string[]) {
   const busy = new Set(db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && (j.state === 'queued' || j.state === 'running')).map((j) => j.lookId));
   const rendered = new Set(db.results.map((r) => r.lookId));
   const out: Job[] = [];
+  const hidden = hiddenLookIds(db);
   for (const look of db.looks) {
     if (lookIds && !lookIds.includes(look.id)) continue;
-    if (rendered.has(look.id) || busy.has(look.id)) continue;
+    if (rendered.has(look.id) || busy.has(look.id) || hidden.has(look.id)) continue;
     if (!SLOT_KEYS.some((k) => look.slots[k].length)) continue;
     const job = createJob(db, look, db.profile.basePhotoIds, '');
     if (job.state === 'queued') out.push(job);

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, Upload, Watch, X } from 'lucide-react';
+import { Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, ThumbsDown, ThumbsUp, Upload, Watch, X } from 'lucide-react';
 import type { Category, Photo, PhotoKind, Slots } from '../api.ts';
 import { thumb, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
+import { api } from '../api.ts';
+import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
 import { REF_KIND_LABEL, piecesOf } from '../lib.ts';
 
@@ -379,5 +381,65 @@ export function RenderPlaceholder({ lookIds }: { lookIds: string[] }) {
       {running || queued ? <Loader2 size={22} className={running ? 'spin' : ''} /> : <PersonStanding size={24} />}
       <span>{running ? 'Генерую примірку…' : queued ? 'Примірка в черзі' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>
     </div>
+  );
+}
+
+/**
+ * Owner rating in black and white. Dislike hides (kept as a finished look,
+ * restorable in «Капсули → Приховані»); like ranks first. Pressing the active
+ * button again clears it.
+ */
+export function RateButtons({ kind, target, size = 'md' }: { kind: 'look' | 'capsule'; target: { id: string; favorite: boolean; disliked?: boolean }; size?: 'sm' | 'md' }) {
+  const { act } = useApp();
+  const rating = ratingOf(target);
+  const set = (next: 'like' | 'dislike') => {
+    const value = rating === next ? null : next;
+    const msg = value === 'dislike' ? 'Приховано — повернути можна в «Капсули → Приховані»' : value === 'like' ? 'Подобається — тепер першим' : 'Оцінку знято';
+    void act(() => api('POST', `/api/${kind === 'look' ? 'looks' : 'capsules'}/${target.id}/rating`, { rating: value }), msg);
+  };
+  const ic = size === 'sm' ? 14 : 16;
+  return (
+    <div className={`rate ${size}`} role="group" aria-label="Оцінка">
+      <button className={`rate-btn${rating === 'like' ? ' on' : ''}`} aria-pressed={rating === 'like'} aria-label="Подобається" onClick={(e) => { e.preventDefault(); e.stopPropagation(); set('like'); }}>
+        <ThumbsUp size={ic} fill={rating === 'like' ? 'currentColor' : 'none'} />
+      </button>
+      <button className={`rate-btn${rating === 'dislike' ? ' on' : ''}`} aria-pressed={rating === 'dislike'} aria-label="Не подобається — сховати" onClick={(e) => { e.preventDefault(); e.stopPropagation(); set('dislike'); }}>
+        <ThumbsDown size={ic} fill={rating === 'dislike' ? 'currentColor' : 'none'} />
+      </button>
+    </div>
+  );
+}
+
+/** Pieces in two blocks: what the owner has, and what to buy. Each tile links to its item or need. */
+export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: ResolvedRef[]; ownTitle?: string }) {
+  const seen = new Set<string>();
+  const unique = pieces.filter((r) => {
+    const k = `${r.ref.kind}:${r.ref.id}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const own = unique.filter((r) => r.kind === 'owned' || r.kind === 'candidate');
+  const buy = unique.filter((r) => r.kind === 'need' || r.kind === 'product');
+  const tile = (r: ResolvedRef) => (
+    <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `#/wardrobe/${r.ref.id}` : r.ref.kind === 'need' ? `#/shopping?need=${r.ref.id}` : '#/shopping'}>
+      <div className="img">
+        {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
+        {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
+      </div>
+      <span className="nm">{r.title}</span>
+    </a>
+  );
+  return (
+    <>
+      {own.length > 0 && <>
+        <div className="section-head"><h2 className="h2">{ownTitle} <span className="count">{own.length}</span></h2></div>
+        <div className="ward-grid">{own.map(tile)}</div>
+      </>}
+      {buy.length > 0 && <>
+        <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="#/shopping">Список покупок</a></div>
+        <div className="ward-grid">{buy.map(tile)}</div>
+      </>}
+    </>
   );
 }

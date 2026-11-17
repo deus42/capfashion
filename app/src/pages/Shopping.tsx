@@ -239,7 +239,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
           <div className="chips">
             {looks.length === 0 && <span className="muted small">не використовується</span>}
             {looks.map((l) => (
-              <a key={l.id} className="badge" href={`#/studio?look=${l.id}`}>{l.name}</a>
+              <a key={l.id} className="badge" href={`#/looks/${l.id}`}>{l.name}</a>
             ))}
           </div>
         </dd>

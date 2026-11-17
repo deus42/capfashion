@@ -4,6 +4,7 @@
 import type { Category, DB, Item, Job, Look, Season, SlotKey } from './schema.ts';
 import { CATEGORIES, SEASONS, SLOT_KEYS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
+import { hiddenLookIds, lookKeys, sameLookKeys } from '../src/rating.ts';
 
 export const CATEGORY_UK: Record<Category, string> = {
   outerwear: 'верхній одяг', knitwear: 'худі й трикотаж', shirts: 'сорочки й поло', tees: 'футболки',
@@ -121,16 +122,16 @@ export function pickTheme(db: DB) {
 
 const lookItems = (l: Look) => new Set(SLOT_KEYS.flatMap((k) => l.slots[k].filter((r) => r.kind === 'item').map((r) => r.id)));
 
-/** Same outfit, or the same outfit with only one piece swapped. */
-export function nearDuplicate(a: Set<string>, b: Set<string>) {
-  let shared = 0;
-  for (const x of a) if (b.has(x)) shared += 1;
-  return shared >= Math.max(3, Math.min(a.size, b.size) - 1);
-}
+const outfitLine = (l: Look) => `- ${[...lookItems(l)].join(', ')}`;
 
 export function analyzePrompt(db: DB, job: Job, attached: string[]) {
   const items = ownedItems(db);
-  const existing = db.looks.filter((l) => lookItems(l).size >= 3).slice(-40);
+  // Every regeneration is checked against what the owner already approved or removed.
+  const hidden = hiddenLookIds(db);
+  const usable = db.looks.filter((l) => lookItems(l).size >= 2);
+  const liked = usable.filter((l) => l.favorite);
+  const rejected = usable.filter((l) => hidden.has(l.id));
+  const existing = usable.filter((l) => !l.favorite && !hidden.has(l.id)).slice(-40);
   const names = db.capsules.filter((c) => c.kind === 'selection').map((c) => c.name);
   const required = (job.requiredItemIds ?? []).map((id) => db.items.find((i) => i.id === id)).filter((i): i is Item => Boolean(i));
   const completeBlock = required.length
@@ -148,8 +149,11 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
     completeBlock,
     '',
     'Rules: use only ids from the list (exact strings). Each look needs a bottom and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
-    'Variety is required: every look must differ from every other look AND from every existing outfit below in at least two of top / outer layer / bottom / shoes. Spread the wardrobe: use pieces that existing outfits rarely use, vary colours and silhouettes. Give the selection a new name, different from the existing names.',
-    existing.length ? `Existing outfits (do not repeat or near-copy):\n${existing.map((l) => `- ${[...lookItems(l)].join(', ')}`).join('\n')}` : '',
+    'Same-look rule (the owner\'s): two outfits are the SAME look when they are identical or differ by only one piece — one swap, one addition or one removal, accessories included. A DIFFERENT look has at least two different pieces. Every look you return must be a different look from each other and from every outfit listed below; looks that break this are discarded.',
+    'Spread the wardrobe: use pieces that existing outfits rarely use, vary colours and silhouettes. Give the selection a new name, different from the existing names.',
+    rejected.length ? `Outfits the owner REJECTED (never propose them again or anything within one piece of them; steer away from their direction):\n${rejected.map(outfitLine).join('\n')}` : '',
+    liked.length ? `Outfits the owner LIKED (already saved — do not repeat or near-copy them; their style is a good signal):\n${liked.map(outfitLine).join('\n')}` : '',
+    existing.length ? `Other existing outfits (do not repeat or near-copy):\n${existing.map(outfitLine).join('\n')}` : '',
     names.length ? `Existing selection names (do not reuse): ${names.join('; ')}` : '',
     'Write name, description, look names, occasion and why in Ukrainian, short (why: one sentence on colour/silhouette logic). season: all | warm | transitional | cold.',
     attached.length ? `Packshot images are attached as files named by item id (${attached.length} files) — use them to judge colours and styles.` : '',
@@ -292,17 +296,9 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
   const capsuleId = newId('C');
   const looks: Look[] = [];
   const required = job.requiredItemIds ?? [];
-  // In complete-the-look mode the picked items are shared on purpose: compare only the added pieces.
-  const rest = (s: Set<string>) => new Set([...s].filter((x) => !required.includes(x)));
-  const similar = (a: Set<string>, b: Set<string>) => {
-    if (!required.length) return nearDuplicate(a, b);
-    const ra = rest(a);
-    const rb = rest(b);
-    let shared = 0;
-    for (const x of ra) if (rb.has(x)) shared += 1;
-    return shared >= Math.max(2, Math.min(ra.size, rb.size) - 1);
-  };
-  const taken = db.looks.map(lookItems).filter((s) => s.size >= 3);
+  // The owner's same-look rule against every existing look — liked, hidden/disliked and
+  // neutral alike. Picked items in complete-the-look mode are shared, so they never count as a difference.
+  const taken = db.looks.map(lookKeys).filter((s) => s.size >= 2);
   for (const l of reply.looks ?? []) {
     const slots = emptySlots();
     for (const k of SLOT_KEYS) {
@@ -310,9 +306,9 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
       slots[k] = [...new Set((l[k] ?? []).filter((id) => owned.has(id)))].slice(0, limit).map((id) => ({ kind: 'item' as const, id }));
     }
     if (!slots.bottom.length || !slots.shoes.length) continue;
-    const set = new Set(SLOT_KEYS.flatMap((k) => slots[k].map((r) => r.id)));
-    if (required.some((id) => !set.has(id))) continue;
-    if (taken.some((t) => similar(set, t))) continue;
+    const set = lookKeys({ slots });
+    if (required.some((id) => !set.has(`item:${id}`))) continue;
+    if (taken.some((t) => sameLookKeys(set, t))) continue;
     taken.push(set);
     looks.push({
       id: newId('L'),

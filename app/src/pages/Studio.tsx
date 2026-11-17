@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Columns2, Download, Heart, ImagePlus, Loader2, Maximize2, Play, Plus, RotateCcw, Save, Sparkles, TriangleAlert, X } from 'lucide-react';
+import { Check, Columns2, Download, ImagePlus, Loader2, Maximize2, Play, Plus, RotateCcw, Save, Sparkles, TriangleAlert, X } from 'lucide-react';
 import type { DB, Job, Look, Result, ReworkReason, SlotKey, SlotRef, Slots } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, Img, KindDot, LookCollage, Modal, PhotoPicker } from '../components/ui.tsx';
+import { Badge, CategoryIcon, Img, KindDot, LookCollage, Modal, PhotoPicker, RateButtons } from '../components/ui.tsx';
+import { hiddenLookIds } from '../rating.ts';
 import { useIntake } from './Home.tsx';
 import { CATEGORY_LABEL, JOB_LABEL, REASON_LABEL, REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SLOT_CATEGORIES, SLOT_LABEL, fmtDate, resolveRef, resultsForLook } from '../lib.ts';
 
@@ -181,7 +182,6 @@ export function ReviewBar({ result }: { result: Result }) {
 
 function ResultCard({ result, look, onRun, canRun }: { result: Result | undefined; look: Look; onRun?: () => void; canRun?: boolean }) {
   const db = useDb();
-  const { act } = useApp();
   const intake = useIntake();
   const running = db.jobs.find((j) => j.lookId === look.id && (j.state === 'running' || j.state === 'queued'));
   if (!result) {
@@ -212,9 +212,6 @@ function ResultCard({ result, look, onRun, canRun }: { result: Result | undefine
         {stale && <Badge tone="warn"><TriangleAlert size={11} /> склад змінено</Badge>}
       </div>
       <div className="tr">
-        <button className={`icon-btn${result.favorite ? ' on' : ''}`} aria-label="Обране" onClick={() => void act(() => api('PATCH', `/api/results/${result.id}`, { favorite: !result.favorite }))}>
-          <Heart size={15} fill={result.favorite ? 'currentColor' : 'none'} />
-        </button>
         <a className="icon-btn" href={media(result.imagePath)} target="_blank" rel="noreferrer" aria-label="Відкрити повністю"><Maximize2 size={14} /></a>
         <a className="icon-btn" href={media(result.imagePath)} download aria-label="Завантажити"><Download size={14} /></a>
       </div>
@@ -286,7 +283,8 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
   const basePhotos = baseIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as DB['photos'];
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
   const problem = jobs.find((j) => j.state === 'needs_data' || j.state === 'error');
-  const siblings = capsule ? capsule.lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l)) : db.looks.filter((l) => !l.capsuleId);
+  const hiddenLooks = hiddenLookIds(db);
+  const siblings = (capsule ? capsule.lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l)) : db.looks.filter((l) => !l.capsuleId)).filter((l) => l.id === look.id || !hiddenLooks.has(l.id));
 
   const queue = async (run: boolean) => {
     const job = await act(() => api<Job>('POST', '/api/jobs', { lookId: look.id, basePhotoIds: baseIds, instructions, run }));
@@ -311,7 +309,11 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
       ) : (
         <div className="studio-stage">
           <div className="studio-left">
-            {capsule ? <a className="small muted" href={`#/capsules/${capsule.id}`} style={{ paddingLeft: 4 }}>← {capsule.name}</a> : <span className="small muted" style={{ paddingLeft: 4 }}>Мої комбінації</span>}
+            <div className="crumb" style={{ margin: 0, paddingLeft: 4, flexWrap: 'wrap' }}>
+              {capsule ? <a href={`#/capsules/${capsule.id}`}>{capsule.name}</a> : <span>Мої комбінації</span>}
+              <span>›</span><a href={`#/looks/${look.id}`}>{look.name}</a>
+            </div>
+            <RateButtons kind="look" target={look} size="sm" />
             <div className="look-picks" role="group" aria-label="Образ">
               {siblings.map((l) => (
                 <button key={l.id} className={`look-pick${l.id === look.id ? ' active' : ''}`} onClick={() => go(`/studio?look=${l.id}`)}>{l.name}</button>

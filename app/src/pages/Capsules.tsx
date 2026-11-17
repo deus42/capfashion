@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Heart, ImageOff, Loader2, Pencil, Plus, ShoppingBag, Sparkles, Trash2 } from 'lucide-react';
+import { EyeOff, ImageOff, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Capsule, Look, Season } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, Empty, Modal, RenderPlaceholder } from '../components/ui.tsx';
-import { REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, coverForLook, piecesOf } from '../lib.ts';
+import { Badge, ConfirmButton, Empty, Modal, PieceBlocks, RateButtons, RenderPlaceholder } from '../components/ui.tsx';
+import { REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, capsuleLooks, coverForLook, distinctLooks, piecesOf } from '../lib.ts';
+import { byRating, hiddenLookIds, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile } from './Home.tsx';
-import { groupLookVariations } from '../look-variation.ts';
 
 function AnalyzeBox() {
   const db = useDb();
@@ -38,29 +38,40 @@ function AnalyzeBox() {
 export function CapsulesPage() {
   const db = useDb();
   const { query } = useRoute();
-  const [tab, setTab] = useState<'capsules' | 'selections' | 'looks'>(query.get('tab') === 'selections' ? 'selections' : query.get('tab') === 'looks' ? 'looks' : 'capsules');
-  const capsules = db.capsules.filter((c) => c.kind !== 'selection');
-  const selections = db.capsules.filter((c) => c.kind === 'selection').slice().reverse();
+  const initial = (['selections', 'looks', 'hidden'] as const).find((t) => t === query.get('tab')) ?? 'capsules';
+  const [tab, setTab] = useState<'capsules' | 'selections' | 'looks' | 'hidden'>(initial);
+  const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
+  const capsules = byRating(shown.filter((c) => c.kind !== 'selection'));
+  const selections = byRating(shown.filter((c) => c.kind === 'selection').reverse());
   const list = tab === 'capsules' ? capsules : selections;
-  // Give each capsule's lead look a chance to represent its own style before
-  // folding later one-piece substitutions into variants across the catalogue.
-  const orderedLooks = [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]
-    .map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));
+  // Each capsule's lead look first, then the rest of the catalogue.
+  const orderedLooks = capsuleLooks(db, [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]);
+  const allLooks = distinctLooks(db, orderedLooks);
+  const hiddenCaps = db.capsules.filter((c) => isCapsuleHidden(db, c));
+  const hiddenLooks = capsuleLooks(db, [...hiddenLookIds(db)]).filter((l) => !hiddenCaps.some((c) => c.lookIds.includes(l.id)));
+  const hiddenCount = hiddenCaps.length + hiddenLooks.length;
+  const title = { capsules: 'Капсули', selections: 'Підбірки', looks: 'Усі образи', hidden: 'Приховані' }[tab];
 
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>{tab === 'capsules' ? 'Капсули' : tab === 'looks' ? 'Усі образи' : 'Підбірки'}</h1></div>
+        <div><h1>{title}</h1></div>
         <div className="actions">
           <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
             <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
             <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>З моїх речей <span className="faint">{selections.length}</span></button>
-            <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{db.looks.length}</span></button>
+            <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{allLooks.length}</span></button>
+            {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> Приховані <span className="faint">{hiddenCount}</span></button>}
           </div>
         </div>
       </div>
       {tab === 'selections' && <AnalyzeBox />}
-      {tab === 'looks' ? <LookCollection looks={orderedLooks} /> : list.length === 0 ? (
+      {tab === 'hidden' ? (
+        hiddenCount === 0 ? <Empty icon={<EyeOff />} title="Нічого не приховано" /> : <>
+          {hiddenCaps.length > 0 && <div className="capsule-grid" style={{ marginBottom: 30 }}>{hiddenCaps.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
+          {hiddenLooks.length > 0 && <div className="look-grid">{hiddenLooks.map((l) => <LookCard key={l.id} look={l} />)}</div>}
+        </>
+      ) : tab === 'looks' ? <LookGrid looks={allLooks} /> : list.length === 0 ? (
         <Empty icon={<Sparkles />} title="Підбірок ще немає">Напиши, куди збираєшся, і натисни «Підібрати» — образи складуться лише з твоїх речей.</Empty>
       ) : (
         <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
@@ -69,19 +80,15 @@ export function CapsulesPage() {
   );
 }
 
-function LookCollection({ looks }: { looks: Look[] }) {
-  const groups = groupLookVariations(looks);
-  const variants = looks.length - groups.length;
+/** Looks already reduced to one card per look (see distinctLooks). */
+function LookGrid({ looks }: { looks: Look[] }) {
   return <>
-    <div className="section-head"><h2 className="h2">Образи <span className="count">{groups.length}</span></h2><span className="small faint">{variants > 0 ? `Варіанти: ${variants}` : ''}</span></div>
-    <div className="look-grid">{groups.map((g) => <div key={g.primary.id}>
-      <LookCard look={g.primary} />
-      {g.variants.length > 0 && <div className="variants"><span className="small faint">Варіанти</span><div className="variants-grid">{g.variants.map((l) => <LookCard key={l.id} look={l} />)}</div></div>}
-    </div>)}</div>
+    <div className="section-head"><h2 className="h2">Образи <span className="count">{looks.length}</span></h2></div>
+    <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} />)}</div>
   </>;
 }
 
-function EditLook({ look, onClose }: { look: Look; onClose: () => void }) {
+export function EditLook({ look, onClose }: { look: Look; onClose: () => void }) {
   const db = useDb();
   const { act } = useApp();
   const [name, setName] = useState(look.name);
@@ -134,14 +141,14 @@ function LookCard({ look }: { look: Look }) {
   const stale = cover && cover.lookVersion !== look.version;
   return (
     <div className="look-card">
-      <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`#/studio?look=${look.id}`}>
+      <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`#/looks/${look.id}`}>
         {cover ? <img style={{ objectFit: 'contain' }} src={thumb(cover.imagePath, 700)} alt={look.name} /> : <RenderPlaceholder lookIds={[look.id]} />}
-        <span className="go btn sm primary"><Sparkles size={13} /> {cover ? 'Відкрити' : 'Приміряти'}</span>
       </a>
       {cover && <div className="row wrap"><Badge tone={REVIEW_TONE[cover.review]}>{REVIEW_LABEL[cover.review]}</Badge>{stale && <Badge tone="warn">склад змінено</Badge>}</div>}
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h4 title={look.note}>{look.name}</h4>
-        <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
+      <a href={`#/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4></a>
+      <div className="card-foot">
+        <RateButtons kind="look" target={look} size="sm" />
+        <button className="icon-btn" style={{ width: 32, height: 32 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
       </div>
       {editing && <EditLook look={look} onClose={() => setEditing(false)} />}
     </div>
@@ -180,16 +187,16 @@ export function CapsuleDetail({ id }: { id: string }) {
   const { act } = useApp();
   const [editing, setEditing] = useState(false);
   const capsule = db.capsules.find((c) => c.id === id);
-  const looks = useMemo(() => (capsule?.lookIds ?? []).map((l) => db.looks.find((x) => x.id === l)).filter((l): l is Look => Boolean(l)), [capsule, db.looks]);
+  const allLooks = useMemo(() => capsuleLooks(db, capsule?.lookIds ?? []), [capsule, db]);
   if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
-
-  const pieces = new Map<string, ReturnType<typeof piecesOf>[number]>();
-  for (const l of looks) for (const r of piecesOf(db, l.slots)) pieces.set(`${r.ref.kind}:${r.ref.id}`, r);
-  const needs = [...pieces.values()].filter((r) => r.kind === 'need' || r.kind === 'product');
+  const hidden = isCapsuleHidden(db, capsule);
+  // A hidden capsule opened from «Приховані» shows its looks so it can be judged again.
+  const looks = hidden ? byRating(allLooks) : distinctLooks(db, allLooks);
+  const pieces = looks.flatMap((l) => piecesOf(db, l.slots));
   const isSelection = capsule.kind === 'selection';
 
   const addLook = async () => {
-    const look = await act(() => api<Look>('POST', '/api/looks', { capsuleId: capsule.id, name: `Образ ${looks.length + 1}`, slots: {} }), 'Образ додано');
+    const look = await act(() => api<Look>('POST', '/api/looks', { capsuleId: capsule.id, name: `Образ ${allLooks.length + 1}`, slots: {} }), 'Образ додано');
     if (look) go(`/studio?look=${look.id}`);
   };
 
@@ -202,20 +209,18 @@ export function CapsuleDetail({ id }: { id: string }) {
           <div className="row wrap" style={{ marginTop: 12 }}>
             <Badge>{SEASON_LABEL[capsule.season]}</Badge>
             {isSelection && <Badge tone="ok">лише мої речі</Badge>}
+            {hidden && <Badge>приховано</Badge>}
             {capsule.situations.filter((s) => s.length <= 24).slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
           </div>
         </div>
         <div className="actions">
           {!isSelection && <a className="btn" href="#/gallery?type=inspiration">Натхнення</a>}
-          {needs.length > 0 && <button className="btn" onClick={() => go('/shopping')}><ShoppingBag size={15} /> Докупити {needs.length}</button>}
-          <button className={`icon-btn${capsule.favorite ? ' on' : ''}`} aria-label="Обране" onClick={() => void act(() => api('PATCH', `/api/capsules/${capsule.id}`, { favorite: !capsule.favorite }))}>
-            <Heart size={15} fill={capsule.favorite ? 'currentColor' : 'none'} />
-          </button>
+          <RateButtons kind="capsule" target={capsule} />
           <button className="icon-btn" aria-label="Редагувати" onClick={() => setEditing(true)}><Pencil size={14} /></button>
           <ConfirmButton
             className="icon-btn"
             title={isSelection ? 'Видалити підбірку' : 'Видалити капсулу'}
-            message={<>Видалити «{capsule.name}» і {looks.length} її образів? Речі в гардеробі залишаться.</>}
+            message={<>Видалити «{capsule.name}» і {allLooks.length} її образів назавжди? Щоб просто прибрати з очей — постав 👎. Речі в гардеробі залишаться.</>}
             onConfirm={async () => {
               const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), 'Видалено');
               if (ok !== undefined) go(isSelection ? '/capsules?tab=selections' : '/capsules');
@@ -226,20 +231,8 @@ export function CapsuleDetail({ id }: { id: string }) {
           <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> Образ</button>
         </div>
       </div>
-      <LookCollection looks={looks} />
-
-      <div className="section-head"><h2 className="h2">Речі капсули <span className="count">{pieces.size}</span></h2></div>
-      <div className="ward-grid">
-        {[...pieces.values()].map((r) => (
-          <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `#/wardrobe/${r.ref.id}` : `#/shopping?need=${r.ref.id}`}>
-            <div className="img">
-              {r.art ? <img src={thumb(r.art, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
-              {r.kind !== 'owned' && r.kind !== 'candidate' && <span className="tl"><Badge tone="warn glass">{REF_KIND_LABEL[r.kind] === 'Бажаний тип' ? 'докупити' : REF_KIND_LABEL[r.kind]}</Badge></span>}
-            </div>
-            <span className="nm">{r.title}</span>
-          </a>
-        ))}
-      </div>
+      <LookGrid looks={looks} />
+      <PieceBlocks pieces={pieces} ownTitle="Речі капсули" />
       {editing && <EditCapsule capsule={capsule} onClose={() => setEditing(false)} />}
     </div>
   );

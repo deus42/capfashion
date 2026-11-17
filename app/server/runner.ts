@@ -54,6 +54,22 @@ function refInstruction(refs: string[]) {
   return `When you call the image generation tool, you MUST pass these exact files in its referenced_image_paths parameter (in this order): ${JSON.stringify(refs)}. Attaching them to the conversation is not enough — without referenced_image_paths the generator never sees them.`;
 }
 
+/** The image tool accepts at most five reference files. */
+export const MAX_IMAGE_REFS = 5;
+
+/**
+ * Identity comes only from the owner's original base photos (up to three);
+ * garment photos fill the remaining slots. Never more than MAX_IMAGE_REFS.
+ */
+export function pickRefs(job: Job, isPackshot: boolean, resolve: (p: string) => string): ImageRefs {
+  const identity = isPackshot ? [] : [...new Set(job.snapshot.basePhotoPaths)].slice(0, 3).map(resolve);
+  const garments = [...new Set(job.snapshot.slots.flatMap((s) => s.photoPaths))]
+    .map(resolve)
+    .filter((p) => !identity.includes(p))
+    .slice(0, Math.min(3, MAX_IMAGE_REFS - identity.length));
+  return { identity, garments };
+}
+
 export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
   if (job.kind === 'packshot') return buildPackshotPrompt(job, resultFile, refs);
   const outfit = job.snapshot.slots
@@ -277,13 +293,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const logFile = path.join(jobDir, 'codex.jsonl');
     const images = [...job.snapshot.basePhotoPaths, ...job.snapshot.slots.flatMap((s) => s.photoPaths)];
     const uniqueImages = [...new Set(images)].map((p) => resolveAllowed(projectRoot, store.dataDir, p));
-    // Identity comes only from the owner's original base photos; garment photos follow. A few strong references beat many.
-    const identity = [...new Set(job.snapshot.basePhotoPaths)].slice(0, 3).map((p) => resolveAllowed(projectRoot, store.dataDir, p));
-    const garments = [...new Set(job.snapshot.slots.flatMap((s) => s.photoPaths))]
-      .map((p) => resolveAllowed(projectRoot, store.dataDir, p))
-      .filter((p) => !identity.includes(p))
-      .slice(0, 3);
-    const prompt = buildPrompt(job, resultFile, { identity: isPackshot ? [] : identity, garments });
+    const prompt = buildPrompt(job, resultFile, pickRefs(job, isPackshot, (p) => resolveAllowed(projectRoot, store.dataDir, p)));
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
     const settings = db0.settings;
     const args = [
@@ -455,11 +465,14 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   }
 
   /** Jobs left "running" by a restart go back to the queue; their snapshot is unchanged. */
+  // Only jobs this runner started (it sets logPath when it marks them running) are
+  // re-queued; a job someone is running elsewhere, e.g. attended in a chat, is left alone.
+  const ownRunning = (j: Job) => j.state === 'running' && Boolean(j.logPath);
   async function recover(): Promise<number> {
-    const interrupted = store.read().jobs.filter((j) => j.state === 'running').length;
+    const interrupted = store.read().jobs.filter(ownRunning).length;
     if (!interrupted) return 0;
     await store.mutate((db) => {
-      for (const j of db.jobs) if (j.state === 'running') {
+      for (const j of db.jobs) if (ownRunning(j)) {
         j.state = 'queued';
         j.stateNote = 'Повернуто в чергу після перезапуску сервера';
       }

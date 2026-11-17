@@ -7,7 +7,7 @@ import type { DB } from './schema.ts';
 import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
 import { dispatch, snapshotSlots } from './routes.ts';
-import { buildPrompt, createRunner } from './runner.ts';
+import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
 import { applyAnalyze, applyIntake } from './analysis.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
@@ -425,4 +425,31 @@ test('try-on prompt sends original base photos to the image tool before garments
   assert.deepEqual(list, ['/abs/assets/photos/a.jpeg', '/abs/assets/photos/b.jpeg'], 'identity first, then garments');
   assert.ok(!/renders\//.test(prompt), 'no generated render is used as a reference');
   assert.match(prompt, /recognisably this person/);
+});
+
+test('image references never exceed the tool limit and keep identity first', () => {
+  const db = fixture();
+  const slots = snapshotSlots(db, db.looks[0].slots).map((s, i) => ({ ...s, photoPaths: [`assets/photos/g${i}a.jpeg`, `assets/photos/g${i}b.jpeg`] }));
+  const job = { id: 'J', lookId: 'L-1', lookVersion: 1, snapshot: { lookName: 'Look', slots, basePhotoIds: ['P-1'], basePhotoPaths: ['assets/photos/a.jpeg', 'assets/photos/b.jpeg', 'assets/photos/c.jpeg', 'assets/photos/d.jpeg'] }, instructions: '', state: 'queued' as const, origin: 'site' as const, createdAt: at };
+  const refs = pickRefs(job, false, (p) => `/abs/${p}`);
+  assert.equal(refs.identity.length, 3);
+  assert.ok(refs.identity.length + refs.garments.length <= MAX_IMAGE_REFS);
+  assert.ok(refs.garments.length >= 1, 'at least one garment reference fits');
+  const packshot = pickRefs(job, true, (p) => `/abs/${p}`);
+  assert.equal(packshot.identity.length, 0);
+  assert.ok(packshot.garments.length <= MAX_IMAGE_REFS);
+});
+
+test('restart re-queues only jobs this runner started, never a job running elsewhere', async () => {
+  const { store } = setup();
+  const snap = { lookName: 'Look', slots: [], basePhotoIds: ['P-1'], basePhotoPaths: ['assets/photos/a.jpeg'] };
+  await store.mutate((db) => {
+    db.jobs.push({ id: 'J-own', lookId: 'L-1', lookVersion: 1, snapshot: snap, instructions: '', state: 'running', origin: 'site', createdAt: at, logPath: 'x/jobs/J-own/codex.jsonl' });
+    db.jobs.push({ id: 'J-chat', lookId: 'L-1', lookVersion: 1, snapshot: snap, instructions: '', state: 'running', origin: 'site', createdAt: at, stateNote: 'attended elsewhere' });
+  });
+  const n = await createRunner(store, store.dataDir, '/usr/bin/false').recover();
+  assert.equal(n, 1);
+  const db = store.read();
+  assert.equal(db.jobs.find((j) => j.id === 'J-own')!.state, 'queued');
+  assert.equal(db.jobs.find((j) => j.id === 'J-chat')!.state, 'running');
 });

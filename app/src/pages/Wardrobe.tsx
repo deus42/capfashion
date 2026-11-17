@@ -4,8 +4,7 @@ import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, distinctLooks, looksUsing } from '../lib.ts';
-import { hiddenLookIds } from '../rating.ts';
+import { CATEGORY_LABEL, siteLooks } from '../lib.ts';
 
 import { TermInfo } from './Glossary.tsx';
 
@@ -18,6 +17,7 @@ function usePackshotState() {
   const db = useDb();
   const busy = new Map<string, 'queued' | 'running'>();
   for (const j of db.jobs) if (j.kind === 'packshot' && j.itemId && (j.state === 'queued' || j.state === 'running')) busy.set(j.itemId, j.state);
+  // Only work that is happening now animates; queued work waits quietly.
   return busy;
 }
 
@@ -34,7 +34,7 @@ function ItemPage({ item }: { item: Item }) {
   const photos = item.photoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
   const packshot = item.packshotId ? db.photos.find((p) => p.id === item.packshotId) : undefined;
   const main = packshot ?? photos[0];
-  const looks = distinctLooks(db, looksUsing(db, 'item', item.id));
+  const looks = siteLooks(db).filter((l) => Object.values(l.slots).flat().some((r) => r.kind === 'item' && r.id === item.id));
   const covers = db.needs.filter((n) => n.coveredByItem === item.id);
   const patch = (body: Record<string, unknown>, msg: string) => act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...body }), msg);
 
@@ -51,7 +51,7 @@ function ItemPage({ item }: { item: Item }) {
       <div className="item-hero">
         <a className="item-main" href={main ? media(main.path) : undefined} target={main ? '_blank' : undefined} rel="noreferrer">
           {main ? <img src={thumb(main.path, 960)} alt={item.title} /> : <CategoryIcon category={item.category} size={34} />}
-          {busy.has(item.id) && <span className="busy-bar" role="progressbar" aria-label="Packshot" />}
+          {busy.get(item.id) === 'running' && <span className="busy-bar" role="progressbar" aria-label="Фото речі" />}
         </a>
         <div className="item-thumbs">
           {photos.map((p) => (
@@ -214,11 +214,9 @@ export function WardrobePage({ openId }: { openId?: string }) {
   };
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : mode === 'compose' && s.length >= 4 ? s : [...s, id]));
   const useCount = new Map<string, number>();
-  const hiddenLooks = hiddenLookIds(db);
   // Same count as the item page: distinct looks (near-copies fold into one).
-  for (const l of distinctLooks(db, db.looks.filter((x) => !hiddenLooks.has(x.id)))) for (const id of new Set(Object.values(l.slots).flat().filter((r) => r.kind === 'item').map((r) => r.id))) useCount.set(id, (useCount.get(id) ?? 0) + 1);
+  for (const l of siteLooks(db)) for (const id of new Set(Object.values(l.slots).flat().filter((r) => r.kind === 'item').map((r) => r.id))) useCount.set(id, (useCount.get(id) ?? 0) + 1);
   const [creating, setCreating] = useState(false);
-  const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const status = (['needs_confirmation', 'confirmed', 'inactive'] as ItemStatus[]).includes(view as ItemStatus) ? (view as ItemStatus) : null;
   const isNew = (i: Item) => i.origin === 'intake' && i.status === 'needs_confirmation';
   const cat = CATS.includes(view as Category) ? (view as Category) : null;
@@ -228,7 +226,6 @@ export function WardrobePage({ openId }: { openId?: string }) {
   );
   const visible = db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto);
   const open = openId ? db.items.find((i) => i.id === openId) : undefined;
-  const done = db.items.filter((i) => i.packshotId).length;
   const missing = db.items.filter((i) => !i.packshotId && i.status !== 'inactive' && !busy.has(i.id)).length;
   const title = view === 'new' ? 'Нові з фото' : cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі';
   // An item opens as its own page, not a side panel over the grid.
@@ -255,9 +252,6 @@ export function WardrobePage({ openId }: { openId?: string }) {
         }
       />
 
-      {(intakeBusy > 0 || busy.size > 0) && (
-        <div className="progress" style={{ marginBottom: 22 }}><i style={{ width: `${Math.round((done / Math.max(1, db.items.length)) * 100)}%` }} /></div>
-      )}
 
       <div className="split">
         <SubNav
@@ -310,7 +304,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
                       {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
                       {!mergeSel && (useCount.get(i.id) ?? 0) > 0 && <span className="uses" title="У скількох образах">{useCount.get(i.id)} обр.</span>}
-                      {st && <span className="busy-bar" role="progressbar" aria-label="Фото речі" />}
+                      {st === 'running' && <span className="busy-bar" role="progressbar" aria-label="Фото речі" />}
                     </div>
                     <span className="nm">{i.title}<TermInfo texts={[i.title]} /></span>
                   </button>

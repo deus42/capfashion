@@ -96,7 +96,7 @@ export function GalleryPage() {
   const { query } = useRoute();
   const [type, setType] = useState<'tryon' | 'packshot' | 'inspiration' | 'original' | 'face'>(query.get('type') === 'face' ? 'face' : query.get('type') === 'original' ? 'original' : query.get('type') === 'inspiration' ? 'inspiration' : query.get('type') === 'packshot' ? 'packshot' : 'tryon');
   const [tag, setTag] = useState('');
-  const [filter, setFilter] = useState<'any' | 'pending' | 'accepted' | 'fav'>('any');
+  const [filter, setFilter] = useState<'any' | 'fav'>('any');
   const [open, setOpen] = useState<Entry | null>(null);
   const all = useMemo(() => entries(db), [db]);
   const tags = [...new Set(all.flatMap((e) => e.kind === 'inspiration' ? e.p.inspiration?.tags ?? [] : []))].sort();
@@ -108,7 +108,7 @@ export function GalleryPage() {
     if (filter === 'any') return true;
     if (e.kind !== 'tryon') return false;
     if (filter === 'fav') return Boolean(db.looks.find((l) => l.id === e.r.lookId)?.favorite);
-    return e.r.review === filter;
+    return true;
   });
   const groups: [string, Entry[]][] = [];
   for (const e of list) {
@@ -142,8 +142,6 @@ export function GalleryPage() {
             {(
               [
                 ['any', 'Усі'],
-                ['pending', 'На перевірці'],
-                ['accepted', 'Прийняті'],
                 ['fav', '👍'],
               ] as const
             ).map(([k, l]) => (

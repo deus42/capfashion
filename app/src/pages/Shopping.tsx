@@ -4,7 +4,7 @@ import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, siteLooks } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -39,7 +39,7 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
   const field = (k: keyof ProductForm, label: string, placeholder = '', full = false) => (
     <label className={`field${full ? ' full' : ''}`}>
       <span>{label}</span>
-      <input className="input" value={f[k]} onChange={set(k)} placeholder={placeholder} />
+      <input className="input" value={f[k]} onChange={k === 'price' ? (e) => set(k)({ target: { value: e.target.value.replace(',', '.') } }) : set(k)} placeholder={placeholder} inputMode={k === 'price' ? 'decimal' : undefined} />
     </label>
   );
   return (
@@ -187,7 +187,6 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
           })}
         </div>
       )}
-      <p className="small faint" style={{ marginTop: 12 }}>Рекомендація зникне з покупок, у її образах стане ця річ, і вони отримають нові примірки.</p>
     </Modal>
   );
 }
@@ -223,8 +222,8 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   const bought = products.some((p) => p.status === 'purchased');
   const replacedIn = need.coveredLookIds?.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is NonNullable<typeof l> => Boolean(l)) ?? [];
-  const visible = distinctLooks(db, db.looks);
-  const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : visible.filter((l) => looksUsing(db, 'need', need.id).some((x) => x.id === l.id));
+  const using = looksUsing(db, 'need', need.id);
+  const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : siteLooks(db).filter((l) => using.some((x) => x.id === l.id));
   const uncover = async () => {
     const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/uncover`));
     if (r) toast(coverToast('Повернуто в покупки', r));
@@ -264,7 +263,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <Undo2 size={13} /> Повернути в покупки
           </button>
         )}
-        <ConfirmButton className="icon-btn" title="Видалити потребу" message={<>Видалити «{need.title}»?{looks.length ? ` Вона зникне з ${looks.length} образів.` : ''}</>} onConfirm={() => act(() => api('DELETE', `/api/needs/${need.id}`), 'Потребу видалено')}>
+        <ConfirmButton className="icon-btn" title="Видалити потребу" message={<>Видалити «{need.title}»?{using.length ? ` Вона зникне з ${using.length} образів.` : ''}</>} onConfirm={() => act(() => api('DELETE', `/api/needs/${need.id}`), 'Потребу видалено')}>
           <Trash2 size={13} />
         </ConfirmButton>
       </div>

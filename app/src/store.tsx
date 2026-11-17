@@ -95,7 +95,7 @@ function currentRoute() {
   const h = window.location.hash;
   if (h.startsWith('#/')) window.history.replaceState(null, '', h.slice(1));
   const p = window.location.pathname + window.location.search;
-  return p === '/' ? '/capsules' : p;
+  return p === '/' ? '/home' : p;
 }
 
 export function useRoute() {

@@ -364,7 +364,8 @@ on('POST', '/api/items/merge', (ctx, _p, b) =>
       rev: 1,
       category: sources[0].category,
       title: str(b.title, 200) || sources[0].title,
-      status: 'needs_confirmation',
+      // Merging items the owner already confirmed does not ask «Це моя річ?» again.
+      status: sources.every((s) => s.status === 'confirmed') ? 'confirmed' : 'needs_confirmation',
       photoIds: [...new Set(sources.flatMap((s) => s.photoIds))],
       observation: sources.map((s) => `${s.id}: ${s.observation ?? ''}`).join(' · '),
       confirmedFact: sources.map((s) => s.confirmedFact).filter(Boolean).join(' ') || undefined,
@@ -655,7 +656,7 @@ on('POST', '/api/needs/:id/uncover', async (ctx, [id]) => {
 const PRODUCT_FIELDS = ['store', 'brand', 'model', 'sku', 'url', 'composition', 'fit', 'currency', 'recommendedSize', 'sizeBasis', 'checkedAt', 'sources'] as const;
 
 function productNumbers(target: Record<string, unknown>, b: Body) {
-  if ('price' in b) target.price = b.price === '' || b.price === null ? null : Number(b.price);
+  if ('price' in b) target.price = b.price === '' || b.price === null ? null : Number(String(b.price).replace(',', '.'));
   if (typeof target.price === 'number' && !Number.isFinite(target.price)) throw new HttpError(400, 'Ціна має бути числом');
   for (const k of ['onlineAvailability', 'towerAvailability'] as const) if (typeof b[k] === 'string') target[k] = b[k];
   if (target.url && !/^https?:\/\//.test(String(target.url))) throw new HttpError(400, 'URL має починатися з http(s)://');

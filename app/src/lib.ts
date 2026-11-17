@@ -206,9 +206,22 @@ export const rankCapsules = (db: DB, caps: Capsule[]) =>
  * then how much closer it brings the other looks, the owner's liked looks and
  * core priority. Derived from the data, so every purchase or upload re-ranks.
  */
+/**
+ * The looks the site shows as cards: each visible capsule's looks with near-copies folded inside
+ * that capsule (as its page shows them), plus looks outside capsules — one entry per look.
+ */
+export function siteLooks(db: DB): Look[] {
+  const seen = new Set<string>();
+  const out: Look[] = [];
+  const add = (ls: Look[]) => { for (const l of ls) if (!seen.has(l.id)) { seen.add(l.id); out.push(l); } };
+  for (const c of db.capsules) if (!c.disliked) add(distinctLooks(db, capsuleLooks(db, c.lookIds)));
+  add(distinctLooks(db, db.looks.filter((l) => !l.capsuleId || !db.capsules.some((c) => c.id === l.capsuleId))));
+  return out;
+}
+
 export function purchaseRanking(db: DB) {
   const open = db.needs.filter((n) => n.status === 'open');
-  const visible = distinctLooks(db, db.looks);
+  const visible = siteLooks(db);
   return open
     .map((n) => {
       // Same cards as everywhere else: the visible looks with near-copies folded once for the whole site.

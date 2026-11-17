@@ -84,13 +84,19 @@ function InfoPop({ label, children }: { label: string; children: ReactNode }) {
       role="button"
       tabIndex={0}
       aria-label={label}
-      onMouseEnter={open}
-      onMouseLeave={() => setAt(null)}
-      onFocus={open}
-      onBlur={() => setAt(null)}
+      // Hover opens it only for a mouse; on a phone the tap toggles it (no open-then-close on one tap).
+      onPointerEnter={(e) => e.pointerType === 'mouse' && open()}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setAt(null)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        if (at) setAt(null);
+        else open();
+      }}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (at && e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === 'mouse') return;
         if (at) setAt(null);
         else open();
       }}

@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { ImageOff, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { DB, Job, Look, SlotKey, SlotRef } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
@@ -61,6 +61,13 @@ export function LookPage({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [swap, setSwap] = useState<{ slot?: SlotKey; current?: SlotRef } | null>(null);
   const [keptNow, setKeptNow] = useState('');
+  const [asked, setAsked] = useState<string | null>(null);
+  // The picture the owner asked for: one quiet word if it could not be made (the slider simply stops otherwise).
+  const askedState = asked ? db.jobs.find((j) => j.id === asked)?.state : undefined;
+  useEffect(() => {
+    if (askedState === 'error') toast('Не вдалося оновити картинку', true);
+    if (askedState === 'error' || askedState === 'done') setAsked(null);
+  }, [askedState]);
   const look = db.looks.find((l) => l.id === id);
   if (!look) return <div className="page"><Empty icon={<ImageOff />} title="Образ не знайдено" /></div>;
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
@@ -82,6 +89,7 @@ export function LookPage({ id }: { id: string }) {
     // The server uses the pinned identity reference when there is one.
     const job = await act(() => api<Job>('POST', '/api/jobs', { lookId: look.id, basePhotoIds: db.profile.basePhotoIds, instructions: '', run: true }));
     if (job?.state === 'needs_data') toast(job.stateNote ?? 'Зараз не вийде', true);
+    else if (job) setAsked(job.id);
   };
   const keep = () => {
     try { localStorage.setItem(keepKey, String(look.version)); } catch { /* the hint simply returns next time */ }

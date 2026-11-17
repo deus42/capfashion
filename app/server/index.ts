@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, HttpError } from './store.ts';
@@ -48,11 +49,31 @@ function authorize(req: http.IncomingMessage): string | null {
   return null;
 }
 
-function send(res: http.ServerResponse, status: number, data: unknown) {
+const acceptsGzip = (req?: http.IncomingMessage) => /\bgzip\b/.test(String(req?.headers['accept-encoding'] ?? ''));
+
+function send(res: http.ServerResponse, status: number, data: unknown, req?: http.IncomingMessage) {
   const body = JSON.stringify(data ?? { ok: true });
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  const headers: http.OutgoingHttpHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', vary: 'Accept-Encoding' };
+  if (body.length > 2048 && acceptsGzip(req)) {
+    res.writeHead(status, { ...headers, 'content-encoding': 'gzip' });
+    res.end(zlib.gzipSync(body, { level: 6 }));
+    return;
+  }
+  res.writeHead(status, headers);
   res.end(body);
 }
+
+/** The UI does not need prompts or snapshots of finished non-try-on jobs; keep polling light. */
+function stateView(db: ReturnType<typeof store.read>) {
+  return {
+    ...db,
+    results: db.results.map(({ prompt: _p, ...r }) => r),
+    jobs: db.jobs.map((j) => ((j.kind ?? 'tryon') === 'tryon' ? j : { ...j, snapshot: { lookName: j.snapshot.lookName, slots: [], basePhotoIds: [], basePhotoPaths: [] } })),
+  };
+}
+
+const gzCache = new Map<string, { mtime: number; buf: Buffer }>();
+const COMPRESSIBLE = new Set(['.js', '.css', '.html', '.json', '.svg']);
 
 function readBody(req: http.IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -72,9 +93,22 @@ function readBody(req: http.IncomingMessage, limit: number): Promise<Buffer> {
   });
 }
 
-function sendFile(res: http.ServerResponse, file: string, cache = 'no-cache') {
-  const type = CONTENT_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
-  res.writeHead(200, { 'content-type': type, 'cache-control': cache, 'x-content-type-options': 'nosniff' });
+function sendFile(res: http.ServerResponse, file: string, cache = 'no-cache', req?: http.IncomingMessage) {
+  const ext = path.extname(file).toLowerCase();
+  const type = CONTENT_TYPES[ext] ?? 'application/octet-stream';
+  const headers: http.OutgoingHttpHeaders = { 'content-type': type, 'cache-control': cache, 'x-content-type-options': 'nosniff' };
+  if (COMPRESSIBLE.has(ext) && acceptsGzip(req)) {
+    const mtime = fs.statSync(file).mtimeMs;
+    let hit = gzCache.get(file);
+    if (!hit || hit.mtime !== mtime) {
+      hit = { mtime, buf: zlib.gzipSync(fs.readFileSync(file), { level: 9 }) };
+      gzCache.set(file, hit);
+    }
+    res.writeHead(200, { ...headers, 'content-encoding': 'gzip', vary: 'Accept-Encoding' });
+    res.end(hit.buf);
+    return;
+  }
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }
 
@@ -88,7 +122,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (method !== 'GET' && req.headers['x-capfashion'] !== '1') return send(res, 403, { error: 'Запит без заголовка сайту відхилено' });
     if (method === 'GET' && url.pathname === '/api/state') {
       const db = store.read();
-      return send(res, 200, { db, runner: runner.state, recovered: store.recovered(), dataDir: path.relative(PROJECT_ROOT, DATA_DIR) });
+      return send(res, 200, { db: stateView(db), runner: runner.state, recovered: store.recovered(), dataDir: path.relative(PROJECT_ROOT, DATA_DIR) }, req);
     }
     if (method === 'GET' && url.pathname.startsWith('/api/jobs/') && url.pathname.endsWith('/log')) {
       const id = decodeURIComponent(url.pathname.split('/')[3]);
@@ -111,7 +145,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         throw new HttpError(400, 'Неправильний JSON');
       }
     }
-    return send(res, 200, await dispatch(ctx, method, url.pathname, body));
+    return send(res, 200, await dispatch(ctx, method, url.pathname, body), req);
   }
 
   if (method !== 'GET' && method !== 'HEAD') return send(res, 405, { error: 'Метод не підтримується' });
@@ -134,11 +168,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   const asset = path.resolve(DIST, `.${url.pathname}`);
   if (asset.startsWith(DIST + path.sep) && fs.existsSync(asset) && fs.statSync(asset).isFile()) {
-    return sendFile(res, asset, url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
+    return sendFile(res, asset, url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache', req);
   }
   const index = path.join(DIST, 'index.html');
   if (!fs.existsSync(index)) return send(res, 503, { error: 'Інтерфейс не зібрано: запусти npm start' });
-  return sendFile(res, index);
+  return sendFile(res, index, 'no-cache', req);
 }
 
 const server = http.createServer((req, res) => {

@@ -151,7 +151,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       child.stderr.pipe(log);
       child.on('error', (e) => {
         clearTimeout(timer);
-        resolve({ code: null, err: e.message });
+        const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
+        resolve({ code: null, err: missing ? `Codex не знайдено (${codexBin}). Потрібен застосунок ChatGPT з Codex або змінна CAPFASHION_CODEX_BIN.` : e.message });
       });
       child.on('close', (code) => {
         clearTimeout(timer);

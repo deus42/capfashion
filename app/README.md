@@ -30,9 +30,21 @@ The site runs as the user LaunchAgent `ai.deus.capfashion` (`~/Library/LaunchAge
 
 ## Photo intake and outfit analyzer
 
-- **Фото одягу** uploads photos (`/api/upload?kind=intake`). Codex recognises the owner's garments (JSON schema, read-only sandbox) and creates wardrobe candidates marked «нова». Possible duplicates are noted, never merged automatically. A packshot is queued for each new item.
+- **Додати фото** is the only upload control (`/api/upload?kind=intake`). Codex triages each photo (JSON schema, read-only sandbox, one upload at a time):
+  - a single person full length or face becomes a base photo, with the agent's standard check;
+  - garments become candidates marked «нова», or extra evidence on an existing unconfirmed candidate (model match or the same title);
+  - a label close-up fills only empty brand/size/composition.
+  Identity is never inferred by comparing faces, and confirmed items are never changed. A packshot is queued for each new item.
 - **Підібрати образи** (`POST /api/analyze {prompt}`) asks Codex to build 4–6 outfits from existing items only. The result is saved as a capsule of kind `selection` («Підбірки»); ids outside the wardrobe are dropped.
 - Interactive jobs (intake, analyzer, try-on) run before batch packshots.
+
+## Editing and deleting
+
+Capsules, selections, looks, items, renders, packshots, products, needs and queue jobs can be edited or deleted from their cards; deletes need confirmation and cascade (`DELETE /api/<collection>/:id`). Chat originals cannot be deleted. Inactive and merged items are hidden except in the «Неактуальні» filter.
+
+## Performance
+
+API responses and static assets are gzip-compressed (state ≈ 28 KB on the wire). `/api/state` omits result prompts and non-try-on job snapshots. Thumbnails come in three sizes (160/480/960), are generated in the background for every new photo and on start, and concurrent requests for one file share a single `sips` run.
 
 ## Data
 

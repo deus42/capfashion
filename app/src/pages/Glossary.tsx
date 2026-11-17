@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { BookOpen } from 'lucide-react';
 
 // Five-part legend from the specification (§3): what it is, how to recognise
 // it, why it is proposed, what fit to check, what to reject in a store.
@@ -73,9 +72,7 @@ export function GlossaryPage({ focus }: { focus?: string }) {
     <div className="page" style={{ maxWidth: 860 }}>
       <div className="page-head">
         <div>
-          <h1>
-            <BookOpen size={20} style={{ verticalAlign: '-3px' }} /> Довідка
-          </h1>
+          <h1>Довідка</h1>
         </div>
       </div>
       <div className="card pad">

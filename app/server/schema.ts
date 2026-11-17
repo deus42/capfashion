@@ -164,6 +164,9 @@ export interface Product {
   towerAvailability: 'unknown' | 'confirmed' | 'not_found';
   checkedAt?: string;
   sources?: string;
+  /** Shop search: how well it fits the recommendation, its looks and the owner's taste (0–10), with one reason. */
+  matchScore?: number;
+  matchNote?: string;
   status: 'option' | 'chosen' | 'purchased';
   purchasedItemId?: string;
   createdAt: string;
@@ -239,7 +242,7 @@ export interface SnapshotSlot {
 export interface Job {
   id: string;
   /** Missing kind means a try-on (records created before packshots). */
-  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze';
+  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch';
   lookId?: string;
   /** intake: uploaded photos to recognise. */
   inputPhotoIds?: string[];
@@ -325,6 +328,8 @@ export interface Profile {
   identity?: IdentityReference;
   measurements: Record<MeasureKey, Measurement>;
   knownSizes: KnownSize[];
+  /** «Мої бренди»: brands the owner wears; shop search looks there first. */
+  brands?: string[];
   preferences: { comfort: string; materials: string; fit: string; branding: string };
 }
 
@@ -431,6 +436,7 @@ export function validateDb(db: unknown): string | null {
     if (!JOB_STATES.includes(j.state)) return `Завдання ${j.id}: невідомий стан`;
     if ((j.kind ?? 'tryon') === 'tryon' && !(j.lookId && has('looks', j.lookId))) return `Завдання ${j.id}: немає образу`;
     if (j.kind === 'packshot' && !((j.itemId && has('items', j.itemId)) || (j.needId && has('needs', j.needId)))) return `Завдання ${j.id}: немає речі`;
+    if (j.kind === 'shopsearch' && !(j.needId && has('needs', j.needId))) return `Завдання ${j.id}: немає покупки`;
     if (j.photoId && !has('photos', j.photoId)) return `Завдання ${j.id}: немає фото результату`;
     if (j.kind === 'intake' && !(j.inputPhotoIds?.length && j.inputPhotoIds.every((p) => has('photos', p)))) return `Завдання ${j.id}: немає фото для розпізнавання`;
     for (const id of j.createdItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає створеної речі ${id}`;

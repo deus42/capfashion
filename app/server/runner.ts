@@ -8,6 +8,7 @@ import { newId, now } from './store.ts';
 import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
 import { coverNeed, packshotJob, queueMissingRenders } from './routes.ts';
+import { SHOP_SEARCH_SCHEMA, applyShopSearch, fetchProductImage, shopSearchPrompt } from './shop-search.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -218,6 +219,9 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       for (const p of photos) images.push(resolveAllowed(projectRoot, store.dataDir, p.path));
       prompt = intakePrompt(db0, job, photos.map((p) => path.basename(p.path)));
       fs.writeFileSync(schemaFile, JSON.stringify(INTAKE_SCHEMA));
+    } else if (job.kind === 'shopsearch') {
+      prompt = shopSearchPrompt(db0, job);
+      fs.writeFileSync(schemaFile, JSON.stringify(SHOP_SEARCH_SCHEMA));
     } else {
       const dir = path.join(jobDir, 'items');
       fs.mkdirSync(dir, { recursive: true });
@@ -239,6 +243,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
     const settings = db0.settings;
     const args = [
+      // Shop search needs live web search; the other analyses stay offline.
+      ...(job.kind === 'shopsearch' ? ['--search'] : []),
       'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
       '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`, ...WORKER_ISOLATION,
       '--output-schema', schemaFile, '-o', lastMsg, ...images.flatMap((p) => ['-i', p]),
@@ -247,11 +253,12 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const j = db.jobs.find((x) => x.id === jobId)!;
       j.state = 'running';
       j.startedAt = now();
-      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : 'Codex складає образи з твоїх речей…';
+      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : 'Codex складає образи з твоїх речей…';
       j.logPath = path.relative(projectRoot, logFile);
     });
     const exit = await spawnCodex(args, prompt, jobDir, logFile);
     let reply: Record<string, unknown> | null = null;
+    let productImages: { productId: string; url: string }[] = [];
     try {
       reply = JSON.parse(fs.readFileSync(lastMsg, 'utf8'));
     } catch {
@@ -268,6 +275,13 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       if (reply.status === 'error') {
         j.state = 'error';
         j.stateNote = String(reply.reason || 'Codex не зміг виконати аналіз');
+        return;
+      }
+      if (j.kind === 'shopsearch') {
+        const out = applyShopSearch(db, j, reply as never);
+        productImages = out.images;
+        j.state = 'done';
+        j.stateNote = out.note;
         return;
       }
       if (j.kind === 'intake') {
@@ -302,12 +316,24 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       j.state = 'done';
       j.stateNote = `Підбірка готова: ${db.capsules.find((c) => c.id === capsuleId)?.lookIds.length ?? 0} образів${renders.length ? ` — примірки в черзі: ${renders.length}` : ''}`;
     });
+    // Product photos come from the shops' pages; the server fetches them after the reply is saved.
+    for (const img of productImages) {
+      const rel = await fetchProductImage(projectRoot, store.dataDir, img.productId, img.url);
+      if (!rel) continue;
+      await store.mutate((db) => {
+        const p = db.products.find((x) => x.id === img.productId);
+        if (!p || p.photoId) return;
+        const photo = { id: newId('P'), kind: 'product' as const, path: rel, originalName: path.basename(rel), source: 'generated' as const, note: `Фото з ${new URL(img.url).hostname}`, createdAt: now() };
+        db.photos.push(photo);
+        p.photoId = photo.id;
+      });
+    }
   }
 
   async function runOne(jobId: string) {
     const db0 = store.read();
     const job = db0.jobs.find((j) => j.id === jobId)!;
-    if (job.kind === 'intake' || job.kind === 'analyze') return runAnalysis(jobId);
+    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch') return runAnalysis(jobId);
     const isPackshot = job.kind === 'packshot';
     if (!isPackshot && (db0.profile.identity?.disabledReason || job.snapshot.identity?.disabledReason)) throw Error(db0.profile.identity?.disabledReason || job.snapshot.identity!.disabledReason);
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
@@ -469,7 +495,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
         // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
-        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'packshot' ? 2 : 1);
+        const batch = (k?: string) => (k === 'intake' || k === 'analyze' || k === 'shopsearch' ? 0 : k === 'packshot' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
           // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.

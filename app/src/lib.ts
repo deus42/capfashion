@@ -240,3 +240,20 @@ export function purchaseRanking(db: DB) {
 }
 
 export const capsuleLooks = (db: DB, lookIds: string[]) => lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));
+
+const KNOWN_BRANDS: [string, RegExp][] = [
+  ["Levi's", /levi/i], ['The North Face', /\btnf\b|north face/i], ['Adidas', /adidas|stan smith/i], ['Napapijri', /napapijri/i],
+  ['Polo Ralph Lauren', /ralph lauren/i], ['Puma', /\bpuma\b/i], ['Under Armour', /\bua\b|under armour/i], ['Tommy Hilfiger', /tommy/i],
+  ['Tom Tailor', /tom tailor/i], ['Nike', /\bnike\b/i], ['Lacoste', /lacoste/i], ['Calvin Klein', /calvin klein/i], ['Hugo Boss', /\bboss\b|\bhugo\b/i],
+];
+
+/** Brands seen in the wardrobe (brand field, title or notes), most frequent first — the start of «Мої бренди». */
+export function wardrobeBrands(db: Pick<DB, 'items'>): string[] {
+  const count = new Map<string, number>();
+  for (const i of db.items) {
+    if (i.status === 'inactive' || i.mergedInto) continue;
+    const text = `${i.brand ?? ''} ${i.title} ${i.observation ?? ''}`;
+    for (const [name, re] of KNOWN_BRANDS) if (re.test(text)) count.set(name, (count.get(name) ?? 0) + 1);
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+}

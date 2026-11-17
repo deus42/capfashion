@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, Pencil, Plus, ShoppingBag, Store, Trash2, Undo2 } from 'lucide-react';
+import { Check, ExternalLink, Pencil, Plus, Search, ShoppingBag, Store, Trash2, Undo2, X } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, siteLooks } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, siteLooks, wardrobeBrands } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -110,7 +110,7 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
   );
 }
 
-function ProductCard({ p, need }: { p: Product; need: Need }) {
+function ProductCard({ p, need, best = false, fits = 0 }: { p: Product; need: Need; best?: boolean; fits?: number }) {
   const db = useDb();
   const [edit, setEdit] = useState(false);
   const [buy, setBuy] = useState(false);
@@ -124,8 +124,10 @@ function ProductCard({ p, need }: { p: Product; need: Need }) {
         </div>
         <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
           <b>{p.brand} {p.model}</b>
-          <span className="small muted"><Store size={11} /> {p.store}</span>
+          <span className="small muted"><Store size={11} /> {p.store}{p.towerAvailability === 'confirmed' ? ' · Tower Rijeka' : ''}</span>
+          {p.matchNote && <span className="miss" title={p.matchNote}><span className="miss-t">{p.matchNote}</span></span>}
           <span className="small">{p.price != null ? `${p.price} ${p.currency ?? ''}` : 'Ціна невідома'}</span>
+          {p.matchScore != null && <span className="miss">{best ? 'найкраще пасує · ' : ''}{p.matchScore}/10{fits ? ` · підходить до ${fits} ${fits === 1 ? 'образу' : 'образів'}` : ''}</span>}
         </div>
         {p.status === 'chosen' && <Badge tone="dark">вибрано</Badge>}
         {p.status === 'purchased' && <Badge tone="ok">куплено</Badge>}
@@ -218,7 +220,10 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
   const [owning, setOwning] = useState(false);
-  const products = db.products.filter((p) => p.needId === need.id);
+  // Found variants, best match first.
+  const products = db.products.filter((p) => p.needId === need.id).sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
+  const searching = db.jobs.some((j) => j.kind === 'shopsearch' && j.needId === need.id && (j.state === 'queued' || j.state === 'running'));
+  const search = () => act(() => api('POST', `/api/needs/${need.id}/search`), 'Шукаю варіанти');
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   const bought = products.some((p) => p.status === 'purchased');
   const replacedIn = need.coveredLookIds?.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is NonNullable<typeof l> => Boolean(l)) ?? [];
@@ -253,6 +258,9 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <button className="btn sm" onClick={() => setOwning(true)}>
               <Check size={13} /> Вже маю
             </button>
+            <button className="btn sm" disabled={searching} onClick={() => void search()}>
+              <Search size={13} /> {searching ? 'Шукаю…' : products.length ? 'Ще' : 'Знайти'}
+            </button>
           </>
         )}
         {need.status === 'covered' && covered && !bought && (
@@ -283,12 +291,12 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
           </>
         )}
       </div>
+      {searching && <div className="search-run"><span className="busy-bar" role="progressbar" aria-label="Пошук" /></div>}
       {products.length > 0 && (
         <div className="product-grid">
-          {products.map((p) => <ProductCard key={p.id} p={p} need={need} />)}
+          {products.map((p, i) => <ProductCard key={p.id} p={p} need={need} best={i === 0 && (p.matchScore ?? 0) > 0} fits={looks.length} />)}
         </div>
       )}
-      {products.length > 1 && <span className="small faint">Альтернативи — це варіанти однієї покупки, не кілька обовʼязкових.</span>}
       </div>
       {adding && <ProductEditor need={need} onClose={() => setAdding(false)} />}
       {editing && (
@@ -310,6 +318,37 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
       )}
       {owning && <CoverModal need={need} onClose={() => setOwning(false)} />}
     </div>
+  );
+}
+
+/** «Мої бренди» (owner, 17.11): where «Знайти» looks first, after the stores in Tower Center Rijeka. */
+function MyBrands() {
+  const db = useDb();
+  const { act } = useApp();
+  const [text, setText] = useState('');
+  const brands = db.profile.brands ?? wardrobeBrands(db);
+  const save = (next: string[]) => act(() => api('PATCH', '/api/profile', { rev: db.profile.rev, brands: next }));
+  const add = () => {
+    const b = text.trim();
+    if (!b) return;
+    setText('');
+    if (!brands.some((x) => x.toLowerCase() === b.toLowerCase())) void save([...brands, b]);
+  };
+  return (
+    <section className="my-brands">
+      <span className="eyebrow-sm">Мої бренди</span>
+      <div className="chips">
+        {brands.map((b) => (
+          <span key={b} className="chip brand">
+            {b}
+            <button aria-label={`Прибрати ${b}`} onClick={() => void save(brands.filter((x) => x !== b))}><X size={12} /></button>
+          </span>
+        ))}
+        <form className="brand-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
+          <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} placeholder="+ бренд" aria-label="Додати бренд" />
+        </form>
+      </div>
+    </section>
   );
 }
 
@@ -341,6 +380,7 @@ export function ShoppingPage({ focus }: { focus?: string }) {
           </a>
         </div>
       </div>
+      <MyBrands />
       {needs.length === 0 ? (
         <Empty icon={<ShoppingBag />} title="Відкритих покупок немає" />
       ) : (

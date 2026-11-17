@@ -640,6 +640,20 @@ on('PATCH', '/api/needs/:id', (ctx, [id], b) =>
   }),
 );
 
+// «Знайти»: search the shops (Tower Center Rijeka, then the owner's brands) for this recommendation.
+on('POST', '/api/needs/:id/search', async (ctx, [id], b) => {
+  const job = await ctx.store.mutate((db) => {
+    const need = findOr404(db.needs, id, 'Потреба');
+    if (need.status !== 'open') throw new HttpError(409, 'Ця покупка вже закрита');
+    if (db.jobs.some((j) => j.kind === 'shopsearch' && j.needId === id && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Пошук уже йде');
+    const j: Job = { id: newId('J'), kind: 'shopsearch', needId: id, lookVersion: 0, snapshot: { lookName: need.title, slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: str(b.instructions, 400) ?? '', state: 'queued', origin: 'site', createdAt: now() };
+    db.jobs.push(j);
+    return j;
+  });
+  ctx.drain();
+  return job;
+});
+
 // "Вже маю": the owner's own item is what the recommendation asked for.
 on('POST', '/api/needs/:id/cover', async (ctx, [id], b) => {
   const out = await ctx.store.mutate((db) => coverNeed(db, id, str(b.itemId) ?? ''));
@@ -752,6 +766,8 @@ on('PATCH', '/api/profile', (ctx, _p, b) =>
         .filter((s) => str(s.brand) && str(s.size) && CATEGORIES.includes(s.category as never))
         .map((s) => ({ id: str(s.id) || newId('K'), brand: str(s.brand, 80)!, category: s.category as Item['category'], size: str(s.size, 40)!, note: str(s.note) }));
     }
+    // «Мої бренди»: a short, de-duplicated list the owner edits.
+    if (Array.isArray(b.brands)) prof.brands = [...new Set((b.brands as unknown[]).map((x) => str(x, 60)).filter((x): x is string => Boolean(x)))].slice(0, 30);
     if (b.preferences && typeof b.preferences === 'object') {
       const pr = b.preferences as Record<string, unknown>;
       for (const k of ['comfort', 'materials', 'fit', 'branding'] as const) if (typeof pr[k] === 'string') prof.preferences[k] = str(pr[k])!;

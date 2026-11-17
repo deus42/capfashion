@@ -910,3 +910,28 @@ test('an inactive item makes a look incomplete; measurements accept a comma and 
   assert.equal(again.measurements.chest.date, '2026-01-01', 'an unchanged value keeps the day it was measured');
   await assert.rejects(call('PATCH', '/api/profile', { rev: store.read().profile.rev, measurements: { chest: { value: 'abc' } } }), /груди/);
 });
+test('«Знайти» searches the shops for a recommendation and saves dated variants with a match score; «Мої бренди» saves a clean list', async () => {
+  const { dir, store, call } = setup();
+  const prof = await call('PATCH', '/api/profile', { rev: store.read().profile.rev, brands: ['Levi’s', ' Tom Tailor ', 'Levi’s', ''] });
+  assert.deepEqual(prof.brands, ['Levi’s', 'Tom Tailor']);
+  const job = await call('POST', '/api/needs/N-1/search', {});
+  assert.equal(job.kind, 'shopsearch');
+  await assert.rejects(call('POST', '/api/needs/N-1/search', {}), /Пошук уже йде/);
+  const fake = path.join(dir, 'fake-codex.sh');
+  const reply = { status: 'done', reason: '', products: [
+    { store: 'Tom Tailor', brand: 'Tom Tailor', model: 'Basic T-shirt off-white', url: 'https://www.tom-tailor.eu/p/1', imageUrl: '', price: '19,99', currency: 'EUR', inTower: true, size: 'M', matchScore: 8.6, matchNote: 'Молочний колір і щільна бавовна, як просили.' },
+    { store: 'Somewhere', brand: 'X', model: 'Tee', url: 'http://insecure.example/p', imageUrl: '', price: '', currency: '', inTower: false, size: '', matchScore: 5, matchNote: '' },
+  ] };
+  fs.writeFileSync(fake, `#!/bin/sh\nfor a in "$@"; do [ "$a" = "--search" ] && touch "${dir}/searched"; done\nwhile [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\necho '${JSON.stringify(reply)}' > "$o"\n`, { mode: 0o755 });
+  await createRunner(store, dir, fake).drain();
+  const db = store.read();
+  assert.ok(fs.existsSync(path.join(dir, 'searched')), 'the shop search runs with live web search');
+  assert.equal(db.jobs.find((j) => j.id === job.id)!.stateNote, 'Знайдено варіантів: 1', 'an insecure link is not saved');
+  const p = db.products.find((x) => x.needId === 'N-1')!;
+  assert.equal(p.price, 19.99);
+  assert.equal(p.matchScore, 9);
+  assert.equal(p.towerAvailability, 'confirmed');
+  assert.equal(p.recommendedSize, 'M');
+  assert.match(p.checkedAt ?? '', /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(validateDb(db), null);
+});

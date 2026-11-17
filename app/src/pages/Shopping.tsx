@@ -4,7 +4,7 @@ import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, fmtDay, looksUsing } from '../lib.ts';
+import { CATEGORY_LABEL, distinctLooks, fmtDay, looksUsing } from '../lib.ts';
 
 const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
 const AVAIL_TOWER = { unknown: 'Tower: не перевірено', confirmed: 'Tower: підтверджено', not_found: 'Tower: не знайдено' } as const;
@@ -194,7 +194,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
   const db = useDb();
   const { act } = useApp();
   const [adding, setAdding] = useState(false);
-  const looks = looksUsing(db, 'need', need.id);
+  const looks = distinctLooks(db, looksUsing(db, 'need', need.id));
   const products = db.products.filter((p) => p.needId === need.id);
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   return (

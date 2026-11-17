@@ -51,7 +51,7 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
 
   return (
     <Drawer
-      title={<span className="row">{item.title} <span className="faint small">{item.id}</span></span>}
+      title={<span className="row">{item.title} <span className="faint small" style={{ whiteSpace: 'nowrap' }}>{item.id}</span></span>}
       onClose={onClose}
       footer={
         <>

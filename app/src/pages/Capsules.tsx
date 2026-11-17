@@ -38,8 +38,9 @@ function AnalyzeBox() {
 export function CapsulesPage() {
   const db = useDb();
   const { query } = useRoute();
-  const initial = (['selections', 'looks', 'hidden'] as const).find((t) => t === query.get('tab')) ?? 'capsules';
-  const [tab, setTab] = useState<'capsules' | 'selections' | 'looks' | 'hidden'>(initial);
+  // The tab lives in the address, so links and Back switch it even while this page is open.
+  const tab = (['selections', 'looks', 'hidden'] as const).find((t) => t === query.get('tab')) ?? 'capsules';
+  const setTab = (t: typeof tab) => go(t === 'capsules' ? '/capsules' : `/capsules?tab=${t}`);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const capsules = byRating(shown.filter((c) => c.kind !== 'selection'));
   const selections = byRating(shown.filter((c) => c.kind === 'selection').reverse());

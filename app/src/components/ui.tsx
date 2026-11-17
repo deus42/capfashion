@@ -375,11 +375,12 @@ export function RenderPlaceholder({ lookIds }: { lookIds: string[] }) {
   const jobs = db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId && lookIds.includes(j.lookId));
   const running = jobs.some((j) => j.state === 'running');
   const queued = jobs.some((j) => j.state === 'queued');
+  const waiting = jobs.find((j) => j.state === 'needs_data');
   const noBase = db.profile.basePhotoIds.length === 0;
   return (
-    <div className="render-ph">
+    <div className="render-ph" title={!running && !queued ? waiting?.stateNote : undefined}>
       {running || queued ? <Loader2 size={22} className={running ? 'spin' : ''} /> : <PersonStanding size={24} />}
-      <span>{running ? 'Генерую примірку…' : queued ? 'Примірка в черзі' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>
+      <span>{running ? 'Генерую примірку…' : queued ? 'Примірка в черзі' : waiting ? 'Примірка чекає' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>
     </div>
   );
 }

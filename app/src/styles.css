@@ -361,7 +361,8 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
 .product { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; background: var(--surface); }
 .product.chosen { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
-.kv { display: grid; grid-template-columns: 140px 1fr; gap: 8px 14px; font-size: 13.5px; }
+.kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 14px; font-size: 13.5px; }
+.kv dd { min-width: 0; overflow-wrap: anywhere; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; }
 .note { background: var(--sunken); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
@@ -530,7 +531,7 @@ pre.log { background: #111113; color: #e4e4e7; padding: 14px; border-radius: 12p
   .ward-grid { grid-template-columns: repeat(2, 1fr); gap: 12px 10px; }
   .look-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .grid-form, .measure-grid { grid-template-columns: 1fr; }
-  .kv { grid-template-columns: 110px 1fr; }
+  .kv { grid-template-columns: 110px minmax(0, 1fr); }
   .studio { position: relative; min-height: calc(100vh - 56px - 78px); }
   .studio-stage { flex-direction: column; align-items: center; padding: 12px; }
   .studio-center { order: -1; width: 100%; height: auto; }
@@ -556,4 +557,13 @@ pre.log { background: #111113; color: #e4e4e7; padding: 14px; border-radius: 12p
   .need-head .grow { flex-basis: 100%; }
   .size-row { grid-template-columns: 1fr 1fr !important; }
   .card.lg { padding: 20px 16px; }
+}
+
+/* Phones: label above value; queue actions on their own line so the text keeps its width. */
+@media (max-width: 600px) {
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .kv dd { margin-bottom: 10px; }
+  .list-row { flex-wrap: wrap; align-items: flex-start; }
+  .list-row .grow { flex: 1 1 calc(100% - 80px); }
+  .list-row > .row:last-child { flex: 1 1 100%; justify-content: flex-end; flex-wrap: wrap; }
 }

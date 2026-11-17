@@ -65,7 +65,12 @@ export function QueuePage() {
             const result = j.resultId ? db.results.find((r) => r.id === j.resultId) : undefined;
             const look = db.looks.find((l) => l.id === j.lookId);
             const pk = j.photoId ? db.photos.find((p) => p.id === j.photoId) : undefined;
-            const href = j.kind === 'packshot' ? `#/wardrobe/${j.itemId ?? ''}` : `#/studio?look=${j.lookId}${result ? `&result=${result.id}` : ''}`;
+            const input = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
+            const href =
+              j.kind === 'packshot' ? `#/wardrobe/${j.itemId ?? ''}`
+              : j.kind === 'intake' ? (input?.kind === 'base' ? '#/profile/base' : j.createdItemIds?.[0] ? `#/wardrobe/${j.createdItemIds[0]}` : '#/wardrobe')
+              : j.kind === 'analyze' ? (j.capsuleId ? `#/capsules/${j.capsuleId}` : '#/capsules?tab=selections')
+              : `#/studio?look=${j.lookId}${result ? `&result=${result.id}` : ''}`;
             const prev = j.retryOf ? db.jobs.find((x) => x.id === j.retryOf) : undefined;
             return (
               <div key={j.id} className="card list-row">

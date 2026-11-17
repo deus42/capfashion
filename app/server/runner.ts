@@ -13,6 +13,17 @@ const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', b
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
 const BUNDLED_CODEX = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex';
 
+/**
+ * The worker is a narrow app component, not a project agent: repository
+ * AGENTS.md files are not loaded and the developer instruction scopes it to
+ * the attached inputs. This keeps runs fast and keeps unrelated private
+ * context (e.g. Vault preload) out of image and analysis requests.
+ */
+const WORKER_ISOLATION = [
+  '-c', 'project_doc_max_bytes=0',
+  '-c', 'developer_instructions="You are an unattended, sandboxed worker inside the local Cap Fashion app. Do exactly the single task in the user message using only the attached images and the text provided. Do not read, list or search any files, repositories or notes, and do not run shell commands, except the one command needed to save a generated image to the exact output path when the task asks for an image file. Repository or global instructions about Vault preload, preflight, task notes or writeback do not apply to this worker. Finish with the requested JSON."',
+];
+
 export interface RunnerState {
   running: boolean;
   currentJobId: string | null;
@@ -189,7 +200,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const settings = db0.settings;
     const args = [
       'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
-      '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`,
+      '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`, ...WORKER_ISOLATION,
       '--output-schema', schemaFile, '-o', lastMsg, ...images.flatMap((p) => ['-i', p]),
     ];
     await store.mutate((db) => {
@@ -265,6 +276,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       '-C', jobDir,
       '-m', settings.codexModel,
       '-c', `model_reasoning_effort="${settings.reasoningEffort}"`,
+      ...WORKER_ISOLATION,
       '--enable', 'image_generation',
       '-o', lastMsg,
       ...uniqueImages.flatMap((p) => ['-i', p]),

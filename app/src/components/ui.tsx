@@ -235,10 +235,23 @@ export function Piece({ r, w = 520 }: { r: ResolvedRef; w?: number }) {
     );
   }
   return (
-    <div className="piece ph" title={r.title}>
-      <span className="ico"><CategoryIcon category={r.category} size={17} /></span>
-      <span>{r.title}</span>
-      <span className="faint" style={{ fontSize: 10.5 }}>{REF_KIND_LABEL[r.kind]}</span>
+    <div className="piece ph" title={`${r.title} — ${REF_KIND_LABEL[r.kind]}`}>
+      <span className="ico"><CategoryIcon category={r.category} size={18} /></span>
+    </div>
+  );
+}
+
+/** Small image row of an outfit's pieces; titles live in tooltips, not on screen. */
+export function PieceStrip({ slots, size = 44 }: { slots: Slots; size?: number }) {
+  const db = useDb();
+  const pieces = piecesOf(db, slots);
+  return (
+    <div className="pstrip">
+      {pieces.map((r) => (
+        <span key={`${r.ref.kind}-${r.ref.id}`} className={`pthumb k-${r.kind}`} style={{ width: size, height: size }} title={`${r.title} — ${REF_KIND_LABEL[r.kind]}`}>
+          {r.art ? <img src={thumb(r.art, 160)} alt="" loading="lazy" /> : <CategoryIcon category={r.category} size={Math.round(size * 0.4)} />}
+        </span>
+      ))}
     </div>
   );
 }

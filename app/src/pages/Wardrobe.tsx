@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Archive, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Split, Wand2, X } from 'lucide-react';
+import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Split, Wand2, X } from 'lucide-react';
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Drawer, Empty, Img, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, fmtDate, looksUsing } from '../lib.ts';
 import { TermLinks } from './Glossary.tsx';
+import { useIntake } from './Home.tsx';
 
 const STATUS_LABEL: Record<ItemStatus, string> = { needs_confirmation: 'Потребує підтвердження', confirmed: 'Підтверджено', inactive: 'Неактуальна' };
 const STATUS_SHORT: Record<ItemStatus, string> = { needs_confirmation: 'звірити', confirmed: 'моя річ', inactive: 'неактуальна' };
@@ -220,6 +221,8 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const [q, setQ] = useState('');
   const [mergeSel, setMergeSel] = useState<string[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const intake = useIntake();
+  const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const status = (['needs_confirmation', 'confirmed', 'inactive'] as ItemStatus[]).includes(view as ItemStatus) ? (view as ItemStatus) : null;
   const cat = CATS.includes(view as Category) ? (view as Category) : null;
   const list = db.items.filter(
@@ -232,10 +235,9 @@ export function WardrobePage({ openId }: { openId?: string }) {
 
   return (
     <div className="page">
+      {intake.field}
       <PageHead
-        crumb={<><a href="#/wardrobe" onClick={() => setView('all')}>Гардероб</a>{view !== 'all' && <> / <span>{title}</span></>}</>}
         title={title}
-        sub={`${db.items.filter((i) => i.status === 'needs_confirmation').length} з ${db.items.length} речей чекають підтвердження. Кандидати з 25 фото не обʼєднано автоматично.`}
         actions={
           mergeSel ? (
             <>
@@ -257,25 +259,25 @@ export function WardrobePage({ openId }: { openId?: string }) {
           ) : (
             <>
               {missing > 0 && (
-                <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), `Packshot для ${missing} речей у черзі`)}>
-                  <Wand2 size={15} /> Packshot для {missing}
+                <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), `Packshot для ${missing} речей у черзі`)} title="Згенерувати чисті фото">
+                  <Wand2 size={15} /> {missing}
                 </button>
               )}
-              <button className="btn" onClick={() => setMergeSel([])}><Merge size={15} /> Обʼєднати</button>
-              <button className="btn primary" onClick={() => setCreating(true)}><Plus size={16} /> Нова річ</button>
+              <button className="icon-btn" onClick={() => setMergeSel([])} title="Обʼєднати дублікати"><Merge size={15} /></button>
+              <button className="icon-btn" onClick={() => setCreating(true)} title="Додати вручну"><Plus size={16} /></button>
+              <button className="btn primary" onClick={intake.pick} disabled={intake.busy}>
+                {intake.busy || intakeBusy ? <Loader2 size={16} className="spin" /> : <Camera size={16} />} Фото одягу{intakeBusy ? ` · ${intakeBusy}` : ''}
+              </button>
             </>
           )
         }
       />
 
       {busy.size > 0 && (
-        <div className="card pad" style={{ marginBottom: 22, padding: '14px 18px' }}>
-          <div className="row" style={{ marginBottom: 8 }}>
-            <Loader2 size={15} className="spin" />
-            <b style={{ fontWeight: 560 }}>Packshot генеруються</b>
-            <span className="muted small">{done} з {db.items.length} готово · {busy.size} у роботі й черзі · Codex по 2 одночасно</span>
-          </div>
-          <div className="progress"><i style={{ width: `${Math.round((done / db.items.length) * 100)}%` }} /></div>
+        <div className="row" style={{ marginBottom: 22, gap: 12 }}>
+          <Loader2 size={15} className="spin" />
+          <span className="small muted" style={{ whiteSpace: 'nowrap' }}>Packshot {done}/{db.items.length}</span>
+          <div className="progress" style={{ flex: 1 }}><i style={{ width: `${Math.round((done / db.items.length) * 100)}%` }} /></div>
         </div>
       )}
 
@@ -322,12 +324,12 @@ export function WardrobePage({ openId }: { openId?: string }) {
                   >
                     <div className="img">
                       {packshot ? <img src={thumb(packshot.path, 480)} alt={i.title} loading="lazy" /> : photo ? <img className="photo" src={thumb(photo.path, 480)} alt={i.title} loading="lazy" /> : null}
-                      <span className="tl"><Badge tone={`${STATUS_TONE[i.status]} glass`}>{STATUS_SHORT[i.status]}</Badge></span>
+                      {i.status !== 'needs_confirmation' && <span className="tl"><Badge tone={`${STATUS_TONE[i.status]} glass`}>{STATUS_SHORT[i.status]}</Badge></span>}
+                      {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
                       {st && <span className="gen"><Loader2 size={12} className={st === 'running' ? 'spin' : ''} /> {st === 'running' ? 'Packshot генерується' : 'Packshot у черзі'}</span>}
                     </div>
                     <span className="nm">{i.title}</span>
-                    <span className="sub">{i.id} · {CATEGORY_LABEL[i.category]}</span>
                   </button>
                 );
               })}

@@ -87,7 +87,7 @@ function createJob(db: DB, look: Look, basePhotoIds: string[], instructions: str
 
 const ITEM_SLOT: Record<Item['category'], SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
 
-function packshotJob(db: DB, target: { itemId?: string; needId?: string }, instructions = '', retryOf?: string, frozen?: Job['snapshot']): Job {
+export function packshotJob(db: DB, target: { itemId?: string; needId?: string }, instructions = '', retryOf?: string, frozen?: Job['snapshot']): Job {
   let snapshot = frozen;
   if (!snapshot && target.itemId) {
     const item = findOr404(db.items, target.itemId, 'Річ');
@@ -129,8 +129,9 @@ function history(item: Item, action: string, note?: string) {
 }
 
 export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, filename: string) {
-  const kind = (query.get('kind') ?? 'item') as PhotoKind;
-  if (!PHOTO_KINDS.includes(kind) || kind === 'source') throw new HttpError(400, 'Невідомий тип фото');
+  const intake = query.get('kind') === 'intake';
+  const kind = (intake ? 'item' : (query.get('kind') ?? 'item')) as PhotoKind;
+  if (!PHOTO_KINDS.includes(kind) || kind === 'source' || kind === 'packshot') throw new HttpError(400, 'Невідомий тип фото');
   const id = newId('P');
   const saved = await saveUpload(ctx.projectRoot, ctx.store.dataDir, id, buf);
   const itemId = query.get('item');
@@ -153,6 +154,12 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
       p.photoId = id;
       bump(p, undefined);
     }
+    if (intake) {
+      db.jobs.push({ id: newId('J'), kind: 'intake', inputPhotoIds: [id], lookVersion: 0, snapshot: { lookName: photo.originalName, slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: str(query.get('note')) ?? '', state: 'queued', origin: 'site', createdAt: now() });
+    }
+    return photo;
+  }).then((photo) => {
+    if (intake && query.get('run') !== '0') ctx.drain();
     return photo;
   });
 }
@@ -296,6 +303,11 @@ on('POST', '/api/jobs/:id/retry', async (ctx, [id], b) => {
   const job = await ctx.store.mutate((db) => {
     const prev = findOr404(db.jobs, id, 'Завдання');
     if (prev.state === 'queued' || prev.state === 'running') throw new HttpError(409, 'Завдання ще виконується');
+    if (prev.kind === 'intake' || prev.kind === 'analyze') {
+      const j: Job = { id: newId('J'), kind: prev.kind, inputPhotoIds: prev.inputPhotoIds, lookVersion: 0, snapshot: prev.snapshot, instructions: [prev.instructions, str(b.instructions)].filter(Boolean).join('\n'), state: 'queued', origin: 'site', retryOf: prev.id, createdAt: now() };
+      db.jobs.push(j);
+      return j;
+    }
     if (prev.kind === 'packshot') return packshotJob(db, { itemId: prev.itemId, needId: prev.needId }, [prev.instructions, str(b.instructions)].filter(Boolean).join('\n'), prev.id, prev.snapshot);
     const look = findOr404(db.looks, prev.lookId ?? '', 'Образ');
     const extra = str(b.instructions);
@@ -318,6 +330,17 @@ on('POST', '/api/packshots', async (ctx, _p, b) => {
   });
   if (b.run) ctx.drain();
   return out;
+});
+
+on('POST', '/api/analyze', async (ctx, _p, b) => {
+  const job = await ctx.store.mutate((db) => {
+    if (db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Аналізатор уже працює — зачекай на поточну підбірку');
+    const j: Job = { id: newId('J'), kind: 'analyze', lookVersion: 0, snapshot: { lookName: 'Підбірка з моїх речей', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: str(b.prompt, 600) ?? '', state: 'queued', origin: 'site', createdAt: now() };
+    db.jobs.push(j);
+    return j;
+  });
+  ctx.drain();
+  return job;
 });
 
 on('POST', '/api/runner/run', (ctx) => {

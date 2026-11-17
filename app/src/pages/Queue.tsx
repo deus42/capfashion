@@ -35,7 +35,6 @@ export function QueuePage() {
     <div className="page">
       <PageHead
         title="Черга"
-        sub={`Примірки й packshot. Кожне завдання — знімок вибору на момент додавання. Обробляє локальний Codex (${db.settings.codexModel}, ${db.settings.reasoningEffort}), по ${db.settings.concurrency ?? 2} одночасно, без чату.`}
         actions={<>
           <button className="btn primary" disabled={runner.running || queued === 0} onClick={() => void act(() => api('POST', '/api/runner/run'), 'Обробку запущено')}>
             {runner.running ? <Loader2 size={15} className="spin" /> : <Play size={15} />}

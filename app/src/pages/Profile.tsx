@@ -48,7 +48,7 @@ function BasePhotos() {
   return (
     <Section
       title="Базові фото"
-      sub="З цих фото береться твоє обличчя й пропорції в кожній примірці. Попередні рендери ніколи не використовуються як опора."
+      sub="Обличчя для примірок береться лише з цих фото."
       actions={<button className="btn" onClick={() => setPicker(true)}>Вибрати з наявних</button>}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 24 }} className="profile-base">
@@ -113,11 +113,9 @@ function Measurements() {
   const load = () => Object.fromEntries(MEASURES.map((m) => [m.key, prof.measurements[m.key].value?.toString() ?? ''])) as Record<MeasureKey, string>;
   const [values, setValues] = useState(load);
   useEffect(() => setValues(load()), [prof.rev]);
-  const filled = MEASURES.filter((m) => prof.measurements[m.key].value !== null).length;
   return (
     <Section
       title="Мірки"
-      sub={`Сантиметри. Заповнено ${filled} з ${MEASURES.length}; відсутні мірки нічого не блокують, але без них розмір не рекомендується.`}
       actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, measurements: Object.fromEntries(MEASURES.map((m) => [m.key, { value: values[m.key] }])) }), 'Мірки збережено')}>Зберегти мірки</button>}
     >
       <div className="measure-grid">
@@ -152,7 +150,6 @@ function Sizes() {
   return (
     <Section
       title="Розміри брендів"
-      sub="Розміри в оригінальній системі бренду: W/L штанів, EU/US взуття, S–XL. Без перерахунку в «універсальну» шкалу."
       actions={
         <>
           <button className="btn" onClick={() => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }])}><Plus size={15} /> Додати</button>
@@ -198,7 +195,7 @@ function Preferences() {
     ['branding', 'Брендування', 'Наскільки помітними можуть бути логотипи.'],
   ] as const;
   return (
-    <Section title="Побажання" sub="Агент враховує їх у капсулах, примірках і підборі товарів." actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
+    <Section title="Побажання" actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
       <div className="grid-form">
         {fields.map(([k, label, hint]) => (
           <label key={k} className="field">
@@ -219,7 +216,7 @@ function Access() {
   const key = JSON.stringify(db.settings);
   useEffect(() => setS(db.settings), [key]);
   return (
-    <Section title="Генерація і доступ" sub="Примірки й packshot генерує локальний Codex на цьому Mac без чату. Сайт доступний з iPhone лише через твою приватну мережу Tailscale." actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/settings', s), 'Налаштування збережено')}>Зберегти</button>}>
+    <Section title="Генерація і доступ" actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/settings', s), 'Налаштування збережено')}>Зберегти</button>}>
       <div className="grid-form">
         <label className="field">
           <span>Модель Codex</span>
@@ -256,7 +253,7 @@ export function ProfilePage({ tab }: { tab?: string }) {
   const current = TABS.some((t) => t.key === tab) ? tab! : 'base';
   return (
     <div className="page">
-      <PageHead title="Мій профіль" sub="Фото, мірки, розміри й побажання — заповнюються поступово, нічого не блокують." />
+      <PageHead title="Мій профіль" />
       <div className="split">
         <SubNav value={current} onChange={(k) => go(`/profile/${k}`)} groups={[{ items: TABS }]} />
         <div>

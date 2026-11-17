@@ -76,7 +76,6 @@ export function GlossaryPage({ focus }: { focus?: string }) {
           <h1>
             <BookOpen size={20} style={{ verticalAlign: '-3px' }} /> Довідка
           </h1>
-          <p>Терміни, що трапляються в капсулах. Назви брендів не нормалізуються до «універсальної» шкали — це загальні орієнтири, не твої виміри.</p>
         </div>
       </div>
       <div className="card pad">

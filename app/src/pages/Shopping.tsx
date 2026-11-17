@@ -5,7 +5,6 @@ import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, fmtDay, looksUsing } from '../lib.ts';
-import { TermLinks } from './Glossary.tsx';
 
 const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
 const AVAIL_TOWER = { unknown: 'Tower: не перевірено', confirmed: 'Tower: підтверджено', not_found: 'Tower: не знайдено' } as const;
@@ -215,8 +214,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
             {need.status === 'covered' ? <Badge tone="ok">закрито покупкою</Badge> : products.length === 0 ? <Badge tone="warn">товар ще не знайдено</Badge> : null}
             {need.origin === 'agent' && <Badge tone="info">пропозиція агента</Badge>}
           </div>
-          <span className="muted">{need.description}</span>
-          <TermLinks texts={[need.title, need.description, need.fitCheck]} />
+          <span className="muted small">{need.description}</span>
         </div>
         {need.status === 'open' && (
           <button className="btn sm" onClick={() => setAdding(true)}>
@@ -224,7 +222,9 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
           </button>
         )}
       </div>
-      <div className="kv">
+      <details>
+      <summary className="small muted" style={{ cursor: 'pointer' }}>Навіщо й що перевірити</summary>
+      <div className="kv" style={{ marginTop: 10 }}>
         <dt>Навіщо</dt>
         <dd>{need.why || '—'}</dd>
         <dt>Що перевірити</dt>
@@ -251,6 +251,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
           </>
         )}
       </div>
+      </details>
       {products.length > 0 && (
         <div className="product-grid">
           {products.map((p) => <ProductCard key={p.id} p={p} need={need} />)}
@@ -278,9 +279,7 @@ export function ShoppingPage({ focus }: { focus?: string }) {
       <div className="page-head">
         <div>
           <h1>Покупки</h1>
-          <p>
-            Одна потреба на всі капсули — без дублів. {core} основних відкритих потреб. Товари — лише з магазинів Tower Center Rijeka; ціни й наявність з датою перевірки.
-          </p>
+          <p>{core} основних · магазини Tower Center Rijeka</p>
         </div>
         <div className="actions chips">
           <button className={`chip${show === 'open' ? ' active' : ''}`} onClick={() => setShow('open')}>Відкриті</button>

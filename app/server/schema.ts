@@ -67,7 +67,7 @@ export interface Item {
   photoIds: string[];
   observation?: string;
   confirmedFact?: string;
-  origin: 'candidate' | 'purchase' | 'manual' | 'split' | 'merge';
+  origin: 'candidate' | 'purchase' | 'manual' | 'split' | 'merge' | 'intake';
   mergedFrom?: string[];
   mergedInto?: string;
   splitFrom?: string;
@@ -157,6 +157,8 @@ export interface Look {
 export interface Capsule {
   id: string;
   rev: number;
+  /** 'selection' = outfits picked by the analyzer from owned items only. */
+  kind?: 'capsule' | 'selection';
   name: string;
   season: Season;
   description: string;
@@ -182,8 +184,14 @@ export interface SnapshotSlot {
 export interface Job {
   id: string;
   /** Missing kind means a try-on (records created before packshots). */
-  kind?: 'tryon' | 'packshot';
+  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze';
   lookId?: string;
+  /** intake: uploaded photos to recognise. */
+  inputPhotoIds?: string[];
+  /** intake: wardrobe candidates created from the photo. */
+  createdItemIds?: string[];
+  /** analyze: the selection created. */
+  capsuleId?: string;
   itemId?: string;
   needId?: string;
   photoId?: string;
@@ -350,6 +358,9 @@ export function validateDb(db: unknown): string | null {
     if ((j.kind ?? 'tryon') === 'tryon' && !(j.lookId && has('looks', j.lookId))) return `Завдання ${j.id}: немає образу`;
     if (j.kind === 'packshot' && !((j.itemId && has('items', j.itemId)) || (j.needId && has('needs', j.needId)))) return `Завдання ${j.id}: немає речі`;
     if (j.photoId && !has('photos', j.photoId)) return `Завдання ${j.id}: немає фото результату`;
+    if (j.kind === 'intake' && !(j.inputPhotoIds?.length && j.inputPhotoIds.every((p) => has('photos', p)))) return `Завдання ${j.id}: немає фото для розпізнавання`;
+    for (const id of j.createdItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає створеної речі ${id}`;
+    if (j.capsuleId && !has('capsules', j.capsuleId)) return `Завдання ${j.id}: немає підбірки`;
     if (j.retryOf && !has('jobs', j.retryOf)) return `Завдання ${j.id}: немає попередньої спроби`;
     if (j.resultId && !has('results', j.resultId)) return `Завдання ${j.id}: немає результату`;
   }

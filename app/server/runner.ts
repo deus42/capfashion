@@ -5,7 +5,9 @@ import { spawn } from 'node:child_process';
 import type { DB, Job, SnapshotSlot } from './schema.ts';
 import type { Store } from './store.ts';
 import { newId, now } from './store.ts';
-import { resolveAllowed } from './media.ts';
+import { resolveAllowed, thumbnail } from './media.ts';
+import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
+import { packshotJob } from './routes.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
@@ -123,9 +125,124 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     state.currentJobId = state.activeJobIds[0] ?? null;
   };
 
+  function spawnCodex(args: string[], prompt: string, jobDir: string, logFile: string) {
+    return new Promise<{ code: number | null; err?: string }>((resolve) => {
+      const log = fs.createWriteStream(logFile);
+      let child;
+      try {
+        child = spawn(codexBin, args, { cwd: jobDir, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (e) {
+        resolve({ code: null, err: String(e) });
+        return;
+      }
+      const timer = setTimeout(() => child.kill('SIGTERM'), JOB_TIMEOUT_MS);
+      child.stdout.pipe(log);
+      child.stderr.pipe(log);
+      child.on('error', (e) => {
+        clearTimeout(timer);
+        resolve({ code: null, err: e.message });
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        log.end();
+        resolve({ code });
+      });
+      child.stdin.end(prompt);
+    });
+  }
+
+  /** Intake (photo → wardrobe candidates) and analyzer (owned-only outfits): JSON answers, read-only sandbox. */
+  async function runAnalysis(jobId: string) {
+    const db0 = store.read();
+    const job = db0.jobs.find((j) => j.id === jobId)!;
+    const jobDir = path.join(store.dataDir, 'jobs', job.id);
+    fs.mkdirSync(jobDir, { recursive: true });
+    const lastMsg = path.join(jobDir, 'last-message.txt');
+    const logFile = path.join(jobDir, 'codex.jsonl');
+    const schemaFile = path.join(jobDir, 'schema.json');
+    const images: string[] = [];
+    let prompt: string;
+    if (job.kind === 'intake') {
+      const photos = (job.inputPhotoIds ?? []).map((id) => db0.photos.find((p) => p.id === id)!).filter(Boolean);
+      for (const p of photos) images.push(resolveAllowed(projectRoot, store.dataDir, p.path));
+      prompt = intakePrompt(db0, job, photos.map((p) => p.originalName));
+      fs.writeFileSync(schemaFile, JSON.stringify(INTAKE_SCHEMA));
+    } else {
+      const dir = path.join(jobDir, 'items');
+      fs.mkdirSync(dir, { recursive: true });
+      for (const it of ownedItems(db0)) {
+        const p = it.packshotId ? db0.photos.find((x) => x.id === it.packshotId) : undefined;
+        if (!p) continue;
+        try {
+          const t = await thumbnail(projectRoot, store.dataDir, p.path, p.path, 320);
+          const dest = path.join(dir, `${it.id}.jpg`);
+          fs.copyFileSync(t, dest);
+          images.push(dest);
+        } catch {
+          /* a missing thumbnail only removes visual context */
+        }
+      }
+      prompt = analyzePrompt(db0, job, images);
+      fs.writeFileSync(schemaFile, JSON.stringify(ANALYZE_SCHEMA));
+    }
+    fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
+    const settings = db0.settings;
+    const args = [
+      'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
+      '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`,
+      '--output-schema', schemaFile, '-o', lastMsg, ...images.flatMap((p) => ['-i', p]),
+    ];
+    await store.mutate((db) => {
+      const j = db.jobs.find((x) => x.id === jobId)!;
+      j.state = 'running';
+      j.startedAt = now();
+      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : 'Codex складає образи з твоїх речей…';
+      j.logPath = path.relative(projectRoot, logFile);
+    });
+    const exit = await spawnCodex(args, prompt, jobDir, logFile);
+    let reply: Record<string, unknown> | null = null;
+    try {
+      reply = JSON.parse(fs.readFileSync(lastMsg, 'utf8'));
+    } catch {
+      reply = null;
+    }
+    await store.mutate((db) => {
+      const j = db.jobs.find((x) => x.id === jobId)!;
+      j.finishedAt = now();
+      if (!reply) {
+        j.state = 'error';
+        j.stateNote = exit.err || `Codex не повернув відповідь (код ${String(exit.code)}) — див. журнал`;
+        return;
+      }
+      if (reply.status === 'error') {
+        j.state = 'error';
+        j.stateNote = String(reply.reason || 'Codex не зміг виконати аналіз');
+        return;
+      }
+      if (j.kind === 'intake') {
+        const created = applyIntake(db, j, reply as never);
+        j.createdItemIds = created;
+        for (const id of created) packshotJob(db, { itemId: id });
+        j.state = created.length ? 'done' : 'error';
+        j.stateNote = created.length ? `Знайдено речей: ${created.length} — packshot у черзі` : 'На фото не знайдено одягу';
+        return;
+      }
+      const capsuleId = applyAnalyze(db, j, reply as never);
+      if (!capsuleId) {
+        j.state = 'error';
+        j.stateNote = 'Не вдалося скласти жодного образу з наявних речей';
+        return;
+      }
+      j.capsuleId = capsuleId;
+      j.state = 'done';
+      j.stateNote = `Підбірка готова: ${db.capsules.find((c) => c.id === capsuleId)?.lookIds.length ?? 0} образів`;
+    });
+  }
+
   async function runOne(jobId: string) {
     const db0 = store.read();
     const job = db0.jobs.find((j) => j.id === jobId)!;
+    if (job.kind === 'intake' || job.kind === 'analyze') return runAnalysis(jobId);
     const isPackshot = job.kind === 'packshot';
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
     fs.mkdirSync(jobDir, { recursive: true });
@@ -161,29 +278,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       j.logPath = path.relative(projectRoot, logFile);
     });
 
-    const exit = await new Promise<{ code: number | null; err?: string }>((resolve) => {
-      const log = fs.createWriteStream(logFile);
-      let child;
-      try {
-        child = spawn(codexBin, args, { cwd: jobDir, stdio: ['pipe', 'pipe', 'pipe'] });
-      } catch (e) {
-        resolve({ code: null, err: String(e) });
-        return;
-      }
-      const timer = setTimeout(() => child.kill('SIGTERM'), JOB_TIMEOUT_MS);
-      child.stdout.pipe(log);
-      child.stderr.pipe(log);
-      child.on('error', (e) => {
-        clearTimeout(timer);
-        resolve({ code: null, err: e.message });
-      });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        log.end();
-        resolve({ code });
-      });
-      child.stdin.end(prompt);
-    });
+    const exit = await spawnCodex(args, prompt, jobDir, logFile);
 
     const reply = fs.existsSync(lastMsg) ? parseReply(fs.readFileSync(lastMsg, 'utf8')) : {};
     let image = fs.existsSync(resultFile) ? resultFile : null;
@@ -297,7 +392,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       for (;;) {
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
-        const queued = db.jobs.filter((j) => j.state === 'queued' && !active.has(j.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        // Interactive work (intake, analyzer, try-on) goes before batch packshots.
+        const batch = (k?: string) => (k === 'packshot' ? 1 : 0);
+        const queued = db.jobs
+          .filter((j) => j.state === 'queued' && !active.has(j.id))
+          .sort((a, b) => batch(a.kind) - batch(b.kind) || a.createdAt.localeCompare(b.createdAt));
         if (!queued.length && active.size === 0) break;
         while (active.size < limit && queued.length) {
           const next = queued.shift()!;
@@ -317,14 +416,16 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   }
 
   /** Jobs left "running" by a restart go back to the queue; their snapshot is unchanged. */
-  async function recover() {
-    if (!store.read().jobs.some((j) => j.state === 'running')) return;
+  async function recover(): Promise<number> {
+    const interrupted = store.read().jobs.filter((j) => j.state === 'running').length;
+    if (!interrupted) return 0;
     await store.mutate((db) => {
       for (const j of db.jobs) if (j.state === 'running') {
         j.state = 'queued';
         j.stateNote = 'Повернуто в чергу після перезапуску сервера';
       }
     });
+    return interrupted;
   }
 
   return { state, drain, recover };

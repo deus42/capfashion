@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import {
-  BookOpen, ChevronsUpDown, House, Images, Inbox, LayoutGrid, Loader2, Shirt, ShoppingBag, Sparkles, TriangleAlert, User,
+  BookOpen, Camera, ChevronsUpDown, House, Images, Inbox, LayoutGrid, Loader2, Shirt, ShoppingBag, Sparkles, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
-import { Img, UploadButton } from './components/ui.tsx';
-import { HomePage } from './pages/Home.tsx';
+import { Img } from './components/ui.tsx';
+import { HomePage, useIntake } from './pages/Home.tsx';
 import { CapsuleDetail, CapsulesPage } from './pages/Capsules.tsx';
 import { WardrobePage } from './pages/Wardrobe.tsx';
 import { StudioPage } from './pages/Studio.tsx';
@@ -27,6 +27,7 @@ function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: Re
 export default function App() {
   const { state, error } = useApp();
   const { parts, query } = useRoute();
+  const intake = useIntake();
   const section = parts[0] ?? 'home';
 
   if (!state) {
@@ -98,7 +99,10 @@ export default function App() {
             </span>
             {activeJobs > 0 && <b>{activeJobs} в роботі</b>}
           </button>
-          <UploadButton kind="base" className="btn primary sm" label="Додати фото" onDone={() => go('/profile')} />
+          <button className="btn primary sm" onClick={intake.pick} disabled={intake.busy}>
+            {intake.busy ? <Loader2 size={14} className="spin" /> : <Camera size={14} />} Фото одягу
+          </button>
+          {intake.field}
           <a href="#/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}
           </a>

@@ -14,6 +14,26 @@ npm start          # build the UI and serve http://127.0.0.1:4317
 
 Checks: `npm run check`, which runs typecheck, server tests (acceptance A02, A04–A09, A11) and the production build.
 
+## Running as a background service
+
+The site runs as the user LaunchAgent `ai.deus.capfashion` (`~/Library/LaunchAgents/ai.deus.capfashion.plist`). It starts at login, restarts on crash and logs to `~/Library/Logs/capfashion/`. If it stopped during a generation run, it resumes the run on start; jobs that were only queued wait for "Запустити".
+
+- After UI changes: `cd app && npm run build`. No restart is needed: the server reads `dist/` from disk.
+- After server changes: `launchctl kickstart -k gui/$(id -u)/ai.deus.capfashion`.
+- Stop: `launchctl bootout gui/$(id -u)/ai.deus.capfashion`.
+
+## Addresses
+
+- Mac: http://127.0.0.1:4317
+- Private domain: **https://capfashion.exmachina**, served by the owner's existing `exmachina-domains` gateway (route added 17.11.2026; see that gateway's README). Each device needs Tailscale DNS and the Exmachina root profile installed once.
+- Tailnet fallback: `https://<this-mac>.<tailnet>.ts.net:10443` via `tailscale serve`.
+
+## Photo intake and outfit analyzer
+
+- **Фото одягу** uploads photos (`/api/upload?kind=intake`). Codex recognises the owner's garments (JSON schema, read-only sandbox) and creates wardrobe candidates marked «нова». Possible duplicates are noted, never merged automatically. A packshot is queued for each new item.
+- **Підібрати образи** (`POST /api/analyze {prompt}`) asks Codex to build 4–6 outfits from existing items only. The result is saved as a capsule of kind `selection` («Підбірки»); ids outside the wardrobe are dropped.
+- Interactive jobs (intake, analyzer, try-on) run before batch packshots.
+
 ## Data
 
 - Personal data: `../.local/app-data/` (Git-ignored), containing `db.json`, `db.prev.json` (last valid copy), `media/uploads`, `media/renders`, `media/thumbs` and `jobs/<id>/` (prompt, Codex log, result).

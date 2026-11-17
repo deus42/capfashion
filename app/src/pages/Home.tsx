@@ -1,169 +1,151 @@
-import { useState } from 'react';
-import { ArrowRight, CircleCheck, ImagePlus, Inbox, Play, ShoppingBag, Sparkles, User, Wand2 } from 'lucide-react';
-import type { Job } from '../api.ts';
-import { api, thumb } from '../api.ts';
+import { useRef, useState } from 'react';
+import { ArrowRight, Camera, Loader2, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
+import type { Capsule, DB, Job } from '../api.ts';
+import { api, thumb, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, LookCollage, UploadButton } from '../components/ui.tsx';
-import { REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, capsuleCover, looksUsing } from '../lib.ts';
+import { Badge, LookCollage } from '../components/ui.tsx';
+import { REVIEW_LABEL, REVIEW_TONE, capsuleCover } from '../lib.ts';
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 11) return 'Доброго ранку';
-  if (h < 18) return 'Добрий день';
-  return 'Добрий вечір';
+export function CapsuleTile({ c }: { c: Capsule }) {
+  const db = useDb();
+  const cover = capsuleCover(db, c.lookIds);
+  const first = db.looks.find((l) => l.id === c.lookIds[0]);
+  return (
+    <a href={`#/capsules/${c.id}`} className="capsule-card">
+      <div className="cover">
+        {cover ? <img src={thumb(cover.imagePath, 900)} alt={c.name} /> : first && <LookCollage slots={first.slots} />}
+        {cover && <div className="corner"><Badge tone={`${REVIEW_TONE[cover.review]} glass`}>{REVIEW_LABEL[cover.review]}</Badge></div>}
+      </div>
+      <div>
+        <h3>{c.name}</h3>
+        <div className="meta">{c.lookIds.length} образів</div>
+      </div>
+    </a>
+  );
+}
+
+/** Starts photo intake: every chosen photo becomes a recognition job. */
+export function useIntake() {
+  const { act } = useApp();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const pick = () => input.current?.click();
+  const field = (
+    <input
+      ref={input}
+      type="file"
+      accept="image/*,.heic,.heif"
+      multiple
+      hidden
+      onChange={async (e) => {
+        const files = Array.from(e.target.files ?? []);
+        if (!files.length) return;
+        setBusy(true);
+        await act(async () => {
+          for (const f of files) await uploadFile(f, { kind: 'intake' });
+        }, files.length > 1 ? `${files.length} фото в обробці` : 'Фото в обробці — речі з’являться в гардеробі');
+        setBusy(false);
+        if (input.current) input.current.value = '';
+      }}
+    />
+  );
+  return { pick, busy, field };
+}
+
+function processing(db: DB) {
+  return db.jobs
+    .filter((j) => (j.kind === 'intake' || j.kind === 'analyze') && (j.state === 'queued' || j.state === 'running' || (j.state === 'error' && !db.jobs.some((x) => x.retryOf === j.id))))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 8);
+}
+
+function ProcCard({ j }: { j: Job }) {
+  const db = useDb();
+  const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
+  return (
+    <a className="proc-card" href={j.kind === 'analyze' ? '#/capsules?tab=selections' : '#/queue'} title={j.stateNote}>
+      <div className="img">
+        {photo ? <img src={thumb(photo.path, 300)} alt="" /> : <Wand2 size={26} />}
+        <span className="st">
+          <Badge tone={j.state === 'error' ? 'bad glass' : 'glass'}>
+            {j.state === 'error' ? <TriangleAlert size={11} /> : <Loader2 size={11} className={j.state === 'running' ? 'spin' : ''} />}
+            {j.state === 'error' ? 'помилка' : j.state === 'running' ? 'аналіз' : 'черга'}
+          </Badge>
+        </span>
+      </div>
+      <span className="t">{j.kind === 'analyze' ? 'Підбірка образів' : 'Розпізнавання речей'}</span>
+    </a>
+  );
 }
 
 export function HomePage() {
   const db = useDb();
-  const { act, toast } = useApp();
-  const [lookId, setLookId] = useState('L-urban-1');
+  const { act } = useApp();
+  const intake = useIntake();
   const [text, setText] = useState('');
+  const procs = processing(db);
+  const selections = db.capsules.filter((c) => c.kind === 'selection').slice().reverse();
+  const capsules = db.capsules.filter((c) => c.kind !== 'selection');
+  const analyzing = db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'));
   const pending = db.results.filter((r) => r.review === 'pending');
-  const toConfirm = db.items.filter((i) => i.status === 'needs_confirmation').length;
-  const packshots = db.items.filter((i) => i.packshotId).length;
-  const packshotJobs = db.jobs.filter((j) => j.kind === 'packshot' && (j.state === 'queued' || j.state === 'running')).length;
-  const okBase = db.profile.basePhotoIds.filter((id) => db.photos.find((p) => p.id === id)?.meetsStandard).length;
-  const latest = db.results.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  const packshotSample = db.items.map((i) => (i.packshotId ? db.photos.find((p) => p.id === i.packshotId) : undefined)).find(Boolean);
-  const openNeeds = db.needs.filter((n) => n.status === 'open' && looksUsing(db, 'need', n.id).length > 0).length;
-  const urban = db.looks.find((l) => l.id === 'L-urban-1') ?? db.looks[0];
-  const ref = db.looks.find((l) => l.id === 'L-ref-1') ?? db.looks[0];
+  const packDone = db.items.filter((i) => i.packshotId).length;
+  const packBusy = db.jobs.filter((j) => j.kind === 'packshot' && (j.state === 'queued' || j.state === 'running')).length;
 
-  const generate = async () => {
-    const job = await act(() => api<Job>('POST', '/api/jobs', { lookId, instructions: text, run: true }));
-    if (!job) return;
-    if (job.state === 'needs_data') {
-      toast(`Потрібні дані: ${job.stateNote ?? ''}`, true);
-      go('/profile/base');
-      return;
-    }
-    toast('Запущено — Codex генерує примірку');
-    go(`/studio?look=${lookId}`);
+  const analyze = async () => {
+    const ok = await act(() => api('POST', '/api/analyze', { prompt: text }), 'Аналізатор складає образи з твоїх речей');
+    if (ok) setText('');
   };
 
   return (
     <div className="page">
       <section className="home-hero">
         <h1>Що одягнемо сьогодні?</h1>
-        <p className="sub">{greeting()}. Твої капсули, речі й примірки — в одному місці, без чатів.</p>
         <div className="prompt-box">
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Що врахувати в примірці? Напр.: сорочку навипуск, рукави закочені" />
-          <div className="bar">
-            <select className="select sm" style={{ width: 'auto', maxWidth: 260 }} value={lookId} onChange={(e) => setLookId(e.target.value)} aria-label="Образ">
-              {db.capsules.map((c) => (
-                <optgroup key={c.id} label={c.name}>
-                  {c.lookIds.map((id) => {
-                    const l = db.looks.find((x) => x.id === id);
-                    return l ? <option key={l.id} value={l.id}>{l.name}</option> : null;
-                  })}
-                </optgroup>
-              ))}
-            </select>
-            <UploadButton kind="base" className="btn sm" label="Базові фото" onDone={() => go('/profile/base')} />
-            <span className="grow" />
-            <button className="btn primary sm" onClick={() => void generate()}>
-              <Wand2 size={14} /> Згенерувати
-            </button>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Куди? Напр.: вихідні в місті, вечеря, офіс" />
+        </div>
+        <div className="big-actions">
+          <button className="big-action" onClick={intake.pick} disabled={intake.busy}>
+            {intake.busy ? <Loader2 size={20} className="spin" /> : <Camera size={20} />} Фото одягу
+          </button>
+          <button className="big-action primary" onClick={() => void analyze()} disabled={analyzing}>
+            {analyzing ? <Loader2 size={20} className="spin" /> : <Sparkles size={20} />} {analyzing ? 'Підбираю…' : 'Підібрати образи'}
+          </button>
+        </div>
+        {intake.field}
+        {(pending.length > 0 || packBusy > 0) && (
+          <div className="suggest">
+            {pending.length > 0 && (
+              <a className="pill" href={`#/studio?look=${pending[0].lookId}&result=${pending[0].id}`}>
+                <span className="pi"><img src={thumb(pending[0].imagePath, 80)} alt="" /></span>
+                Перевірити примірку
+              </a>
+            )}
+            {packBusy > 0 && (
+              <a className="pill" href="#/wardrobe">
+                <span className="pi"><Loader2 size={13} className="spin" /></span>
+                Packshot {packDone}/{db.items.length}
+              </a>
+            )}
           </div>
-        </div>
-        <div className="suggest">
-          {pending.length > 0 && (
-            <a className="pill" href={`#/studio?look=${pending[0].lookId}&result=${pending[0].id}`}>
-              <span className="pi"><img src={thumb(pending[0].imagePath, 80)} alt="" /></span>
-              Переглянути примірку ({pending.length})
-            </a>
-          )}
-          <a className="pill" href="#/wardrobe">
-            <span className="pi">{packshotSample ? <img src={thumb(packshotSample.path, 80)} alt="" /> : <CircleCheck size={14} />}</span>
-            Підтвердити речі ({toConfirm})
-          </a>
-          <a className="pill" href="#/profile/base">
-            <span className="pi"><User size={14} /></span>
-            Додати базові фото
-          </a>
-          <a className="pill" href="#/shopping">
-            <span className="pi"><ShoppingBag size={14} /></span>
-            Що докупити ({openNeeds})
-          </a>
-        </div>
+        )}
       </section>
 
-      <div className="section-head">
-        <h2 className="h2">Швидкі дії</h2>
-      </div>
-      <div className="shortcuts">
-        <a className="shortcut" href="#/studio">
-          {latest ? <img src={thumb(latest.imagePath, 700)} alt="" style={{ objectPosition: 'top' }} /> : urban && <LookCollage slots={urban.slots} />}
-          <span className="lbl"><Sparkles size={14} /> Примірка</span>
-          <span className="desc">Побач себе в образі на білому фоні — через локальний Codex</span>
-        </a>
-        <a className="shortcut" href="#/wardrobe">
-          {packshotSample ? <img src={thumb(packshotSample.path, 700)} alt="" style={{ objectFit: 'contain', background: '#fff', padding: 18 }} /> : null}
-          <span className="lbl"><ImagePlus size={14} /> Гардероб</span>
-          <span className="desc">Твої речі як чисті packshot-фото; підтверди, що справді маєш</span>
-        </a>
-        <a className="shortcut" href="#/capsules">
-          {ref && <LookCollage slots={ref.slots} />}
-          <span className="lbl"><Play size={14} /> Капсули</span>
-          <span className="desc">Urban, Mediterranean і Refined — 13 образів</span>
-        </a>
-        <a className="shortcut" href="#/shopping">
-          {urban && <LookCollage slots={db.looks.find((l) => l.id === 'L-med-1')?.slots ?? urban.slots} />}
-          <span className="lbl"><ShoppingBag size={14} /> Покупки</span>
-          <span className="desc">Одна потреба на всі капсули; товари з Tower Center Rijeka</span>
-        </a>
-      </div>
+      {procs.length > 0 && (
+        <>
+          <div className="section-head"><h2 className="h2">В обробці</h2><a href="#/queue">Черга <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+          <div className="proc">{procs.map((j) => <ProcCard key={j.id} j={j} />)}</div>
+        </>
+      )}
 
-      <div className="section-head">
-        <h2 className="h2">Потребує уваги</h2>
-      </div>
-      <div className="attention">
-        <a className="attn" href={pending[0] ? `#/studio?look=${pending[0].lookId}&result=${pending[0].id}` : '#/studio'}>
-          <span className="ic"><Sparkles size={18} /></span>
-          <div><b>{pending.length}</b><span>примірок на перевірці</span></div>
-        </a>
-        <a className="attn" href="#/wardrobe">
-          <span className="ic"><CircleCheck size={18} /></span>
-          <div><b>{toConfirm}</b><span>речей чекають підтвердження</span></div>
-        </a>
-        <a className="attn" href="#/profile/base">
-          <span className="ic"><User size={18} /></span>
-          <div><b>{okBase}/2</b><span>базових фото за стандартом</span></div>
-        </a>
-        <a className="attn" href="#/queue">
-          <span className="ic"><Inbox size={18} /></span>
-          <div><b>{packshots}/{db.items.length}</b><span>packshot готово{packshotJobs ? ` · ${packshotJobs} у черзі` : ''}</span></div>
-        </a>
-      </div>
+      {selections.length > 0 && (
+        <>
+          <div className="section-head"><h2 className="h2">Підбірки з моїх речей</h2><a href="#/capsules?tab=selections">Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+          <div className="capsule-grid">{selections.slice(0, 3).map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
+        </>
+      )}
 
-      <div className="section-head">
-        <h2 className="h2">Капсули</h2>
-        <a href="#/capsules">Усі капсули <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a>
-      </div>
-      <div className="capsule-grid">
-        {db.capsules.map((c) => {
-          const cover = capsuleCover(db, c.lookIds);
-          const first = db.looks.find((l) => l.id === c.lookIds[0]);
-          return (
-            <a key={c.id} href={`#/capsules/${c.id}`} className="capsule-card">
-              <div className="cover">
-                {cover ? <img src={thumb(cover.imagePath, 900)} alt={c.name} /> : first && <LookCollage slots={first.slots} />}
-                {cover && (
-                  <div className="corner">
-                    <Badge tone={REVIEW_TONE[cover.review]}>{REVIEW_LABEL[cover.review]}</Badge>
-                  </div>
-                )}
-              </div>
-              <div>
-                <h3>{c.name}</h3>
-                <div className="meta">
-                  <span>{SEASON_LABEL[c.season]}</span>·<span>{c.lookIds.length} образів</span>
-                </div>
-              </div>
-            </a>
-          );
-        })}
-      </div>
+      <div className="section-head"><h2 className="h2">Капсули</h2><a href="#/capsules" onClick={() => go('/capsules')}>Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+      <div className="capsule-grid">{capsules.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
     </div>
   );
 }

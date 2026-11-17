@@ -119,7 +119,7 @@ export function GalleryPage() {
 
   return (
     <div className="page">
-      <PageHead title="Галерея" sub="Усе, що згенеровано: примірки на тобі й packshot-фото речей. Оригінали лишаються в гардеробі окремо." />
+      <PageHead title="Галерея" />
       <div className="toolbar">
         <div className="seg">
           <button className={type === 'all' ? 'on' : ''} onClick={() => setType('all')}>Усе <span className="faint">{all.length}</span></button>

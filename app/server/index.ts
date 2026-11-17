@@ -26,12 +26,21 @@ const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
  * `tailscale serve`, which injects the tailnet identity header; only the
  * owner's login is accepted. The server itself never listens beyond loopback.
  */
-const PROXY_HEADERS = ['tailscale-user-login', 'tailscale-headers-info', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded'];
+const PROXY_HEADERS = ['tailscale-user-login', 'tailscale-headers-info', 'x-forwarded-for', 'forwarded'];
 
+/**
+ * Trusted without a login: plain loopback requests, and requests from the
+ * private exmachina gateway (https://capfashion.exmachina), which verifies the
+ * owner's Tailscale identity itself and forwards with a loopback Host and
+ * X-Forwarded-Host. `tailscale serve` requests carry the tailnet hostname and
+ * identity headers and are checked below.
+ */
 function authorize(req: http.IncomingMessage): string | null {
   const host = req.headers.host ?? '';
+  const fwdHost = req.headers['x-forwarded-host'];
+  const localForward = fwdHost === undefined || LOOPBACK_HOST.test(String(fwdHost));
   const proxied = PROXY_HEADERS.some((h) => h in req.headers);
-  if (LOOPBACK_HOST.test(host) && !proxied) return null;
+  if (LOOPBACK_HOST.test(host) && localForward && !proxied) return null;
   const login = String(req.headers['tailscale-user-login'] ?? '').toLowerCase();
   const allowed = (process.env.CAPFASHION_TAILSCALE_LOGIN || store.read().settings.tailscaleLogin || '').toLowerCase();
   if (!allowed) return 'Віддалений доступ вимкнено: у налаштуваннях не вказано Tailscale-логін власника';
@@ -141,7 +150,12 @@ const server = http.createServer((req, res) => {
   });
 });
 
-await runner.recover();
+const interrupted = await runner.recover();
 server.listen(PORT, HOST, () => {
-  console.log(`Cap Fashion: http://${HOST}:${PORT}  (дані: ${path.relative(PROJECT_ROOT, DATA_DIR)})`);
+  console.log(`${new Date().toISOString()} Cap Fashion: http://${HOST}:${PORT}  (дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${runner.state.codexBin})`);
+  // A run was in progress when the server stopped: continue it. Jobs that were only queued wait for "Запустити".
+  if (interrupted > 0) {
+    console.log(`Продовжую чергу: ${interrupted} перерваних завдань`);
+    void runner.drain();
+  }
 });

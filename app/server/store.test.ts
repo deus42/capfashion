@@ -8,6 +8,7 @@ import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
 import { dispatch, snapshotSlots } from './routes.ts';
 import { buildPrompt, createRunner } from './runner.ts';
+import { applyAnalyze } from './analysis.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 
@@ -215,4 +216,53 @@ test('failed Codex run becomes an explained error and retry links (A13, A06)', a
   const retry = await call('POST', `/api/jobs/${job.id}/retry`, {});
   assert.equal(retry.kind, 'packshot');
   assert.equal(retry.retryOf, job.id);
+});
+
+test('intake recognises garments into candidates and queues their packshots', async () => {
+  const { dir, store } = setup();
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(
+    fake,
+    '#!/bin/sh\nschema=""\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; --output-schema) schema="$2"; shift;; esac; shift; done\ncat >/dev/null\nif [ -n "$schema" ]; then echo \'{"status":"done","reason":"","garments":[{"title":"Біла оксфорд-сорочка","category":"shirts","color":"білий","notes":"комір на ґудзиках","duplicateOf":""},{"title":"Темно-сині чіноси","category":"trousers","color":"темно-синій","notes":"","duplicateOf":"W-1"}]}\' > "$o"; else printf PNG > "$d/result.png"; echo \'{"status":"done"}\' > "$o"; fi\n',
+    { mode: 0o755 },
+  );
+  await store.mutate((db) => {
+    db.jobs.push({ id: 'J-in', kind: 'intake', inputPhotoIds: ['P-1'], lookVersion: 0, snapshot: { lookName: 'a.jpeg', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'queued', origin: 'site', createdAt: at });
+  });
+  await createRunner(store, dir, fake).drain();
+  const db = store.read();
+  const job = db.jobs.find((j) => j.id === 'J-in')!;
+  assert.equal(job.state, 'done');
+  assert.equal(job.createdItemIds?.length, 2);
+  const shirt = db.items.find((i) => i.title === 'Біла оксфорд-сорочка')!;
+  assert.equal(shirt.status, 'needs_confirmation');
+  assert.deepEqual(shirt.photoIds, ['P-1']);
+  assert.match(db.items.find((i) => i.title === 'Темно-сині чіноси')!.observation ?? '', /W-1/);
+  assert.ok(db.items.find((i) => i.id === 'W-1')!.status !== 'confirmed', 'no automatic merge or confirmation');
+  assert.ok(job.createdItemIds!.every((id) => db.items.find((i) => i.id === id)!.packshotId), 'packshots generated for new items');
+});
+
+test('analyzer keeps only owned items and complete looks (selection)', async () => {
+  const { store } = setup();
+  await store.mutate((db) => {
+    db.items.push({ id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    db.items.push({ id: 'W-X', rev: 1, category: 'shoes', title: 'Old shoes', status: 'inactive', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    const job = { id: 'J-an', kind: 'analyze' as const, lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: 'на вихідні', state: 'running' as const, origin: 'site' as const, createdAt: at };
+    db.jobs.push(job);
+    const id = applyAnalyze(db, job, {
+      status: 'done', reason: '', name: 'Вихідні', description: 'Легко',
+      looks: [
+        { name: 'A', occasion: 'прогулянка', season: 'warm', top: ['N-1'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: 'спокійно' },
+        { name: 'Bad shoes', occasion: '', season: 'warm', top: [], layer: [], bottom: ['W-1'], shoes: ['W-X'], accessories: [], why: '' },
+        { name: 'Ghost', occasion: '', season: 'warm', top: [], layer: [], bottom: ['W-404'], shoes: ['W-S'], accessories: [], why: '' },
+      ],
+    });
+    assert.ok(id);
+    const cap = db.capsules.find((c) => c.id === id)!;
+    assert.equal(cap.kind, 'selection');
+    assert.equal(cap.lookIds.length, 1);
+    const look = db.looks.find((l) => l.id === cap.lookIds[0])!;
+    assert.deepEqual(look.slots.top, [], 'needs (not owned) are dropped');
+    assert.deepEqual(look.slots.shoes, [{ kind: 'item', id: 'W-S' }]);
+  });
 });

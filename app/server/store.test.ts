@@ -8,7 +8,7 @@ import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
 import { stateView } from './state-view.ts';
 import { createJob, dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
-import { verifyReferenceFiles } from './identity.ts';
+import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
 import { analyzePrompt, applyAnalyze, applyIntake, intakePrompt } from './analysis.ts';
 import { hiddenLookIds, isCapsuleHidden, sameLook } from '../src/rating.ts';
@@ -604,6 +604,52 @@ test('face archive permits only original owner photos and rejected identity cann
   const db = store.read();
   db.photos[0].source = 'generated';
   assert.match(validateDb(db)!, /референс обличчя.*власним оригіналом/);
+});
+
+test('owner-approved portrait is the sole face and hair source; physique keeps original provenance', () => {
+  const db = fixture();
+  const file = (p: string) => ({ path: p, sha256: 'b'.repeat(64) });
+  db.profile.identity = { sourcePhotoId: 'P-1', original: file(db.photos[0].path), face: file('.local/approved-portrait.png'), approvedPortrait: { approvedAt: at, provisional: true }, body: file('.local/body.png'), bodyOriginal: file(db.photos[1].path), preserveHeadAngle: false, noGlasses: true, confirmedAt: at };
+  const job = createJob(db, db.looks[0], ['P-2'], '');
+  const refs = pickRefs(job, false, (p) => p);
+  assert.deepEqual(refs.identity, ['.local/approved-portrait.png', '.local/body.png']);
+  assert.match(buildPrompt(job, '/tmp/control.png', refs), /OWNER-APPROVED PORTRAIT.*ONLY source for facial identity AND hairstyle/);
+  assert.doesNotMatch(buildPrompt(job, '/tmp/control.png', refs), /Image 1 is an exact-pixel FACE crop/);
+  assert.equal(validateDb(db), null);
+  db.profile.identity.approvedPortrait!.approvedAt = '';
+  assert.notEqual(validateDb(db), null, 'approval must have a valid date');
+  db.profile.identity.approvedPortrait!.approvedAt = at;
+  delete db.profile.identity.bodyOriginal;
+  assert.notEqual(validateDb(db), null, 'an approved face never waives original physique provenance');
+});
+
+test('superseded face or physique blocks frozen retries and already queued jobs', async () => {
+  const { store, call, dir } = setup();
+  const file = (p: string) => ({ path: p, sha256: 'b'.repeat(64) });
+  await store.mutate((db) => {
+    db.profile.basePhotoIds = ['P-1'];
+    db.profile.identity = { sourcePhotoId: 'P-1', original: file(db.photos[0].path), face: file('.local/old-face.png'), body: file('.local/body.png'), preserveHeadAngle: false, confirmedAt: at };
+  });
+  const old = await call('POST', '/api/jobs', { lookId: 'L-1' });
+  await store.mutate((db) => {
+    db.profile.identity!.face = file('.local/approved-portrait.png');
+    db.jobs.find((j) => j.id === old.id)!.state = 'error';
+  });
+  const db = store.read();
+  assert.equal(sameIdentity(db.profile.identity, old.snapshot.identity), false);
+  const retry = await call('POST', `/api/jobs/${old.id}/retry`);
+  assert.equal(retry.state, 'needs_data');
+  assert.match(retry.stateNote, /обличчя або статури змінилася/);
+  const current = createJob(db, db.looks[0], [], '');
+  assert.equal(sameIdentity(db.profile.identity, current.snapshot.identity), true);
+  db.profile.identity!.body.sha256 = 'c'.repeat(64);
+  assert.equal(sameIdentity(db.profile.identity, current.snapshot.identity), false, 'physique changes also invalidate frozen attempts');
+  const fake = path.join(dir, 'must-not-run.sh'), marker = path.join(dir, 'ran');
+  fs.writeFileSync(fake, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+  await store.mutate((d) => { d.jobs.find((j) => j.id === old.id)!.state = 'queued'; });
+  await createRunner(store, dir, fake).drain();
+  assert.equal(fs.existsSync(marker), false, 'queued attempts with the old face never reach the generator');
+  assert.match(store.read().jobs.find((j) => j.id === old.id)!.stateNote!, /обличчя або статури змінилася/);
 });
 
 test('retained uploaded originals survive attempted deletion independently of base selection', async () => {

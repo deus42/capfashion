@@ -54,7 +54,7 @@ export default function App() {
   const { db } = state;
   // The thin bar means work is happening now; queued work waiting for its turn shows nothing.
   const runningJobs = db.jobs.filter((j) => j.state === 'running').length;
-  const avatar = db.profile.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).find(Boolean);
+  const avatar = db.profile.identity?.approvedPortrait ? db.profile.identity.face : db.profile.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).find(Boolean);
   const ic = 20;
 
   let page: ReactNode;

@@ -46,7 +46,8 @@ function BasePhotos() {
   const [picker, setPicker] = useState(false);
   const intake = useIntake();
   const busy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
-  const base = (prof.identity ? [prof.identity.sourcePhotoId] : prof.basePhotoIds).map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
+  const originals = (prof.identity ? [prof.identity.sourcePhotoId] : prof.basePhotoIds).map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
+  const base = prof.identity?.approvedPortrait ? originals.map((p) => ({ ...p, path: prof.identity!.face.path, originalName: 'Схвалений портрет' })) : originals;
   const ok = base.filter((p) => p.meetsStandard).length;
   return (
     <Section

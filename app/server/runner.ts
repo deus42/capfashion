@@ -8,7 +8,7 @@ import { newId, now } from './store.ts';
 import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
 import { coverNeed, packshotJob, queueMissingRenders } from './routes.ts';
-import { verifyReferenceFiles } from './identity.ts';
+import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
@@ -59,7 +59,7 @@ function refInstruction(refs: string[]) {
 export const MAX_IMAGE_REFS = 5;
 
 /**
- * Identity comes only from the owner's original base photos (up to three);
+ * Identity comes from pinned owner references (including an explicitly approved portrait);
  * garment photos fill the remaining slots. Never more than MAX_IMAGE_REFS.
  */
 export function pickRefs(job: Job, isPackshot: boolean, resolve: (p: string) => string): ImageRefs {
@@ -95,7 +95,7 @@ export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
     refs ? refInstruction([...refs.identity, ...refs.garments]) : '',
     '',
     pinned
-      ? `Use case: identity-preserve. Image 1 is an exact-pixel FACE crop from the selected ORIGINAL photograph, the ONLY facial identity source. The generated man must be recognisably this person. Preserve exact facial outline, eyelids, eyes, nose, mouth, jaw, ears, cheeks, real skin texture, apparent age, hair colour and hairline. ${pose} Image 2 is a headless crop of the owner's original photo, the ONLY physique source. Preserve shoulder width, torso shape, waist, real build and leg proportions. ${pinned.hair ? 'Image 3 is an ORIGINAL HAIR-ONLY crop: use only its neat swept-back/side styling, never another face, hairline, colour or age.' : ''} ${pinned.hairstyle ? `Hairstyle requested by owner: ${pinned.hairstyle}. Keep original length and colour; no new haircut, dye, extra density or hairline change.` : 'Preserve the original hairstyle.'} Do not redesign, average or beautify the face, de-age, slim, stretch or muscularize. Never use an earlier render or a garment reference for identity or physique.`
+      ? `Use case: identity-preserve. Image 1 is ${pinned.approvedPortrait ? "the exact OWNER-APPROVED PORTRAIT, the ONLY source for facial identity AND hairstyle. Copy this approved face and hair faithfully, do not reinterpret it from another photo" : 'an exact-pixel FACE crop from the selected ORIGINAL photograph, the ONLY facial identity source'}. The generated man must be recognisably this person. Preserve exact facial outline, eyelids, eyes, nose, mouth, jaw, ears, cheeks, real skin texture, apparent age, hair colour and hairline. ${pose} Image 2 is a headless crop of the owner's original photo, the ONLY physique source. Preserve shoulder width, torso shape, waist, real build and leg proportions. Keep the same physique consistently across outfits; flattering clothes and upright posture must not change anatomy. ${pinned.hair ? 'Image 3 is an ORIGINAL HAIR-ONLY crop: use only its neat swept-back/side styling, never another face, hairline, colour or age.' : ''} ${pinned.hairstyle ? `Hairstyle requested by owner: ${pinned.hairstyle}. Keep original length and colour; no new haircut, dye, extra density or hairline change.` : 'Preserve the reference hairstyle.'} Do not redesign, average or beautify the face, de-age, slim, stretch or muscularize. ${pinned.approvedPortrait ? 'The approved portrait is the sole owner-authorized generated identity reference; never use another render or garment reference for face, hair or physique.' : 'Never use an earlier render or a garment reference for identity or physique.'}`
       : `Identity: the first ${refs?.identity.length ?? job.snapshot.basePhotoPaths.length} reference photo(s) are ORIGINAL photographs of the owner. Keep his exact facial features, hair, skin, apparent age and physique. Preserve the first original's head angle, gaze and expression. Never use generated images for identity or physique.`,
     `Image standard: one person; full length from head to shoes with margin; body standing naturally, arms relaxed at the sides; ${pinned?.preserveHeadAngle === false ? 'head upright, direct front view and eye contact' : 'preserve the original head angle'}; pure white (#FFFFFF) seamless studio background; soft even light; subtle ground shadow; no text, labels or watermarks. Remove selfie phone, mirror and source environment. No additional accessories, bags, headwear or watches unless explicitly listed in this outfit. ${pinned?.noGlasses ? 'ABSOLUTELY NO GLASSES: no eyeglasses, sunglasses, eyewear on the face, head or clothing. The owner does not wear glasses, regardless of anything in the source photos or outfit text.' : 'No glasses unless explicitly listed.'} Preserve small original garment logos only where evidenced; do not add branding.`,
     '',
@@ -316,6 +316,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const lastMsg = path.join(jobDir, 'last-message.txt');
     const logFile = path.join(jobDir, 'codex.jsonl');
     if (!isPackshot && db0.profile.identity && !job.snapshot.identity) throw Error('Стара спроба без закріпленого оригіналу. Створи нову примірку для поточної версії образу.');
+    if (!isPackshot && !sameIdentity(db0.profile.identity, job.snapshot.identity)) throw Error('Опора обличчя або статури змінилася. Створи нову примірку з поточними референсами.');
     const resolve = (p: string) => resolveAllowed(projectRoot, store.dataDir, p);
     verifyReferenceFiles(job, resolve);
     const refs = pickRefs(job, isPackshot, resolve);

@@ -1,7 +1,22 @@
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { validIdentity } from './schema.ts';
-import type { Job } from './schema.ts';
+import type { IdentityReference, Job } from './schema.ts';
+
+/** Frozen retries must not bring back a superseded face, physique or presentation. */
+export function sameIdentity(current: IdentityReference | undefined, frozen: IdentityReference | undefined) {
+  if (!current) return !frozen;
+  if (!frozen) return false;
+  const key = (r: IdentityReference) => JSON.stringify([
+    r.sourcePhotoId, r.original.path, r.original.sha256,
+    r.face.path, r.face.sha256, r.body.path, r.body.sha256,
+    r.bodyOriginal?.path, r.bodyOriginal?.sha256,
+    r.hair?.crop.path, r.hair?.crop.sha256,
+    r.preserveHeadAngle, r.noGlasses, r.hairstyle,
+    r.approvedPortrait?.approvedAt, r.approvedPortrait?.provisional,
+  ]);
+  return key(current) === key(frozen);
+}
 
 /** Fail before generation if any frozen original/crop has changed or vanished. */
 export function verifyReferenceFiles(job: Job, resolve: (p: string) => string) {

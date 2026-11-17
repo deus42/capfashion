@@ -6,6 +6,7 @@ import { HttpError, bump, findOr404, newId, now } from './store.ts';
 import { prewarm, saveUpload } from './media.ts';
 import { pickTheme } from './analysis.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
+import { sameIdentity } from './identity.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -84,6 +85,9 @@ export function createJob(db: DB, look: Look, basePhotoIds: string[], instructio
   if (identity?.disabledReason || snapshot.identity?.disabledReason) {
     job.state = 'needs_data';
     job.stateNote = identity?.disabledReason || snapshot.identity?.disabledReason;
+  } else if (!sameIdentity(identity, snapshot.identity)) {
+    job.state = 'needs_data';
+    job.stateNote = 'Опора обличчя або статури змінилася. Створи нову примірку з поточними референсами.';
   } else if (!snapshot.basePhotoIds.length) {
     job.state = 'needs_data';
     job.stateNote = 'Немає базового фото. Додай 2–3 фото спереду в «Мій профіль» або вибери фото в Примірці.';

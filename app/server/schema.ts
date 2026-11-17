@@ -38,11 +38,13 @@ export interface HistoryEntry {
 
 export interface HashedFile { path: string; sha256: string }
 
-/** Owner-confirmed original and exact-pixel crops; frozen into each new try-on. */
+/** Owner-confirmed face/body references; frozen into each new try-on. */
 export interface IdentityReference {
   sourcePhotoId: string;
   original: HashedFile;
   face: HashedFile;
+  /** Explicit owner exception: this exact generated portrait replaces the original face crop. */
+  approvedPortrait?: { approvedAt: string; provisional: boolean };
   body: HashedFile;
   preserveHeadAngle: boolean;
   hairstyle?: string;
@@ -59,7 +61,9 @@ export function validHashedFile(file: HashedFile): boolean {
 }
 
 export function validIdentity(ref: IdentityReference): boolean {
-  return !!ref && typeof ref.sourcePhotoId === 'string' && typeof ref.preserveHeadAngle === 'boolean' && !!ref.confirmedAt && [ref.original, ref.face, ref.body, ...(ref.bodyOriginal ? [ref.bodyOriginal] : []), ...(ref.hair ? [ref.hair.original, ref.hair.crop] : [])].every(validHashedFile) && new Set([ref.original.path, ref.face.path, ref.body.path]).size === 3;
+  return !!ref && typeof ref.sourcePhotoId === 'string' && typeof ref.preserveHeadAngle === 'boolean' && !!ref.confirmedAt
+    && (!ref.approvedPortrait || (Number.isFinite(Date.parse(ref.approvedPortrait.approvedAt)) && typeof ref.approvedPortrait.provisional === 'boolean' && !!ref.bodyOriginal && !ref.hair))
+    && [ref.original, ref.face, ref.body, ...(ref.bodyOriginal ? [ref.bodyOriginal] : []), ...(ref.hair ? [ref.hair.original, ref.hair.crop] : [])].every(validHashedFile) && new Set([ref.original.path, ref.face.path, ref.body.path]).size === 3;
 }
 
 export interface Photo {

@@ -14,6 +14,7 @@ import { hiddenLookIds, isCapsuleHidden, sameLook } from '../src/rating.ts';
 import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
+import { looksNeedingRender } from '../src/render-need.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 
@@ -699,4 +700,86 @@ test('an upload joined to an existing item names it; the duplicate rule needs ma
     db.jobs.push({ ...job, state: 'done', attachedItemIds: out.attachedTo });
   });
   assert.equal(validateDb(store.read()), null);
+});
+
+test('an upload that is an open recommendation leaves the shopping list, replaces the stand-in in looks and re-renders them; undo restores', async () => {
+  const { store, call, drained } = setup();
+  await store.mutate((db) => {
+    db.profile.basePhotoIds = ['P-1'];
+    db.photos.push({ id: 'P-tee', kind: 'item', path: 'assets/photos/tee.jpeg', originalName: 'tee.jpeg', source: 'upload', createdAt: at });
+    const job = { id: 'J-tee', kind: 'intake' as const, inputPhotoIds: ['P-tee'], lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+    const prompt = intakePrompt(db, job, ['tee.jpeg']);
+    assert.match(prompt, /N-1 \| футболки \| Молочна футболка/, 'open recommendations are listed for matching');
+    assert.match(prompt, /coversNeed/);
+    const reply = {
+      status: 'done', reason: '', photoType: 'garments_only', singlePerson: false, baseSuitable: false, baseIssues: '',
+      label: { itemId: '', brand: '', size: '', composition: '' },
+      garments: [
+        { title: 'Молочна футболка з емблемою', category: 'tees', color: 'молочний', notes: '', duplicateOf: '', coversNeed: 'N-1' },
+        { title: 'Сині штани', category: 'trousers', color: 'синій', notes: '', duplicateOf: '', coversNeed: 'N-1' },
+      ],
+    };
+    const out = applyIntake(db, job, reply);
+    const tee = db.items.find((i) => i.title === 'Молочна футболка з емблемою')!;
+    assert.deepEqual(out.covers, [{ itemId: tee.id, needId: 'N-1' }], 'only a garment of the same category covers the need');
+    db.jobs.push({ ...job, state: 'done', createdItemIds: out.created });
+  });
+  const tee = store.read().items.find((i) => i.title === 'Молочна футболка з емблемою')!;
+  const r = await call('POST', '/api/needs/N-1/cover', { itemId: tee.id });
+  let db = store.read();
+  assert.deepEqual(r, { looks: 1, queued: 1, waiting: 0 });
+  assert.equal(db.needs[0].status, 'covered');
+  assert.equal(db.needs[0].coveredByItem, tee.id);
+  assert.deepEqual(db.needs[0].coveredLookIds, ['L-1']);
+  assert.deepEqual(db.looks[0].slots.top, [{ kind: 'item', id: tee.id }]);
+  assert.equal(db.looks[0].version, 2);
+  const rerender = db.jobs.find((j) => j.lookId === 'L-1' && j.lookVersion === 2)!;
+  assert.equal(rerender.state, 'queued');
+  assert.ok(rerender.snapshot.slots.some((s) => s.id === tee.id), 'the new try-on shows the owner\'s item');
+  assert.ok(drained() > 0);
+  await assert.rejects(call('POST', '/api/needs/N-1/cover', { itemId: tee.id }), /уже закрито/);
+  assert.equal(validateDb(db), null);
+
+  await call('POST', '/api/needs/N-1/uncover');
+  db = store.read();
+  assert.equal(db.needs[0].status, 'open');
+  assert.equal(db.needs[0].coveredByItem, undefined);
+  assert.deepEqual(db.looks[0].slots.top, [{ kind: 'need', id: 'N-1' }]);
+
+  await call('POST', '/api/needs/N-1/cover', { itemId: tee.id });
+  await call('DELETE', `/api/items/${tee.id}`);
+  db = store.read();
+  assert.equal(db.needs[0].status, 'open', 'deleting the item puts the recommendation back');
+  assert.deepEqual(db.looks[0].slots.top, [{ kind: 'need', id: 'N-1' }], 'its looks get the stand-in back instead of a hole');
+  assert.equal(validateDb(db), null);
+});
+
+test('the runner applies a recommendation match from intake and names it in the status', async () => {
+  const { dir, store } = setup();
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(
+    fake,
+    '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\necho \'{"status":"done","reason":"","photoType":"garments_only","singlePerson":false,"baseSuitable":false,"baseIssues":"","label":{"itemId":"","brand":"","size":"","composition":""},"garments":[{"title":"Молочна футболка","category":"tees","color":"молочний","notes":"","duplicateOf":"","coversNeed":"N-1"}]}\' > "$o"\n',
+    { mode: 0o755 },
+  );
+  await store.mutate((db) => {
+    db.jobs.push({ id: 'J-in', kind: 'intake', inputPhotoIds: ['P-1'], lookVersion: 0, snapshot: { lookName: 'a.jpeg', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'queued', origin: 'site', createdAt: at });
+  });
+  await createRunner(store, dir, fake).drain();
+  const db = store.read();
+  const job = db.jobs.find((j) => j.id === 'J-in')!;
+  assert.equal(job.state, 'done');
+  assert.match(job.stateNote ?? '', /закриває покупку «Молочна футболка», образів оновлено: 1/);
+  assert.equal(db.needs[0].status, 'covered');
+  assert.deepEqual(db.looks[0].slots.top, [{ kind: 'item', id: job.createdItemIds![0] }]);
+});
+
+test('a try-on waiting on a pause blocks duplicates only while the pause holds', () => {
+  const db = fixture();
+  db.jobs.push({ id: 'J-wait', lookId: 'L-1', lookVersion: 1, snapshot: { lookName: 'Look', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'needs_data', origin: 'site', createdAt: at });
+  assert.deepEqual(looksNeedingRender(db).map((l) => l.id), [], 'still paused (no base photo): the waiting job stands');
+  db.profile.basePhotoIds = ['P-1'];
+  assert.deepEqual(looksNeedingRender(db).map((l) => l.id), ['L-1'], 'pause lifted: the look needs a fresh try-on');
+  db.results.push({ id: 'R-1', jobId: 'J-wait', lookId: 'L-1', lookVersion: 1, imagePath: 'renders/r.png', tool: '', model: '', prompt: '', sources: [], usedItemPhotos: false, review: 'pending', favorite: false, createdAt: at });
+  assert.deepEqual(looksNeedingRender(db).map((l) => l.id), [], 'a render of the current composition is enough');
 });

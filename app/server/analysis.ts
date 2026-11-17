@@ -39,8 +39,8 @@ export const INTAKE_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'category', 'color', 'notes', 'duplicateOf'],
-        properties: { title: str, category: { type: 'string', enum: [...CATEGORIES] }, color: str, notes: str, duplicateOf: str },
+        required: ['title', 'category', 'color', 'notes', 'duplicateOf', 'coversNeed'],
+        properties: { title: str, category: { type: 'string', enum: [...CATEGORIES] }, color: str, notes: str, duplicateOf: str, coversNeed: str },
       },
     },
   },
@@ -80,6 +80,9 @@ export function ownedItems(db: DB) {
   return db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto);
 }
 
+const openNeedLines = (db: DB) =>
+  db.needs.filter((n) => n.status === 'open').map((n) => `${n.id} | ${CATEGORY_UK[n.category]} | ${n.title} | ${n.description}`).join('\n');
+
 export function intakePrompt(db: DB, job: Job, photoNames: string[]) {
   return [
     'You are the Cap Fashion photo intake worker running unattended. The owner uploads any photo through one button; decide what it is and answer with JSON only (schema enforced).',
@@ -91,11 +94,15 @@ export function intakePrompt(db: DB, job: Job, photoNames: string[]) {
     'garments: for person_full_body, person_partial and garments_only list every distinct garment, pair of shoes and visible accessory of the main person or shown on its own (ignore other people, the phone, mirror and background). Only wearable items: clothing, shoes and fashion accessories (watch, glasses, cap/hat, belt, scarf, bag or backpack worn as part of the outfit). Never list shopping bags, phones, headphones/earbuds, keys or other objects. Skip anything barely visible that cannot be described reliably. For person_face, label and other: an empty array.',
     'For each: title in Ukrainian (short, descriptive: colour + type + visible brand only if the logo is clearly legible), category from the enum, colour in Ukrainian, notes in Ukrainian (visible construction, material look, uncertainty). Never guess sizes, exact models or composition.',
     'duplicateOf: check the existing wardrobe list before treating anything as new. Put a listed id (e.g. W-047) only when distinctive details visible here match that item\'s notes — hardware shape and colour (buckle, zip, buttons), texture, stitching, logo, pattern. The same type and colour alone is NOT enough: the owner may have several black belts, white tees or dark jackets. If the listed item is known only from a worn or mirror photo, or any visible detail differs, use an empty string — a new candidate the owner can merge is better than hiding a new item inside an old one.',
+    'coversNeed: the shopping list below holds things the owner was advised to buy. If this garment is the owner\'s own piece (worn, on a hanger, on the floor or laid flat — not a shop listing or screenshot) and it is what one of those entries asks for — same category, same garment type, same colour family — put that need id (e.g. N-10); a small logo or minor detail difference is fine, a different colour or garment type is not. Otherwise an empty string. One garment covers at most one need.',
     'Return status "error" only if the image cannot be analysed at all; otherwise status "done" and reason "" (photoType other is still "done").',
     job.instructions ? `Owner note: ${job.instructions}` : '',
     '',
     'Existing wardrobe:',
     wardrobeLines(db, ownedItems(db)),
+    '',
+    'Shopping list (open recommendations):',
+    openNeedLines(db) || '(empty)',
   ]
     .filter(Boolean)
     .join('\n');
@@ -174,12 +181,14 @@ interface IntakeReply {
   baseSuitable?: boolean;
   baseIssues?: string;
   label?: { itemId: string; brand: string; size: string; composition: string };
-  garments: { title: string; category: string; color: string; notes: string; duplicateOf: string }[];
+  garments: { title: string; category: string; color: string; notes: string; duplicateOf: string; coversNeed?: string }[];
 }
 
 export interface IntakeOutcome {
   created: string[];
   attachedTo: string[];
+  /** Open recommendations the upload turned out to be (applied by the runner with coverNeed). */
+  covers: { itemId: string; needId: string }[];
   base: 'added' | 'added_nonstandard' | null;
   labelFor: string | null;
   note: string;
@@ -190,13 +199,14 @@ export interface IntakeOutcome {
  * standard check); garments become candidates, or extra evidence on an
  * existing unconfirmed candidate when the model says it is the same item;
  * labels attach to the item and fill only empty brand/size/composition.
+ * A garment that is an open shopping recommendation is reported in `covers`.
  * Confirmed items are never modified by intake.
  */
 export function applyIntake(db: DB, job: Job, reply: IntakeReply): IntakeOutcome {
   const at = now();
   const photoId = (job.inputPhotoIds ?? [])[0];
   const photo = db.photos.find((p) => p.id === photoId);
-  const out: IntakeOutcome = { created: [], attachedTo: [], base: null, labelFor: null, note: '' };
+  const out: IntakeOutcome = { created: [], attachedTo: [], covers: [], base: null, labelFor: null, note: '' };
   const notes: string[] = [];
   const type = reply.photoType ?? 'garments_only';
 
@@ -238,6 +248,10 @@ export function applyIntake(db: DB, job: Job, reply: IntakeReply): IntakeOutcome
     }
   }
 
+  const covers = (g: IntakeReply['garments'][number], item: Item) => {
+    const need = db.needs.find((n) => n.id === String(g.coversNeed ?? '').trim() && n.status === 'open' && n.category === item.category);
+    if (need && !out.covers.some((c) => c.needId === need.id || c.itemId === item.id)) out.covers.push({ itemId: item.id, needId: need.id });
+  };
   for (const g of reply.garments ?? []) {
     const category = (CATEGORIES as readonly string[]).includes(g.category) ? (g.category as Category) : 'accessories';
     const title = String(g.title || '').trim().slice(0, 120);
@@ -255,6 +269,7 @@ export function applyIntake(db: DB, job: Job, reply: IntakeReply): IntakeOutcome
         dup.history.push({ at, action: 'photo_added', note: `Та сама річ на новому фото (${job.id})` });
       }
       out.attachedTo.push(dup.id);
+      covers(g, dup);
       continue;
     }
     const item: Item = {
@@ -273,6 +288,7 @@ export function applyIntake(db: DB, job: Job, reply: IntakeReply): IntakeOutcome
     };
     db.items.push(item);
     out.created.push(item.id);
+    covers(g, item);
   }
   if (out.created.length) notes.push(`нових речей: ${out.created.length}`);
   if (out.attachedTo.length) {

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, Plus, ShoppingBag, Store, Trash2 } from 'lucide-react';
+import { Check, ExternalLink, Plus, ShoppingBag, Store, Trash2, Undo2 } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, distinctLooks, fmtDay, looksUsing } from '../lib.ts';
+import { CATEGORY_LABEL, distinctLooks, fmtDay, itemArt, looksUsing } from '../lib.ts';
 
 const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
 const AVAIL_TOWER = { unknown: 'Tower: не перевірено', confirmed: 'Tower: підтверджено', not_found: 'Tower: не знайдено' } as const;
@@ -190,13 +190,58 @@ function ProductCard({ p, need }: { p: Product; need: Need }) {
   );
 }
 
+type CoverReply = { looks: number; queued: number; waiting: number };
+
+const coverToast = (verb: string, r: CoverReply) =>
+  [verb, r.looks ? `образів оновлено: ${r.looks}` : '', r.queued ? `нових примірок: ${r.queued}` : '', r.waiting ? `примірок чекає: ${r.waiting}` : ''].filter(Boolean).join(' · ');
+
+/** "Вже маю": pick the owner's item that is what the recommendation asked for. */
+function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
+  const db = useDb();
+  const { act, toast } = useApp();
+  const items = db.items.filter((i) => i.category === need.category && i.status !== 'inactive' && !i.mergedInto);
+  const cover = async (itemId: string) => {
+    const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/cover`, { itemId }));
+    if (!r) return;
+    toast(coverToast('Прибрано з покупок', r));
+    onClose();
+  };
+  return (
+    <Modal title={`Вже маю: ${need.title}`} onClose={onClose} wide>
+      {items.length === 0 ? (
+        <p className="muted">У гардеробі немає речей цієї категорії. Додай фото — збіг знайдеться сам.</p>
+      ) : (
+        <div className="own-picks">
+          {items.map((i) => {
+            const { art, photo } = itemArt(db, i.id);
+            return (
+              <button key={i.id} className="own-pick" onClick={() => void cover(i.id)}>
+                <span className="img"><Img path={art ?? photo} w={320} alt={i.title} /></span>
+                <span>{i.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <p className="small faint" style={{ marginTop: 12 }}>Рекомендація зникне з покупок, у її образах стане ця річ, і вони отримають нові примірки.</p>
+    </Modal>
+  );
+}
+
 function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
   const db = useDb();
-  const { act } = useApp();
+  const { act, toast } = useApp();
   const [adding, setAdding] = useState(false);
-  const looks = distinctLooks(db, looksUsing(db, 'need', need.id));
+  const [owning, setOwning] = useState(false);
   const products = db.products.filter((p) => p.needId === need.id);
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
+  const bought = products.some((p) => p.status === 'purchased');
+  const replacedIn = need.coveredLookIds?.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is NonNullable<typeof l> => Boolean(l)) ?? [];
+  const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : distinctLooks(db, looksUsing(db, 'need', need.id));
+  const uncover = async () => {
+    const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/uncover`));
+    if (r) toast(coverToast('Повернуто в покупки', r));
+  };
   return (
     <div id={`need-${need.id}`} className="card need-card" style={focus ? { outline: '2px solid var(--ink)' } : undefined}>
       <div className="art">
@@ -215,14 +260,24 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
             <h3>{need.title}</h3>
             <Badge tone={need.priority === 'core' ? 'dark' : ''}>{need.priority === 'core' ? 'основне' : 'опційно'}</Badge>
             <Badge>{CATEGORY_LABEL[need.category]}</Badge>
-            {need.status === 'covered' ? <Badge tone="ok">закрито покупкою</Badge> : products.length === 0 ? <Badge tone="warn">товар ще не знайдено</Badge> : null}
+            {need.status === 'covered' ? <Badge tone="ok">{bought ? 'закрито покупкою' : 'вже є своя річ'}</Badge> : products.length === 0 ? <Badge tone="warn">товар ще не знайдено</Badge> : null}
             {need.origin === 'agent' && <Badge tone="info">пропозиція агента</Badge>}
           </div>
           <span className="muted small">{need.description}</span>
         </div>
         {need.status === 'open' && (
-          <button className="btn sm" onClick={() => setAdding(true)}>
-            <Plus size={13} /> Товар
+          <>
+            <button className="btn sm" onClick={() => setOwning(true)}>
+              <Check size={13} /> Вже маю
+            </button>
+            <button className="btn sm" onClick={() => setAdding(true)}>
+              <Plus size={13} /> Товар
+            </button>
+          </>
+        )}
+        {need.status === 'covered' && covered && !bought && (
+          <button className="btn sm" onClick={() => void uncover()}>
+            <Undo2 size={13} /> Повернути в покупки
           </button>
         )}
         <ConfirmButton className="icon-btn" title="Видалити потребу" message={<>Видалити «{need.title}»?{looks.length ? ` Вона зникне з ${looks.length} образів.` : ''}</>} onConfirm={() => act(() => api('DELETE', `/api/needs/${need.id}`), 'Потребу видалено')}>
@@ -234,7 +289,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
         <dd>{need.why || '—'}</dd>
         <dt>Що перевірити</dt>
         <dd>{need.fitCheck || '—'}</dd>
-        <dt>Доповнить образи</dt>
+        <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>
         <dd>
           <div className="chips">
             {looks.length === 0 && <span className="muted small">не використовується</span>}
@@ -245,7 +300,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
         </dd>
         {covered && (
           <>
-            <dt>Куплено</dt>
+            <dt>{bought ? 'Куплено' : 'Своя річ'}</dt>
             <dd><a href={`#/wardrobe/${covered.id}`} style={{ textDecoration: 'underline' }}>{covered.title}</a></dd>
           </>
         )}
@@ -264,6 +319,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
       {products.length > 1 && <span className="small faint">Альтернативи — це варіанти однієї покупки, не кілька обовʼязкових.</span>}
       </div>
       {adding && <ProductEditor need={need} onClose={() => setAdding(false)} />}
+      {owning && <CoverModal need={need} onClose={() => setOwning(false)} />}
     </div>
   );
 }
@@ -271,9 +327,12 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
 export function ShoppingPage({ focus }: { focus?: string }) {
   const db = useDb();
   const [show, setShow] = useState<'open' | 'all'>('open');
+  const focusCovered = Boolean(focus && db.needs.find((n) => n.id === focus)?.status === 'covered');
   useEffect(() => {
+    // A link to a covered recommendation (from the wardrobe) must still find it.
+    if (focusCovered) setShow('all');
     if (focus) window.setTimeout(() => document.getElementById(`need-${focus}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-  }, [focus]);
+  }, [focus, focusCovered]);
   const needs = db.needs
     .filter((n) => show === 'all' || n.status === 'open')
     .sort((a, b) => Number(b.priority === 'core') - Number(a.priority === 'core') || looksUsing(db, 'need', b.id).length - looksUsing(db, 'need', a.id).length);

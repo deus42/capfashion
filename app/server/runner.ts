@@ -7,7 +7,7 @@ import type { Store } from './store.ts';
 import { newId, now } from './store.ts';
 import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
-import { packshotJob, queueMissingRenders } from './routes.ts';
+import { coverNeed, packshotJob, queueMissingRenders } from './routes.ts';
 import { verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -275,8 +275,18 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         j.createdItemIds = outcome.created;
         j.attachedItemIds = outcome.attachedTo;
         for (const id of outcome.created) packshotJob(db, { itemId: id });
+        // An upload that is an open recommendation leaves the shopping list and replaces the stand-in in looks and renders.
+        const covered: string[] = [];
+        for (const c of outcome.covers) {
+          try {
+            const res = coverNeed(db, c.needId, c.itemId);
+            covered.push(`закриває покупку «${res.need.title}»${res.looks.length ? `, образів оновлено: ${res.looks.length}` : ''}`);
+          } catch {
+            /* a stale or mismatched cover only leaves the recommendation open */
+          }
+        }
         j.state = 'done';
-        j.stateNote = outcome.note;
+        j.stateNote = [outcome.note, ...covered].join(' · ');
         return;
       }
       const capsuleId = applyAnalyze(db, j, reply as never);

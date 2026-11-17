@@ -192,6 +192,11 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
             )}
           </div>
           {looks.length === 0 && <span className="muted small">Ще не використовується в образах.</span>}
+          {db.needs.filter((n) => n.coveredByItem === item.id).map((n) => (
+            <a key={n.id} className="row small" href={`#/shopping?need=${n.id}`} style={{ marginBottom: 10 }}>
+              <Badge tone="ok">закриває покупку</Badge> {n.title}
+            </a>
+          ))}
           <div className="stack" style={{ gap: 14 }}>
             {groupByCapsule(db, looks).map(({ capsule, looks: ls }) => (
               <div key={capsule?.id ?? 'own'}>

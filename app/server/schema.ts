@@ -132,6 +132,8 @@ export interface Need {
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   coveredByItem?: string;
+  /** Looks whose stand-in was replaced by the owner's own item (restored if the cover is undone). */
+  coveredLookIds?: string[];
   /** Generated concept image of the desired type. */
   conceptPhotoId?: string;
   createdAt: string;
@@ -393,6 +395,8 @@ export function validateDb(db: unknown): string | null {
   for (const n of d.needs) {
     if (!CATEGORIES.includes(n.category)) return `Потреба ${n.id}: невідома категорія`;
     if (n.conceptPhotoId && !has('photos', n.conceptPhotoId)) return `Потреба ${n.id}: немає концепт-фото`;
+    if (n.coveredByItem && !has('items', n.coveredByItem)) return `Потреба ${n.id}: немає речі, що її закриває`;
+    for (const id of n.coveredLookIds ?? []) if (!has('looks', id)) return `Потреба ${n.id}: немає образу ${id}`;
   }
   for (const p of d.products) {
     if (!has('needs', p.needId)) return `Товар ${p.id}: немає потреби ${p.needId}`;

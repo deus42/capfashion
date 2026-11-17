@@ -5,6 +5,7 @@ import { api, getLog, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, Modal, PageHead } from '../components/ui.tsx';
 import { JOB_LABEL, JOB_TONE, REVIEW_LABEL, REVIEW_TONE, SLOT_LABEL, fmtDate } from '../lib.ts';
+import { looksNeedingRender, rendersPaused } from '../render-need.ts';
 
 function LogModal({ job, onClose }: { job: Job; onClose: () => void }) {
   const [text, setText] = useState<string | null>(null);
@@ -20,7 +21,7 @@ function LogModal({ job, onClose }: { job: Job; onClose: () => void }) {
 
 export function QueuePage() {
   const db = useDb();
-  const { act, state } = useApp();
+  const { act, state, toast } = useApp();
   const [log, setLog] = useState<Job | null>(null);
   const [kind, setKind] = useState<'all' | 'tryon' | 'packshot'>('all');
   const [history, setHistory] = useState(false);
@@ -33,12 +34,19 @@ export function QueuePage() {
     .sort((a, b) => order[a.state] - order[b.state] || b.createdAt.localeCompare(a.createdAt));
   const queued = jobs.filter((j) => j.state === 'queued').length;
   const runner = state!.runner;
+  // Looks whose composition changed (a swapped or covered piece) since their last try-on.
+  const stale = rendersPaused(db) ? 0 : looksNeedingRender(db).length;
 
   return (
     <div className="page">
       <PageHead
         title="Черга"
         actions={<>
+          {stale > 0 && (
+            <button className="btn" onClick={() => void act(() => api<{ queued: number }>('POST', '/api/renders/missing')).then((r) => r && toast(`Примірок у черзі: ${r.queued}`))}>
+              <Sparkles size={15} /> Оновити примірки ({stale})
+            </button>
+          )}
           <button className="btn primary" disabled={runner.running || queued === 0} onClick={() => void act(() => api('POST', '/api/runner/run'), 'Обробку запущено')}>
             {runner.running ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
             {runner.running ? 'Обробляється…' : `Запустити чергу${queued ? ` (${queued})` : ''}`}

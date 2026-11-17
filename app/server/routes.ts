@@ -5,7 +5,7 @@ import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
 import { prewarm, saveUpload } from './media.ts';
 import { pickTheme } from './analysis.ts';
-import { hiddenLookIds } from '../src/rating.ts';
+import { looksNeedingRender } from '../src/render-need.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -114,8 +114,10 @@ export function packshotJob(db: DB, target: { itemId?: string; needId?: string }
   return job;
 }
 
-function replaceRefs(db: DB, match: (r: SlotRef) => boolean, replacement: SlotRef, note: string) {
+function replaceRefs(db: DB, match: (r: SlotRef) => boolean, replacement: SlotRef, note: string, onlyLooks?: Set<string>) {
+  const changedLooks: string[] = [];
   for (const look of db.looks) {
+    if (onlyLooks && !onlyLooks.has(look.id)) continue;
     const next = cleanSlots(look.slots);
     let changed = false;
     for (const k of SLOT_KEYS) {
@@ -130,8 +132,67 @@ function replaceRefs(db: DB, match: (r: SlotRef) => boolean, replacement: SlotRe
     if (changed && setLookSlots(look, next, note)) {
       look.rev += 1;
       look.updatedAt = now();
+      changedLooks.push(look.id);
     }
   }
+  return changedLooks;
+}
+
+/**
+ * Try-ons for looks whose current composition has none and none on the way
+ * (hidden looks excepted). While generation is paused a job waits with the
+ * reason instead of running; once the pause is lifted the look counts as
+ * missing again, so "Оновити примірки" picks it up.
+ */
+function renderLooks(db: DB, lookIds?: string[]) {
+  if (!db.profile.basePhotoIds.length) return [] as Job[];
+  return looksNeedingRender(db)
+    .filter((l) => !lookIds || lookIds.includes(l.id))
+    .map((l) => createJob(db, l, db.profile.basePhotoIds, ''));
+}
+
+/** A changed composition gets a fresh try-on; returns waiting jobs too. */
+export const queueRerenders = (db: DB, lookIds: string[]) => renderLooks(db, lookIds);
+
+/**
+ * The owner already has what a recommendation asked for: the need leaves the
+ * shopping list, its stand-ins in looks become the owner's item, and those
+ * looks get fresh try-ons. Undone with uncoverNeed.
+ */
+export function coverNeed(db: DB, needId: string, itemId: string) {
+  const need = findOr404(db.needs, needId, 'Потреба');
+  const item = findOr404(db.items, itemId, 'Річ');
+  if (need.status !== 'open') throw new HttpError(409, `«${need.title}» уже закрито`);
+  if (item.category !== need.category) throw new HttpError(400, 'Річ іншої категорії, ніж рекомендація');
+  if (item.status === 'inactive' || item.mergedInto) throw new HttpError(400, 'Неактуальна річ не закриває покупку');
+  const options = new Set(db.products.filter((p) => p.needId === need.id && p.status !== 'purchased').map((p) => p.id));
+  const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)), { kind: 'item', id: item.id }, `Своя річ замість «${need.title}»`);
+  need.status = 'covered';
+  need.coveredByItem = item.id;
+  need.coveredLookIds = looks;
+  bump(need, undefined);
+  history(item, 'covers_need', `${need.id} · ${need.title}`);
+  bump(item, undefined);
+  return { need, looks, renders: queueRerenders(db, looks) };
+}
+
+/** Puts a recommendation back on the shopping list and its stand-in back into the looks it was replaced in. */
+export function uncoverNeed(db: DB, needId: string) {
+  const need = findOr404(db.needs, needId, 'Потреба');
+  if (need.status !== 'covered') throw new HttpError(409, `«${need.title}» і так у покупках`);
+  if (db.products.some((p) => p.needId === need.id && p.status === 'purchased')) throw new HttpError(409, 'Закрито покупкою — це запис покупки, не збіг із фото');
+  const itemId = need.coveredByItem;
+  const looks = itemId ? replaceRefs(db, (r) => r.kind === 'item' && r.id === itemId, { kind: 'need', id: need.id }, `Повернуто в покупки: «${need.title}»`, new Set(need.coveredLookIds ?? [])) : [];
+  need.status = 'open';
+  delete need.coveredByItem;
+  delete need.coveredLookIds;
+  bump(need, undefined);
+  const item = itemId ? db.items.find((i) => i.id === itemId) : undefined;
+  if (item) {
+    history(item, 'uncovers_need', `${need.id} · ${need.title}`);
+    bump(item, undefined);
+  }
+  return { need, looks, renders: queueRerenders(db, looks) };
 }
 
 function history(item: Item, action: string, note?: string) {
@@ -198,6 +259,7 @@ export function deleteLook(db: DB, id: string) {
   db.results = db.results.filter((r) => r.lookId !== id);
   db.comparisons = db.comparisons.filter((c) => db.results.some((r) => r.id === c.resultA) && db.results.some((r) => r.id === c.resultB));
   for (const c of db.capsules) c.lookIds = c.lookIds.filter((l) => l !== id);
+  for (const n of db.needs) if (n.coveredLookIds?.includes(id)) n.coveredLookIds = n.coveredLookIds.filter((l) => l !== id);
   db.looks = db.looks.filter((l) => l.id !== id);
 }
 
@@ -224,6 +286,8 @@ export function deleteItem(db: DB, id: string) {
   const item = findOr404(db.items, id, 'Річ');
   if (db.products.some((p) => p.purchasedItemId === id)) throw new HttpError(409, 'Річ створена покупкою — спершу видали товар у «Покупках»');
   busyJob(db, (j) => j.itemId === id);
+  // A deleted item no longer covers a recommendation: its looks get the stand-in back.
+  for (const n of db.needs) if (n.coveredByItem === id && n.status === 'covered') uncoverNeed(db, n.id);
   stripRefs(db, 'item', id);
   dropJobs(db, (j) => j.kind === 'packshot' && j.itemId === id);
   if (item.packshotId) db.photos = db.photos.filter((p) => p.id !== item.packshotId);
@@ -305,6 +369,7 @@ on('POST', '/api/items/merge', (ctx, _p, b) =>
       history(s, 'merged_into', merged.id);
     }
     replaceRefs(db, (r) => r.kind === 'item' && ids.includes(r.id), { kind: 'item', id: merged.id }, `Обʼєднання речей → ${merged.id}`);
+    for (const n of db.needs) if (n.coveredByItem && ids.includes(n.coveredByItem)) n.coveredByItem = merged.id;
     return merged;
   }),
 );
@@ -456,22 +521,8 @@ on('POST', '/api/analyze', async (ctx, _p, b) => {
   return job;
 });
 
-/** Queues a try-on for every look that has no render and no active job, so every look shows the owner. */
-export function queueMissingRenders(db: DB, lookIds?: string[]) {
-  if (!db.profile.basePhotoIds.length) return [] as Job[];
-  const busy = new Set(db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && (j.state === 'queued' || j.state === 'running')).map((j) => j.lookId));
-  const rendered = new Set(db.results.map((r) => r.lookId));
-  const out: Job[] = [];
-  const hidden = hiddenLookIds(db);
-  for (const look of db.looks) {
-    if (lookIds && !lookIds.includes(look.id)) continue;
-    if (rendered.has(look.id) || busy.has(look.id) || hidden.has(look.id)) continue;
-    if (!SLOT_KEYS.some((k) => look.slots[k].length)) continue;
-    const job = createJob(db, look, db.profile.basePhotoIds, '');
-    if (job.state === 'queued') out.push(job);
-  }
-  return out;
-}
+/** Queues a try-on for every look whose current composition has no render, so every look shows the owner in what it is now. */
+export const queueMissingRenders = (db: DB, lookIds?: string[]) => renderLooks(db, lookIds).filter((j) => j.state === 'queued');
 
 on('POST', '/api/renders/missing', async (ctx) => {
   const jobs = await ctx.store.mutate((db) => queueMissingRenders(db));
@@ -569,6 +620,19 @@ on('PATCH', '/api/needs/:id', (ctx, [id], b) =>
   }),
 );
 
+// "Вже маю": the owner's own item is what the recommendation asked for.
+on('POST', '/api/needs/:id/cover', async (ctx, [id], b) => {
+  const out = await ctx.store.mutate((db) => coverNeed(db, id, str(b.itemId) ?? ''));
+  if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
+  return { looks: out.looks.length, queued: out.renders.filter((j) => j.state === 'queued').length, waiting: out.renders.filter((j) => j.state === 'needs_data').length };
+});
+
+on('POST', '/api/needs/:id/uncover', async (ctx, [id]) => {
+  const out = await ctx.store.mutate((db) => uncoverNeed(db, id));
+  if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
+  return { looks: out.looks.length, queued: out.renders.filter((j) => j.state === 'queued').length, waiting: out.renders.filter((j) => j.state === 'needs_data').length };
+});
+
 const PRODUCT_FIELDS = ['store', 'brand', 'model', 'sku', 'url', 'composition', 'fit', 'currency', 'recommendedSize', 'sizeBasis', 'checkedAt', 'sources'] as const;
 
 function productNumbers(target: Record<string, unknown>, b: Body) {
@@ -602,8 +666,8 @@ on('PATCH', '/api/products/:id', (ctx, [id], b) =>
   }),
 );
 
-on('POST', '/api/products/:id/purchase', (ctx, [id], b) =>
-  ctx.store.mutate((db) => {
+on('POST', '/api/products/:id/purchase', async (ctx, [id], b) => {
+  const out = await ctx.store.mutate((db) => {
     const p = findOr404(db.products, id, 'Товар');
     if (p.status === 'purchased') throw new HttpError(409, 'Товар уже позначено купленим');
     const need = findOr404(db.needs, p.needId, 'Потреба');
@@ -636,10 +700,13 @@ on('POST', '/api/products/:id/purchase', (ctx, [id], b) =>
     need.status = 'covered';
     need.coveredByItem = item.id;
     bump(need, undefined);
-    replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && r.id === p.id), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
-    return item;
-  }),
-);
+    const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && r.id === p.id), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
+    // The bought piece replaces the stand-in in every render, too.
+    return { item, renders: queueRerenders(db, looks) };
+  });
+  if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
+  return out.item;
+});
 
 // ── Profile & settings ─────────────────────────────────────────────────────
 on('PATCH', '/api/profile', (ctx, _p, b) =>

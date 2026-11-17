@@ -132,11 +132,20 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
   const items = ownedItems(db);
   const existing = db.looks.filter((l) => lookItems(l).size >= 3).slice(-40);
   const names = db.capsules.filter((c) => c.kind === 'selection').map((c) => c.name);
+  const required = (job.requiredItemIds ?? []).map((id) => db.items.find((i) => i.id === id)).filter((i): i is Item => Boolean(i));
+  const completeBlock = required.length
+    ? [
+        `COMPLETE-THE-LOOK MODE: the owner picked ${required.map((i) => `${i.id} (${i.title})`).join(', ')}. Every look MUST contain all of these exact ids in the appropriate slots.`,
+        'Propose 3 to 4 clearly different ways to complete them (different occasions or moods), adding other wardrobe items for the missing slots. In "why", say in one Ukrainian sentence what the added pieces bring (colour, balance, formality).',
+        'Name the selection after the picked pieces, e.g. "Доповнення: оливковий overshirt".',
+      ].join('\n')
+    : '';
   return [
     'You are the Cap Fashion stylist running unattended. Build outfits ONLY from the owner\'s existing wardrobe listed below and answer with JSON only (schema enforced).',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
     `Profile notes: ${Object.values(db.profile.preferences).filter(Boolean).join(' ')}`,
     job.instructions ? `Request from the owner: ${job.instructions}` : 'Request: a balanced set of everyday outfits for the current season.',
+    completeBlock,
     '',
     'Rules: use only ids from the list (exact strings). Each look needs a bottom and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
     'Variety is required: every look must differ from every other look AND from every existing outfit below in at least two of top / outer layer / bottom / shoes. Spread the wardrobe: use pieces that existing outfits rarely use, vary colours and silhouettes. Give the selection a new name, different from the existing names.',
@@ -282,6 +291,17 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
   const at = now();
   const capsuleId = newId('C');
   const looks: Look[] = [];
+  const required = job.requiredItemIds ?? [];
+  // In complete-the-look mode the picked items are shared on purpose: compare only the added pieces.
+  const rest = (s: Set<string>) => new Set([...s].filter((x) => !required.includes(x)));
+  const similar = (a: Set<string>, b: Set<string>) => {
+    if (!required.length) return nearDuplicate(a, b);
+    const ra = rest(a);
+    const rb = rest(b);
+    let shared = 0;
+    for (const x of ra) if (rb.has(x)) shared += 1;
+    return shared >= Math.max(2, Math.min(ra.size, rb.size) - 1);
+  };
   const taken = db.looks.map(lookItems).filter((s) => s.size >= 3);
   for (const l of reply.looks ?? []) {
     const slots = emptySlots();
@@ -291,7 +311,8 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
     }
     if (!slots.bottom.length || !slots.shoes.length) continue;
     const set = new Set(SLOT_KEYS.flatMap((k) => slots[k].map((r) => r.id)));
-    if (taken.some((t) => nearDuplicate(set, t))) continue;
+    if (required.some((id) => !set.has(id))) continue;
+    if (taken.some((t) => similar(set, t))) continue;
     taken.push(set);
     looks.push({
       id: newId('L'),

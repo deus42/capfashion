@@ -218,7 +218,10 @@ export function deleteItem(db: DB, id: string) {
   stripRefs(db, 'item', id);
   dropJobs(db, (j) => j.kind === 'packshot' && j.itemId === id);
   if (item.packshotId) db.photos = db.photos.filter((p) => p.id !== item.packshotId);
-  for (const j of db.jobs) if (j.createdItemIds?.includes(id)) j.createdItemIds = j.createdItemIds.filter((x) => x !== id);
+  for (const j of db.jobs) {
+    if (j.createdItemIds?.includes(id)) j.createdItemIds = j.createdItemIds.filter((x) => x !== id);
+    if (j.requiredItemIds?.includes(id)) j.requiredItemIds = j.requiredItemIds.filter((x) => x !== id);
+  }
   for (const n of db.needs) if (n.coveredByItem === id) {
     delete n.coveredByItem;
     n.status = 'open';
@@ -398,8 +401,11 @@ on('POST', '/api/analyze', async (ctx, _p, b) => {
   const job = await ctx.store.mutate((db) => {
     if (db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Аналізатор уже працює — зачекай на поточну підбірку');
     const asked = str(b.prompt, 600) ?? '';
-    const instructions = asked || `Тема: ${pickTheme(db)}`;
-    const j: Job = { id: newId('J'), kind: 'analyze', lookVersion: 0, snapshot: { lookName: 'Підбірка з моїх речей', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions, state: 'queued', origin: 'site', createdAt: now() };
+    const required = (Array.isArray(b.itemIds) ? (b.itemIds as string[]) : []).slice(0, 4);
+    const picked = required.map((id) => findOr404(db.items, id, 'Річ'));
+    if (picked.some((i) => i.status === 'inactive')) throw new HttpError(400, 'Неактуальну річ не можна брати в образ');
+    const instructions = asked || (picked.length ? `Доповнити: ${picked.map((i) => i.title).join(', ')}` : `Тема: ${pickTheme(db)}`);
+    const j: Job = { id: newId('J'), kind: 'analyze', requiredItemIds: picked.length ? required : undefined, lookVersion: 0, snapshot: { lookName: picked.length ? 'Доповнити образ' : 'Підбірка з моїх речей', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions, state: 'queued', origin: 'site', createdAt: now() };
     db.jobs.push(j);
     return j;
   });

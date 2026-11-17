@@ -409,8 +409,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       for (;;) {
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
-        // Interactive work (intake, analyzer, try-on) goes before batch packshots.
-        const batch = (k?: string) => (k === 'packshot' ? 1 : 0);
+        // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
+        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'packshot' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
           .sort((a, b) => batch(a.kind) - batch(b.kind) || a.createdAt.localeCompare(b.createdAt));

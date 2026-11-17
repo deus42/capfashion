@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Split, Trash2, Wand2, X } from 'lucide-react';
+import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, PersonStanding, Plus, RotateCcw, Search, Sparkles, Split, Trash2, Wand2, X } from 'lucide-react';
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Drawer, Empty, Img, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, fmtDate, looksUsing } from '../lib.ts';
+import { CATEGORY_LABEL, coverForLook, fmtDate, looksUsing } from '../lib.ts';
+import type { Capsule, DB, Look } from '../api.ts';
+
+function groupByCapsule(db: DB, looks: Look[]) {
+  const groups: { capsule?: Capsule; looks: Look[] }[] = [];
+  for (const l of looks) {
+    const capsule = db.capsules.find((c) => c.id === l.capsuleId);
+    const g = groups.find((x) => x.capsule?.id === capsule?.id);
+    if (g) g.looks.push(l);
+    else groups.push({ capsule, looks: [l] });
+  }
+  return groups;
+}
 import { TermLinks } from './Glossary.tsx';
 import { useIntake } from './Home.tsx';
 
@@ -164,10 +176,40 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
         </div>
 
         <div>
-          <div className="h2" style={{ fontSize: 15, marginBottom: 10 }}>Повʼязані образи <span className="count">{looks.length}</span></div>
-          <div className="chips">
-            {looks.map((l) => <a key={l.id} className="chip" href={`#/studio?look=${l.id}`}>{l.name}</a>)}
-            {looks.length === 0 && <span className="muted small">Не використовується в образах.</span>}
+          <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+            <div className="h2" style={{ fontSize: 15 }}>У підбірках і капсулах <span className="count">{looks.length}</span></div>
+            {item.status !== 'inactive' && (
+              <button
+                className="btn sm primary"
+                onClick={async () => {
+                  const ok = await act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи з цією річчю — зʼявляться в «Підбірках»');
+                  if (ok) onClose();
+                }}
+              >
+                <Sparkles size={13} /> Скласти образ з нею
+              </button>
+            )}
+          </div>
+          {looks.length === 0 && <span className="muted small">Ще не використовується в образах.</span>}
+          <div className="stack" style={{ gap: 14 }}>
+            {groupByCapsule(db, looks).map(({ capsule, looks: ls }) => (
+              <div key={capsule?.id ?? 'own'}>
+                <a className="row small" href={capsule ? `#/capsules/${capsule.id}` : '#/studio'} style={{ marginBottom: 8, fontWeight: 560 }}>
+                  {capsule?.name ?? 'Мої комбінації'} {capsule?.kind === 'selection' && <Badge tone="ok">з моїх речей</Badge>}
+                </a>
+                <div className="appears">
+                  {ls.map((l) => {
+                    const cover = coverForLook(db, l);
+                    return (
+                      <a key={l.id} className="appear" href={`#/studio?look=${l.id}`} title={l.name}>
+                        <span className="ai">{cover ? <img src={thumb(cover.imagePath, 160)} alt="" /> : <PersonStanding size={18} />}</span>
+                        <span className="an">{l.name}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
           {item.status === 'inactive' && looks.length > 0 && <div className="note warn" style={{ marginTop: 8 }}>Річ неактуальна, але є в образах — заміни її в Примірці.</div>}
         </div>
@@ -231,7 +273,20 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const busy = usePackshotState();
   const [view, setView] = useState<string>('all');
   const [q, setQ] = useState('');
-  const [mergeSel, setMergeSel] = useState<string[] | null>(null);
+  const [mode, setMode] = useState<'merge' | 'compose' | null>(null);
+  const [sel, setSel] = useState<string[]>([]);
+  const mergeSel = mode ? sel : null;
+  const startMode = (m: 'merge' | 'compose') => {
+    setSel([]);
+    setMode(m);
+  };
+  const stopMode = () => {
+    setSel([]);
+    setMode(null);
+  };
+  const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : mode === 'compose' && s.length >= 4 ? s : [...s, id]));
+  const useCount = new Map<string, number>();
+  for (const l of db.looks) for (const refs of Object.values(l.slots)) for (const r of refs) if (r.kind === 'item') useCount.set(r.id, (useCount.get(r.id) ?? 0) + 1);
   const [creating, setCreating] = useState(false);
   const intake = useIntake();
   const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
@@ -254,32 +309,16 @@ export function WardrobePage({ openId }: { openId?: string }) {
       <PageHead
         title={title}
         actions={
-          mergeSel ? (
-            <>
-              <button className="btn" onClick={() => setMergeSel(null)}>Скасувати</button>
-              <button
-                className="btn primary"
-                disabled={mergeSel.length < 2}
-                onClick={async () => {
-                  const ok = await act(() => api<Item>('POST', '/api/items/merge', { ids: mergeSel }), 'Дублікати обʼєднано, джерела збережено');
-                  if (ok) {
-                    setMergeSel(null);
-                    go(`/wardrobe/${ok.id}`);
-                  }
-                }}
-              >
-                <Merge size={15} /> Обʼєднати {mergeSel.length}
-              </button>
-            </>
-          ) : (
+          mode ? null : (
             <>
               {missing > 0 && (
                 <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), `Packshot для ${missing} речей у черзі`)} title="Згенерувати чисті фото">
                   <Wand2 size={15} /> {missing}
                 </button>
               )}
-              <button className="icon-btn" onClick={() => setMergeSel([])} title="Обʼєднати дублікати"><Merge size={15} /></button>
+              <button className="icon-btn" onClick={() => startMode('merge')} title="Обʼєднати дублікати"><Merge size={15} /></button>
               <button className="icon-btn" onClick={() => setCreating(true)} title="Додати вручну"><Plus size={16} /></button>
+              <button className="btn primary" onClick={() => startMode('compose')}><Sparkles size={15} /> Доповнити образ</button>
 
             </>
           )
@@ -344,13 +383,14 @@ export function WardrobePage({ openId }: { openId?: string }) {
                   <button
                     key={i.id}
                     className={`wtile${selected ? ' selected' : ''}`}
-                    onClick={() => (mergeSel ? setMergeSel((s) => (s!.includes(i.id) ? s!.filter((x) => x !== i.id) : [...s!, i.id])) : go(`/wardrobe/${i.id}`))}
+                    onClick={() => (mode ? toggle(i.id) : go(`/wardrobe/${i.id}`))}
                   >
                     <div className="img">
                       {packshot ? <img src={thumb(packshot.path, 480)} alt={i.title} loading="lazy" /> : photo ? <img className="photo" src={thumb(photo.path, 480)} alt={i.title} loading="lazy" /> : null}
                       {i.status !== 'needs_confirmation' && <span className="tl"><Badge tone={`${STATUS_TONE[i.status]} glass`}>{STATUS_SHORT[i.status]}</Badge></span>}
                       {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
+                      {!mergeSel && (useCount.get(i.id) ?? 0) > 0 && <span className="uses" title="У скількох образах">{useCount.get(i.id)} обр.</span>}
                       {st && <span className="gen"><Loader2 size={12} className={st === 'running' ? 'spin' : ''} /> {st === 'running' ? 'Packshot генерується' : 'Packshot у черзі'}</span>}
                     </div>
                     <span className="nm">{i.title}</span>
@@ -361,6 +401,38 @@ export function WardrobePage({ openId }: { openId?: string }) {
           )}
         </div>
       </div>
+      {mode && (
+        <div className="sel-bar">
+              <span className="small muted">{mode === 'compose' ? `Вибери 1–4 речі · ${sel.length}` : `Вибери дублікати · ${sel.length}`}</span>
+              <button className="btn" onClick={stopMode}>Скасувати</button>
+              {mode === 'merge' ? (
+                <button
+                  className="btn primary"
+                  disabled={sel.length < 2}
+                  onClick={async () => {
+                    const ok = await act(() => api<Item>('POST', '/api/items/merge', { ids: sel }), 'Дублікати обʼєднано, джерела збережено');
+                    if (ok) {
+                      stopMode();
+                      go(`/wardrobe/${ok.id}`);
+                    }
+                  }}
+                >
+                  <Merge size={15} /> Обʼєднати {sel.length}
+                </button>
+              ) : (
+                <button
+                  className="btn primary"
+                  disabled={sel.length < 1}
+                  onClick={async () => {
+                    const ok = await act(() => api('POST', '/api/analyze', { itemIds: sel }), 'Складаю образи з вибраних речей — зʼявляться в «Підбірках»');
+                    if (ok) stopMode();
+                  }}
+                >
+                  <Sparkles size={15} /> Доповнити {sel.length || ''}
+                </button>
+              )}
+                    </div>
+      )}
       {open && <ItemDrawer item={open} onClose={() => go('/wardrobe')} />}
       {creating && <NewItem onClose={() => setCreating(false)} />}
     </div>

@@ -386,3 +386,32 @@ test('analyzer drops near-copies of existing looks and keeps names unique', asyn
     assert.deepEqual(cap.lookIds.map((l) => db.looks.find((x) => x.id === l)!.name), ['new']);
   });
 });
+
+test('complete-the-look: every look keeps the picked items and adds different pieces', async () => {
+  const { store, call } = setup();
+  await store.mutate((db) => {
+    db.items.push(
+      { id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+      { id: 'W-B', rev: 1, category: 'shoes', title: 'Boots', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+      { id: 'W-T', rev: 1, category: 'tees', title: 'Tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+    );
+  });
+  const job = await call('POST', '/api/analyze', { itemIds: ['W-1'] });
+  assert.deepEqual(job.requiredItemIds, ['W-1']);
+  assert.match(job.instructions, /Доповнити: Navy chinos/);
+  await store.mutate((db) => {
+    const j = db.jobs.find((x) => x.id === job.id)!;
+    const id = applyAnalyze(db, j, {
+      status: 'done', reason: '', name: 'Доповнення: chinos', description: '',
+      looks: [
+        { name: 'a', occasion: '', season: 'all', top: ['W-T'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
+        { name: 'missing pick', occasion: '', season: 'all', top: ['W-T'], layer: [], bottom: ['W-2'], shoes: ['W-B'], accessories: [], why: '' },
+        { name: 'b', occasion: '', season: 'all', top: [], layer: [], bottom: ['W-1'], shoes: ['W-B'], accessories: [], why: '' },
+      ],
+    })!;
+    const names = db.capsules.find((c) => c.id === id)!.lookIds.map((l) => db.looks.find((x) => x.id === l)!.name);
+    assert.deepEqual(names, ['a', 'b'], 'looks without the picked item are dropped');
+  });
+  await call('DELETE', '/api/items/W-1');
+  assert.ok(!store.read().jobs.find((x) => x.id === job.id)!.requiredItemIds?.length, 'deleting a picked item keeps the store valid');
+});

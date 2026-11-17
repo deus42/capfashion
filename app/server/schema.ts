@@ -192,6 +192,8 @@ export interface Job {
   createdItemIds?: string[];
   /** analyze: the selection created. */
   capsuleId?: string;
+  /** analyze ("Доповнити образ"): items every proposed look must contain. */
+  requiredItemIds?: string[];
   itemId?: string;
   needId?: string;
   photoId?: string;
@@ -361,6 +363,7 @@ export function validateDb(db: unknown): string | null {
     if (j.kind === 'intake' && !(j.inputPhotoIds?.length && j.inputPhotoIds.every((p) => has('photos', p)))) return `Завдання ${j.id}: немає фото для розпізнавання`;
     for (const id of j.createdItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає створеної речі ${id}`;
     if (j.capsuleId && !has('capsules', j.capsuleId)) return `Завдання ${j.id}: немає підбірки`;
+    for (const id of j.requiredItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає речі ${id}`;
     if (j.retryOf && !has('jobs', j.retryOf)) return `Завдання ${j.id}: немає попередньої спроби`;
     if (j.resultId && !has('results', j.resultId)) return `Завдання ${j.id}: немає результату`;
   }

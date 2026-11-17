@@ -125,10 +125,8 @@ export function fmtDay(iso?: string) {
   return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-const lookScore = (db: DB, l: Look) => {
-  const rs = resultsForLook(db, l.id);
-  return (l.favorite ? 8 : 0) + (isComplete(db, l) ? 4 : 0) + (rs.some((r) => r.review === 'accepted') ? 2 : 0) + (rs.length ? 1 : 0);
-};
+// Stable: the representative of near-copies does not change as pictures arrive.
+const lookScore = (db: DB, l: Look) => (l.favorite ? 8 : 0) + (isComplete(db, l) ? 4 : 0);
 
 /**
  * One card per look: hidden looks are dropped and near-copies (owner's rule:

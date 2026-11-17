@@ -22,8 +22,10 @@ function entries(db: DB): Entry[] {
       continue;
     }
     if (p.kind !== 'packshot') continue;
-    const item = db.items.find((i) => i.packshotId === p.id);
-    out.push({ kind: 'packshot', p, at: p.createdAt, itemId: item?.id });
+    // Only the current photo of an item in use: no superseded or orphaned duplicates.
+    const item = db.items.find((i) => i.packshotId === p.id && i.status !== 'inactive' && !i.mergedInto);
+    if (!item) continue;
+    out.push({ kind: 'packshot', p, at: p.createdAt, itemId: item.id });
   }
   return out.sort((a, b) => b.at.localeCompare(a.at));
 }
@@ -142,7 +144,7 @@ export function GalleryPage() {
             {(
               [
                 ['any', 'Усі'],
-                ['fav', '👍'],
+                ['fav', <ThumbsUp key="fav" size={14} aria-label="Подобаються" />],
               ] as const
             ).map(([k, l]) => (
               <button key={k} className={`chip${filter === k ? ' active' : ''}`} onClick={() => setFilter(k)}>{l}</button>

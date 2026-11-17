@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { ImageOff, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, ImageOff, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { DB, Job, Look, SlotKey, SlotRef } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
@@ -101,14 +101,19 @@ export function LookPage({ id }: { id: string }) {
   const pieces = SLOTS.flatMap((slot) => look.slots[slot].map((ref) => ({ slot, r: resolveRef(db, ref) })));
   const own = pieces.filter((p) => p.r.kind === 'owned' || p.r.kind === 'candidate');
   const buy = pieces.filter((p) => p.r.kind === 'need' || p.r.kind === 'product');
+  // A piece opens its own page (wardrobe item or the purchase); swapping is the small icon on its picture.
+  const pieceHref = (r: ResolvedRef) => r.ref.kind === 'item' ? `/wardrobe/${r.ref.id}` : `/shopping?need=${r.ref.kind === 'need' ? r.ref.id : (db.products.find((p) => p.id === r.ref.id)?.needId ?? '')}`;
   const tile = ({ slot, r }: { slot: SlotKey; r: ResolvedRef }) => (
-    <button key={`${slot}-${r.ref.kind}-${r.ref.id}`} className="wtile" onClick={() => setSwap({ slot, current: r.ref })} title="Замінити">
+    <a key={`${slot}-${r.ref.kind}-${r.ref.id}`} className="wtile" href={pieceHref(r)}>
       <span className="img">
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
         {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
+        <button className="swap-btn" aria-label={`Замінити: ${r.title}`} title="Замінити" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSwap({ slot, current: r.ref }); }}>
+          <ArrowLeftRight size={14} />
+        </button>
       </span>
       <span className="nm">{r.title}<TermInfo texts={[r.title]} /></span>
-    </button>
+    </a>
   );
 
   return (
@@ -182,7 +187,7 @@ export function LookPage({ id }: { id: string }) {
 
       {siblings.length > 0 && (
         <>
-          <div className="section-head"><h2 className="h2">Ще в капсулі <span className="count">{siblings.length}</span></h2>{capsule && <a href={`/capsules/${capsule.id}`}>Уся капсула</a>}</div>
+          <div className="section-head"><h2 className="h2">{isSelection ? 'Ще в підбірці' : 'Ще в капсулі'} <span className="count">{siblings.length}</span></h2>{capsule && <a href={`/capsules/${capsule.id}`}>{isSelection ? 'Уся підбірка' : 'Уся капсула'}</a>}</div>
           <div className="sib-strip">
             {siblings.map((l) => <SiblingCard key={l.id} look={l} />)}
           </div>
@@ -199,8 +204,10 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
   const db = useDb();
   const { act } = useApp();
   const art = (id?: string) => (id ? db.photos.find((p) => p.id === id)?.path : undefined);
+  // Adding: each piece once, under its natural place (a jumper under «Верх», a jacket under «Шар»).
+  const NATURAL: Record<string, SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
   const optionsFor = (s: SlotKey) => {
-    const cats = SLOT_CATEGORIES[s];
+    const cats = slot ? SLOT_CATEGORIES[s] : SLOT_CATEGORIES[s].filter((c) => NATURAL[c] === s);
     return [
       ...db.items.filter((i) => cats.includes(i.category) && i.status !== 'inactive' && !i.mergedInto && accessoryKind(i.title) !== 'glasses').map((i) => ({ ref: { kind: 'item' as const, id: i.id }, title: i.title, photo: art(i.packshotId) ?? art(i.photoIds[0]) })),
       ...db.needs.filter((n) => n.status === 'open' && cats.includes(n.category)).map((n) => ({ ref: { kind: 'need' as const, id: n.id }, title: `${n.title} · докупити`, photo: art(n.conceptPhotoId) })),

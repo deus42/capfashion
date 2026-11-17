@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, Plus, ShoppingBag, Store, Trash2, Undo2 } from 'lucide-react';
+import { Check, ExternalLink, Pencil, Plus, ShoppingBag, Store, Trash2, Undo2 } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
@@ -48,6 +48,12 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
       onClose={onClose}
       footer={
         <>
+          {product && (
+            <ConfirmButton className="btn ghost danger" title="Видалити товар" message={`Видалити ${product.brand} ${product.model}?`} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/products/${product.id}`), 'Товар видалено'); if (ok !== undefined) onClose(); }}>
+              <Trash2 size={14} />
+            </ConfirmButton>
+          )}
+          <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>Скасувати</button>
           <button className="btn primary" onClick={() => void save()}>Зберегти</button>
         </>
@@ -106,7 +112,6 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
 
 function ProductCard({ p, need }: { p: Product; need: Need }) {
   const db = useDb();
-  const { act } = useApp();
   const [edit, setEdit] = useState(false);
   const [buy, setBuy] = useState(false);
   const photo = p.photoId ? db.photos.find((x) => x.id === p.photoId) : undefined;
@@ -135,13 +140,7 @@ function ProductCard({ p, need }: { p: Product; need: Need }) {
         )}
         {p.status !== 'purchased' && (
           <>
-            <button className="btn sm ghost" onClick={() => setEdit(true)}>Редагувати</button>
-            <ConfirmButton className="btn sm ghost danger" title="Видалити товар" message={`Видалити ${p.brand} ${p.model}?`} onConfirm={() => act(() => api('DELETE', `/api/products/${p.id}`), 'Товар видалено')}>
-              <Trash2 size={12} />
-            </ConfirmButton>
-            <button className="btn sm" onClick={() => void act(() => api('PATCH', `/api/products/${p.id}`, { rev: p.rev, status: p.status === 'chosen' ? 'option' : 'chosen' }))}>
-              {p.status === 'chosen' ? 'Зняти вибір' : 'Вибрати'}
-            </button>
+            <button className="icon-btn" aria-label="Редагувати товар" onClick={() => setEdit(true)}><Pencil size={13} /></button>
             <button className="btn sm primary" onClick={() => setBuy(true)}>
               <Check size={12} /> Куплено
             </button>
@@ -217,6 +216,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const db = useDb();
   const { act, toast } = useApp();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [owning, setOwning] = useState(false);
   const products = db.products.filter((p) => p.needId === need.id);
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
@@ -253,9 +253,6 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <button className="btn sm" onClick={() => setOwning(true)}>
               <Check size={13} /> Вже маю
             </button>
-            <button className="btn sm" onClick={() => setAdding(true)}>
-              <Plus size={13} /> <span className="d-only">Товар</span>
-            </button>
           </>
         )}
         {need.status === 'covered' && covered && !bought && (
@@ -263,9 +260,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <Undo2 size={13} /> Повернути в покупки
           </button>
         )}
-        <ConfirmButton className="icon-btn" title="Видалити потребу" message={<>Видалити «{need.title}»?{using.length ? ` Вона зникне з ${using.length} образів.` : ''}</>} onConfirm={() => act(() => api('DELETE', `/api/needs/${need.id}`), 'Потребу видалено')}>
-          <Trash2 size={13} />
-        </ConfirmButton>
+        <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
       </div>
       <div className="kv">
         <dt>Навіщо</dt>
@@ -296,6 +291,23 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
       {products.length > 1 && <span className="small faint">Альтернативи — це варіанти однієї покупки, не кілька обовʼязкових.</span>}
       </div>
       {adding && <ProductEditor need={need} onClose={() => setAdding(false)} />}
+      {editing && (
+        <Modal
+          title={need.title}
+          onClose={() => setEditing(false)}
+          footer={
+            <>
+              <ConfirmButton className="btn ghost danger" title="Видалити покупку" message={<>Видалити «{need.title}»?{using.length ? ` Вона зникне з ${using.length} образів.` : ''}</>} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/needs/${need.id}`), 'Видалено'); if (ok !== undefined) setEditing(false); }}>
+                <Trash2 size={14} />
+              </ConfirmButton>
+              <span style={{ flex: 1 }} />
+              {need.status === 'open' && <button className="btn primary" onClick={() => { setEditing(false); setAdding(true); }}><Plus size={14} /> Товар у магазині</button>}
+            </>
+          }
+        >
+          <p className="muted">{need.description}</p>
+        </Modal>
+      )}
       {owning && <CoverModal need={need} onClose={() => setOwning(false)} />}
     </div>
   );

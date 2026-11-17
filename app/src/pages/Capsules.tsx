@@ -197,7 +197,7 @@ export function CapsuleDetail({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{capsule.name}</h1>
-          {readyLine(db, capsule) && !(isSelection && readyLine(db, capsule) === 'усі готові') && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
+          {readyLine(db, capsule) && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
             <Badge>{SEASON_LABEL[capsule.season]}</Badge>
             {hidden && <Badge>приховано</Badge>}

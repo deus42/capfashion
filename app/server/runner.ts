@@ -8,6 +8,7 @@ import { newId, now } from './store.ts';
 import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
 import { coverNeed, packshotJob, queueMissingRenders } from './routes.ts';
+import { looksNeedingRender, rendersPaused } from '../src/render-need.ts';
 import { verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -463,6 +464,10 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     draining = true;
     state.lastError = null;
     try {
+      // Try-ons follow compositions by themselves: once generation can run, every look whose
+      // composition changed since its last try-on gets one (owner, 17.11: no queue to manage).
+      const before = store.read();
+      if (!rendersPaused(before) && looksNeedingRender(before).length) await store.mutate((db) => queueMissingRenders(db));
       for (;;) {
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));

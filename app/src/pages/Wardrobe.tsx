@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, PersonStanding, Plus, RotateCcw, Search, Sparkles, Split, Trash2, Wand2, X } from 'lucide-react';
+import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Merge, Plus, RotateCcw, Search, Sparkles, Split, Trash2, Wand2, X } from 'lucide-react';
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, Drawer, Empty, Img, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, coverForLook, distinctLooks, fmtDate, looksUsing } from '../lib.ts';
+import { Badge, CategoryIcon, ConfirmButton, Drawer, Empty, Img, LookArt, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
+import { CATEGORY_LABEL, distinctLooks, fmtDate, looksUsing } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import type { Capsule, DB, Look } from '../api.ts';
 
@@ -193,22 +193,21 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
           </div>
           {looks.length === 0 && <span className="muted small">Ще не використовується в образах.</span>}
           {db.needs.filter((n) => n.coveredByItem === item.id).map((n) => (
-            <a key={n.id} className="row small" href={`#/shopping?need=${n.id}`} style={{ marginBottom: 10 }}>
+            <a key={n.id} className="row small" href={`/shopping?need=${n.id}`} style={{ marginBottom: 10 }}>
               <Badge tone="ok">закриває покупку</Badge> {n.title}
             </a>
           ))}
           <div className="stack" style={{ gap: 14 }}>
             {groupByCapsule(db, looks).map(({ capsule, looks: ls }) => (
               <div key={capsule?.id ?? 'own'}>
-                <a className="row small" href={capsule ? `#/capsules/${capsule.id}` : '#/studio'} style={{ marginBottom: 8, fontWeight: 560 }}>
+                <a className="row small" href={capsule ? `/capsules/${capsule.id}` : '/capsules?tab=looks'} style={{ marginBottom: 8, fontWeight: 560 }}>
                   {capsule?.name ?? 'Мої комбінації'} {capsule?.kind === 'selection' && <Badge tone="ok">з моїх речей</Badge>}
                 </a>
                 <div className="appears">
                   {ls.map((l) => {
-                    const cover = coverForLook(db, l);
                     return (
-                      <a key={l.id} className="appear" href={`#/looks/${l.id}`} title={l.name}>
-                        <span className="ai">{cover ? <img src={thumb(cover.imagePath, 160)} alt="" /> : <PersonStanding size={18} />}</span>
+                      <a key={l.id} className="appear" href={`/looks/${l.id}`} title={l.name}>
+                        <span className="ai"><LookArt look={l} w={200} max={2} /></span>
                         <span className="an">{l.name}</span>
                       </a>
                     );

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, ExternalLink, Images, RotateCcw, Sparkles, ThumbsUp, Trash2, X } from 'lucide-react';
+import { Download, ExternalLink, Images, RotateCcw, ThumbsUp, Trash2, X } from 'lucide-react';
 import type { DB, Photo, Result } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb, useRoute } from '../store.tsx';
@@ -38,7 +38,8 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const db = useDb();
   const { act } = useApp();
   if (entry.kind === 'tryon') {
-    const r = db.results.find((x) => x.id === entry.r.id) ?? entry.r;
+    const r = db.results.find((x) => x.id === entry.r.id);
+    if (!r) return null;
     const look = db.looks.find((l) => l.id === r.lookId);
     const comp = look ? compositionFor(db, r, look) : null;
     return (
@@ -67,9 +68,8 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
               </ConfirmButton>
               <span style={{ flex: 1 }} />
               {look && <RateButtons kind="look" target={look} size="sm" />}
-              {look && <a className="btn sm" href={`#/looks/${look.id}`} onClick={onClose}>Образ</a>}
+              {look && <a className="btn sm" href={`/looks/${look.id}`} onClick={onClose}>Образ</a>}
               <a className="btn sm" href={media(r.imagePath)} download><Download size={13} /> Завантажити</a>
-              <a className="btn sm primary" href={`#/studio?look=${r.lookId}&result=${r.id}`} onClick={onClose}><Sparkles size={13} /> У примірці</a>
             </div>
           </div>
         </div>
@@ -111,7 +111,7 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
                 <RotateCcw size={13} /> Перегенерувати
               </button>
             )}
-            {item && <a className="btn sm primary" href={`#/wardrobe/${item.id}`} onClick={onClose}>Картка речі</a>}
+            {item && <a className="btn sm primary" href={`/wardrobe/${item.id}`} onClick={onClose}>Картка речі</a>}
           </div>
         </div>
       </div>

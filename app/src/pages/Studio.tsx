@@ -310,8 +310,8 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
         <div className="studio-stage">
           <div className="studio-left">
             <div className="crumb" style={{ margin: 0, paddingLeft: 4, flexWrap: 'wrap' }}>
-              {capsule ? <a href={`#/capsules/${capsule.id}`}>{capsule.name}</a> : <span>Мої комбінації</span>}
-              <span>›</span><a href={`#/looks/${look.id}`}>{look.name}</a>
+              {capsule ? <a href={`/capsules/${capsule.id}`}>{capsule.name}</a> : <span>Мої комбінації</span>}
+              <span>›</span><a href={`/looks/${look.id}`}>{look.name}</a>
             </div>
             <RateButtons kind="look" target={look} size="sm" />
             <div className="look-picks" role="group" aria-label="Образ">
@@ -341,7 +341,7 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
 
           <div className="studio-right">
             {jobs.map((j) => (
-              <a key={j.id} className="hist job" href="#/queue" title={`${JOB_LABEL[j.state]}: ${j.stateNote ?? ''}`}>
+              <a key={j.id} className="hist job" href="/queue" title={`${JOB_LABEL[j.state]}: ${j.stateNote ?? ''}`}>
                 {j.state === 'running' || j.state === 'queued' ? <Loader2 size={18} className={j.state === 'running' ? 'spin' : ''} /> : <TriangleAlert size={18} color={j.state === 'error' ? 'var(--bad)' : 'var(--warn)'} />}
               </a>
             ))}

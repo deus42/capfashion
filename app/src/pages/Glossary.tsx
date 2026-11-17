@@ -56,7 +56,7 @@ export function TermLinks({ texts }: { texts: (string | undefined)[] }) {
   return (
     <div className="chips">
       {found.map((t) => (
-        <a key={t.id} className="badge info" href={`#/glossary?term=${t.id}`} title={t.what}>
+        <a key={t.id} className="badge info" href={`/glossary?term=${t.id}`} title={t.what}>
           ? {t.name}
         </a>
       ))}

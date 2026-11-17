@@ -148,7 +148,11 @@ function renderLooks(db: DB, lookIds?: string[]) {
   if (!db.profile.basePhotoIds.length) return [] as Job[];
   return looksNeedingRender(db)
     .filter((l) => !lookIds || lookIds.includes(l.id))
-    .map((l) => createJob(db, l, db.profile.basePhotoIds, ''));
+    .map((l) => {
+      // Only the newest composition is worth making: older attempts that never started are dropped.
+      dropJobs(db, (j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === l.id && j.state === 'queued' && j.lookVersion !== l.version);
+      return createJob(db, l, db.profile.basePhotoIds, '');
+    });
 }
 
 /** A changed composition gets a fresh try-on; returns waiting jobs too. */
@@ -449,17 +453,21 @@ on('POST', '/api/looks', (ctx, _p, b) =>
   }),
 );
 
-on('PATCH', '/api/looks/:id', (ctx, [id], b) =>
-  ctx.store.mutate((db) => {
+on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
+  const out = await ctx.store.mutate((db) => {
     const look = findOr404(db.looks, id, 'Образ');
     bump(look, b.rev);
     pick(look, b, ['name', 'note']);
     if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
-    if (b.slots) setLookSlots(look, cleanSlots(b.slots), str(b.versionNote));
+    const changed = b.slots ? setLookSlots(look, cleanSlots(b.slots), str(b.versionNote)) : false;
     if (!look.name) throw new HttpError(400, 'Назва не може бути порожньою');
-    return look;
-  }),
-);
+    // A changed composition gets its try-on by itself (owner, 17.11: no queue to manage).
+    const renders = changed ? queueRerenders(db, [look.id]) : [];
+    return { look, run: renders.some((j) => j.state === 'queued') };
+  });
+  if (out.run) ctx.drain();
+  return out.look;
+});
 
 // ── Try-on queue ───────────────────────────────────────────────────────────
 on('POST', '/api/jobs', async (ctx, _p, b) => {

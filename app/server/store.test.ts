@@ -408,10 +408,16 @@ test('a new selection gets a try-on for every look; missing renders are queued o
   const sel = db.capsules.find((c) => c.kind === 'selection')!;
   assert.equal(sel.lookIds.length, 2);
   for (const id of sel.lookIds) assert.ok(db.results.some((r) => r.lookId === id), `look ${id} has a render`);
+  assert.ok(db.results.some((r) => r.lookId === 'L-1'), 'the seed look without a try-on got one by itself (no queue to manage)');
   const again = await call('POST', '/api/renders/missing', {});
-  assert.equal(again.queued, 1, 'only the seed look L-1 still lacked a render');
-  const twice = await call('POST', '/api/renders/missing', {});
-  assert.equal(twice.queued, 0, 'no duplicate jobs while one is queued');
+  assert.equal(again.queued, 0, 'every look already shows its current composition');
+  await store.mutate((d) => {
+    const l = d.looks.find((x) => x.id === 'L-1')!;
+    l.version += 1;
+    l.versions.push({ version: l.version, slots: l.slots, at });
+  });
+  assert.equal((await call('POST', '/api/renders/missing', {})).queued, 1, 'a changed composition needs a new try-on');
+  assert.equal((await call('POST', '/api/renders/missing', {})).queued, 0, 'no duplicate jobs while one is queued');
 });
 
 test('analyzer drops near-copies of existing looks and keeps names unique', async () => {
@@ -782,4 +788,23 @@ test('a try-on waiting on a pause blocks duplicates only while the pause holds',
   assert.deepEqual(looksNeedingRender(db).map((l) => l.id), ['L-1'], 'pause lifted: the look needs a fresh try-on');
   db.results.push({ id: 'R-1', jobId: 'J-wait', lookId: 'L-1', lookVersion: 1, imagePath: 'renders/r.png', tool: '', model: '', prompt: '', sources: [], usedItemPhotos: false, review: 'pending', favorite: false, createdAt: at });
   assert.deepEqual(looksNeedingRender(db).map((l) => l.id), [], 'a render of the current composition is enough');
+});
+
+test('changing a look\'s pieces queues its new try-on by itself and drops an older one that never started', async () => {
+  const { store, call, drained } = setup();
+  await store.mutate((db) => {
+    db.profile.basePhotoIds = ['P-1'];
+    db.items.push({ id: 'W-T', rev: 1, category: 'tees', title: 'Tee', status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+  });
+  let look = store.read().looks[0];
+  await call('PATCH', '/api/looks/L-1', { rev: look.rev, slots: { ...look.slots, top: [{ kind: 'item', id: 'W-T' }] } });
+  let db = store.read();
+  assert.deepEqual(db.jobs.filter((j) => j.lookId === 'L-1').map((j) => [j.lookVersion, j.state]), [[2, 'queued']]);
+  assert.ok(drained() > 0, 'generation starts without pressing anything');
+  look = db.looks[0];
+  await call('PATCH', '/api/looks/L-1', { rev: look.rev, slots: { ...look.slots, top: [{ kind: 'need', id: 'N-1' }] } });
+  db = store.read();
+  assert.deepEqual(db.jobs.filter((j) => j.lookId === 'L-1').map((j) => [j.lookVersion, j.state]), [[3, 'queued']], 'only the newest composition is made');
+  await call('PATCH', '/api/looks/L-1', { rev: db.looks[0].rev, name: 'Renamed' });
+  assert.equal(store.read().jobs.filter((j) => j.lookId === 'L-1').length, 1, 'renaming does not re-render');
 });

@@ -81,11 +81,18 @@ export function resultsForLook(db: DB, lookId: string) {
   return db.results.filter((r) => r.lookId === lookId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-/** Best image to show for a look: accepted first, else newest. */
+/**
+ * The look's picture: an accepted try-on, else one awaiting the owner's check.
+ * A rejected try-on (not the owner's face) is never shown; the look shows its
+ * pieces instead (owner, 17.11). Rejected attempts stay in the archive.
+ */
 export function coverForLook(db: DB, look: Look): Result | undefined {
   const rs = resultsForLook(db, look.id);
-  return rs.find((r) => r.review === 'accepted') ?? rs.find((r) => r.review !== 'rework') ?? rs[0];
+  return rs.find((r) => r.review === 'accepted') ?? rs.find((r) => r.review === 'pending');
 }
+
+/** A try-on of this look is being made. */
+export const lookBusy = (db: DB, lookId: string) => db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && (j.state === 'queued' || j.state === 'running'));
 
 export function capsuleCover(db: DB, lookIds: string[]) {
   const hidden = hiddenLookIds(db);

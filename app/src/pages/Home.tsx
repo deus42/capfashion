@@ -3,8 +3,8 @@ import { ArrowRight, Check, Loader2, Sparkles, ThumbsDown, ThumbsUp, TriangleAle
 import type { Capsule, DB, Job } from '../api.ts';
 import { api, thumb, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, RenderPlaceholder } from '../components/ui.tsx';
-import { capsuleLooks, coverForLook, distinctLooks } from '../lib.ts';
+import { Badge, LookArt, RenderPlaceholder } from '../components/ui.tsx';
+import { capsuleLooks, distinctLooks } from '../lib.ts';
 import { byRating, isCapsuleHidden } from '../rating.ts';
 
 /** A capsule is a set of looks: its tile shows up to four of them, each with its own try-on. */
@@ -13,12 +13,11 @@ export function CapsuleTile({ c }: { c: Capsule }) {
   const looks = c.disliked ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds));
   const shownLooks = looks.slice(0, 4);
   return (
-    <a href={`#/capsules/${c.id}`} className="capsule-card">
+    <a href={`/capsules/${c.id}`} className="capsule-card">
       <div className={`cover mosaic n${Math.max(1, shownLooks.length)}`}>
-        {shownLooks.length === 0 ? <RenderPlaceholder lookIds={c.lookIds} /> : shownLooks.map((l) => {
-          const cover = coverForLook(db, l);
-          return <span key={l.id} className="cell">{cover ? <img src={thumb(cover.imagePath, shownLooks.length === 1 ? 900 : 480)} alt={l.name} loading="lazy" /> : <RenderPlaceholder lookIds={[l.id]} />}</span>;
-        })}
+        {shownLooks.length === 0 ? <RenderPlaceholder lookIds={c.lookIds} /> : shownLooks.map((l) => (
+          <span key={l.id} className="cell"><LookArt look={l} w={shownLooks.length === 1 ? 900 : 480} max={shownLooks.length === 1 ? 5 : 3} /></span>
+        ))}
         {c.favorite && <span className="corner-r liked-mark" aria-label="Подобається"><ThumbsUp size={14} fill="currentColor" /></span>}
         {c.disliked && <span className="corner-r liked-mark" aria-label="Не подобається"><ThumbsDown size={14} fill="currentColor" /></span>}
       </div>
@@ -85,7 +84,7 @@ function ProcCard({ j }: { j: Job }) {
   const db = useDb();
   const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
   const done = j.state === 'done';
-  const href = j.kind === 'analyze' ? '#/capsules?tab=selections' : photo?.kind === 'base' ? '#/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `#/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '#/wardrobe';
+  const href = j.kind === 'analyze' ? '/capsules?tab=selections' : photo?.kind === 'base' ? '/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '/wardrobe';
   return (
     <a className="proc-card" href={href} title={j.stateNote}>
       <div className="img">
@@ -145,19 +144,19 @@ export function HomePage() {
 
       {procs.length > 0 && (
         <>
-          <div className="section-head"><h2 className="h2">В обробці</h2><a href="#/queue">Черга <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+          <div className="section-head"><h2 className="h2">В обробці</h2></div>
           <div className="proc">{procs.map((j) => <ProcCard key={j.id} j={j} />)}</div>
         </>
       )}
 
       {selections.length > 0 && (
         <>
-          <div className="section-head"><h2 className="h2">Підбірки з моїх речей</h2><a href="#/capsules?tab=selections">Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+          <div className="section-head"><h2 className="h2">Підбірки з моїх речей</h2><a href="/capsules?tab=selections">Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
           <div className="capsule-grid">{selections.slice(0, 3).map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
         </>
       )}
 
-      <div className="section-head"><h2 className="h2">Капсули</h2><a href="#/capsules" onClick={() => go('/capsules')}>Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
+      <div className="section-head"><h2 className="h2">Капсули</h2><a href="/capsules" onClick={() => go('/capsules')}>Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
       <div className="capsule-grid">{capsules.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
     </div>
   );

@@ -85,17 +85,52 @@ export function useDb() {
   return state!.db;
 }
 
+const ROUTE_EVENT = 'capfashion:route';
+
+/**
+ * Clean addresses (/capsules/C-1, /looks/L-1). Old #/ links still work: they
+ * are rewritten to the clean address on arrival.
+ */
+function currentRoute() {
+  const h = window.location.hash;
+  if (h.startsWith('#/')) window.history.replaceState(null, '', h.slice(1));
+  const p = window.location.pathname + window.location.search;
+  return p === '/' ? '/capsules' : p;
+}
+
 export function useRoute() {
-  const [hash, setHash] = useState(() => window.location.hash || '#/capsules');
+  const [route, setRoute] = useState(currentRoute);
   useEffect(() => {
-    const on = () => setHash(window.location.hash || '#/capsules');
+    const on = () => setRoute(currentRoute());
+    window.addEventListener('popstate', on);
     window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
+    window.addEventListener(ROUTE_EVENT, on);
+    return () => {
+      window.removeEventListener('popstate', on);
+      window.removeEventListener('hashchange', on);
+      window.removeEventListener(ROUTE_EVENT, on);
+    };
   }, []);
-  const [pathPart, query = ''] = hash.slice(1).split('?');
+  const [pathPart, query = ''] = route.split('?');
   return { parts: pathPart.split('/').filter(Boolean), query: new URLSearchParams(query) };
 }
 
-export function go(path: string) {
-  window.location.hash = path;
+export function go(path: string, replace = false) {
+  const to = path.startsWith('#') ? path.slice(1) : path;
+  const from = window.location.pathname;
+  if (to === from + window.location.search) return;
+  window.history[replace ? 'replaceState' : 'pushState'](null, '', to);
+  if (to.split('?')[0] !== from) window.scrollTo(0, 0);
+  window.dispatchEvent(new Event(ROUTE_EVENT));
 }
+
+// In-app links navigate without reloading; files, the API and new tabs are left alone.
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = (e.target as Element | null)?.closest?.('a');
+  if (!a || a.target || a.hasAttribute('download')) return;
+  const href = a.getAttribute('href') ?? '';
+  if (!(href.startsWith('#/') || (href.startsWith('/') && !href.startsWith('//') && !/^\/(api|media|thumb|assets)\//.test(href)))) return;
+  e.preventDefault();
+  go(href);
+});

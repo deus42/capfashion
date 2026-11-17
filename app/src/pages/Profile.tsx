@@ -57,8 +57,8 @@ function BasePhotos() {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 24 }} className="profile-base">
         <div className="stack" style={{ gap: 18 }}>
           {intake.field}
-          <a className="btn" href="#/gallery?type=original">Усі мої оригінали й референси</a>
-          <a className="btn" href="#/gallery?type=face">Референси обличчя · {db.photos.filter((p) => p.referenceRole === 'face').length}</a>
+          <a className="btn" href="/gallery?type=original">Усі мої оригінали й референси</a>
+          <a className="btn" href="/gallery?type=face">Референси обличчя · {db.photos.filter((p) => p.referenceRole === 'face').length}</a>
           <button className="dropzone" onClick={intake.pick} disabled={intake.busy} style={{ cursor: 'pointer', width: '100%' }}>
             {intake.busy || busy ? <Loader2 size={22} className="spin" style={{ margin: '0 auto' }} /> : <Camera size={22} style={{ margin: '0 auto' }} />}
             <b>{busy ? `Розбираю фото: ${busy}` : 'Додати фото'}</b>

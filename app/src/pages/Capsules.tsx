@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { EyeOff, ImageOff, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Capsule, Look, Season } from '../api.ts';
-import { api, thumb } from '../api.ts';
+import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
-import { Badge, ConfirmButton, Empty, Modal, PieceBlocks, RateButtons, RenderPlaceholder } from '../components/ui.tsx';
-import { REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, capsuleLooks, coverForLook, distinctLooks, piecesOf } from '../lib.ts';
+import { Badge, ConfirmButton, Empty, LookArt, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
+import { SEASON_LABEL, capsuleLooks, distinctLooks, piecesOf } from '../lib.ts';
 import { byRating, hiddenLookIds, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile } from './Home.tsx';
 
@@ -130,23 +130,18 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
         <label className="field full"><span>Назва</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="field full"><span>Нотатка</span><textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} /></label>
       </div>
-      <a className="btn" style={{ marginTop: 16 }} href={`#/studio?look=${look.id}`} onClick={onClose}><Sparkles size={15} /> Змінити склад у примірці</a>
     </Modal>
   );
 }
 
 function LookCard({ look }: { look: Look }) {
-  const db = useDb();
   const [editing, setEditing] = useState(false);
-  const cover = coverForLook(db, look);
-  const stale = cover && cover.lookVersion !== look.version;
   return (
     <div className="look-card">
-      <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`#/looks/${look.id}`}>
-        {cover ? <img style={{ objectFit: 'contain' }} src={thumb(cover.imagePath, 700)} alt={look.name} /> : <RenderPlaceholder lookIds={[look.id]} />}
+      <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${look.id}`}>
+        <LookArt look={look} />
       </a>
-      {cover && <div className="row wrap"><Badge tone={REVIEW_TONE[cover.review]}>{REVIEW_LABEL[cover.review]}</Badge>{stale && <Badge tone="warn">склад змінено</Badge>}</div>}
-      <a href={`#/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4></a>
+      <a href={`/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4></a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
         <button className="icon-btn" style={{ width: 32, height: 32 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
@@ -198,12 +193,12 @@ export function CapsuleDetail({ id }: { id: string }) {
 
   const addLook = async () => {
     const look = await act(() => api<Look>('POST', '/api/looks', { capsuleId: capsule.id, name: `Образ ${allLooks.length + 1}`, slots: {} }), 'Образ додано');
-    if (look) go(`/studio?look=${look.id}`);
+    if (look) go(`/looks/${look.id}`);
   };
 
   return (
     <div className="page">
-      <div className="crumb"><a href={isSelection ? '#/capsules?tab=selections' : '#/capsules'}>{isSelection ? 'Підбірки' : 'Капсули'}</a></div>
+      <div className="crumb"><a href={isSelection ? '/capsules?tab=selections' : '/capsules'}>{isSelection ? 'Підбірки' : 'Капсули'}</a></div>
       <div className="page-head">
         <div>
           <h1>{capsule.name}</h1>
@@ -215,7 +210,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           </div>
         </div>
         <div className="actions">
-          {!isSelection && <a className="btn" href="#/gallery?type=inspiration">Натхнення</a>}
+          {!isSelection && <a className="btn" href="/gallery?type=inspiration">Натхнення</a>}
           <RateButtons kind="capsule" target={capsule} />
           <button className="icon-btn" aria-label="Редагувати" onClick={() => setEditing(true)}><Pencil size={14} /></button>
           <ConfirmButton

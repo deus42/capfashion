@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, ThumbsDown, ThumbsUp, Upload, Watch, X } from 'lucide-react';
-import type { Category, Photo, PhotoKind, Slots } from '../api.ts';
+import type { Category, Look, Photo, PhotoKind, Slots } from '../api.ts';
 import { thumb, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { api } from '../api.ts';
 import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
-import { REF_KIND_LABEL, piecesOf } from '../lib.ts';
+import { REF_KIND_LABEL, coverForLook, lookBusy, piecesOf } from '../lib.ts';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
   return <span className={`badge ${tone}`}>{children}</span>;
@@ -259,6 +259,18 @@ export function PieceStrip({ slots, size = 44 }: { slots: Slots; size?: number }
 }
 
 /** Flat-lay of an outfit's pieces: used wherever a try-on does not exist yet. */
+/** The look's best try-on, or its pieces laid out — never an empty card; a thin bar runs while a try-on is made. */
+export function LookArt({ look, w = 700, max }: { look: Look; w?: number; max?: number }) {
+  const db = useDb();
+  const cover = coverForLook(db, look);
+  return (
+    <span className="look-art">
+      {cover ? <img src={thumb(cover.imagePath, w)} alt={look.name} loading="lazy" /> : <LookCollage slots={look.slots} max={max} />}
+      {lookBusy(db, look.id) && <span className="progress" role="progressbar" aria-label="Генерую примірку" />}
+    </span>
+  );
+}
+
 export function LookCollage({ slots, max = 5 }: { slots: Slots; max?: number }) {
   const db = useDb();
   const pieces = piecesOf(db, slots).slice(0, max);
@@ -423,7 +435,7 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
   const own = unique.filter((r) => r.kind === 'owned' || r.kind === 'candidate');
   const buy = unique.filter((r) => r.kind === 'need' || r.kind === 'product');
   const tile = (r: ResolvedRef) => (
-    <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `#/wardrobe/${r.ref.id}` : r.ref.kind === 'need' ? `#/shopping?need=${r.ref.id}` : '#/shopping'}>
+    <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `/wardrobe/${r.ref.id}` : r.ref.kind === 'need' ? `/shopping?need=${r.ref.id}` : '/shopping'}>
       <div className="img">
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
         {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
@@ -438,7 +450,7 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
         <div className="ward-grid">{own.map(tile)}</div>
       </>}
       {buy.length > 0 && <>
-        <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="#/shopping">Список покупок</a></div>
+        <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="/shopping">Список покупок</a></div>
         <div className="ward-grid">{buy.map(tile)}</div>
       </>}
     </>

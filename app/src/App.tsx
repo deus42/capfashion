@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import {
-  BookOpen, Camera, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
+  Camera, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
 import { Img } from './components/ui.tsx';
@@ -13,7 +13,6 @@ import { GalleryPage } from './pages/Gallery.tsx';
 import { QueuePage } from './pages/Queue.tsx';
 import { ShoppingPage } from './pages/Shopping.tsx';
 import { ProfilePage } from './pages/Profile.tsx';
-import { GlossaryPage } from './pages/Glossary.tsx';
 
 function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: number; desk?: boolean }) {
   return (
@@ -68,38 +67,29 @@ export default function App() {
   else if (section === 'queue') page = <QueuePage />;
   else if (section === 'shopping') page = <ShoppingPage focus={query.get('need') ?? undefined} />;
   else if (section === 'profile') page = <ProfilePage tab={parts[1]} />;
-  else if (section === 'glossary') page = <GlossaryPage focus={query.get('term') ?? undefined} />;
+  else if (section === 'glossary') page = <Redirect to="/home" />;
   else page = <HomePage />;
 
   return (
     <div className="shell">
-      <nav className="rail" aria-label="Розділи">
-        <a href="/home" className="rail-logo" aria-label="Cap Fashion">
-          <Shirt size={18} />
-        </a>
-        <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
-        <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
-        <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
-        <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
-        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} desk />
-        <div className="rail-spacer" />
-        <RailItem to="glossary" icon={<BookOpen size={ic} />} label="Довідка" active={section === 'glossary'} desk />
-        <a href="/profile" className={`rail-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
-          {avatar ? <Img path={avatar.path} w={120} /> : <User size={18} />}
-        </a>
-      </nav>
       <div className="frame">
-        {(activeJobs > 0 || runner.running) && <div className="progress app-progress" role="progressbar" aria-label="Обробка" />}
+        {(activeJobs > 0 || runner.running) && <div className="busy-bar app-progress" role="progressbar" aria-label="Обробка" />}
+        {/* No side panels anywhere (owner rule): sections sit in the top bar, a bottom bar on phones. */}
         <header className="topbar">
-          {/* Phones have no side rail: the name is the way home. Nothing to switch, so no switcher. */}
-          <a href="/home" className="wordmark m-only">Cap Fashion</a>
+          <a href="/home" className="wordmark">Cap Fashion</a>
+          <nav className="rail" aria-label="Розділи">
+            <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
+            <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
+            <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
+            <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
+            <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} />
+          </nav>
           <div className="grow" />
-          <span className="tag">Local</span>
           <button className="btn primary sm" onClick={intake.pick} disabled={intake.busy}>
             {intake.busy ? <Loader2 size={14} className="spin" /> : <Camera size={14} />} Додати фото
           </button>
           {intake.field}
-          <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
+          <a href="/profile" className={`top-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}
           </a>
         </header>

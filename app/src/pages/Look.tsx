@@ -9,6 +9,7 @@ import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks,
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
+import { TermInfo } from './Glossary.tsx';
 
 const SLOTS: SlotKey[] = ['layer', 'top', 'bottom', 'shoes', 'accessories'];
 const same = (a: SlotRef, b: SlotRef) => a.kind === b.kind && a.id === b.id;
@@ -94,7 +95,7 @@ export function LookPage({ id }: { id: string }) {
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
         {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
       </span>
-      <span className="nm">{r.title}</span>
+      <span className="nm">{r.title}<TermInfo texts={[r.title]} /></span>
     </button>
   );
 

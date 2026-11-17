@@ -8,6 +8,7 @@ import { api } from '../api.ts';
 import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
 import { REF_KIND_LABEL, coverForLook, lookBusy, piecesOf } from '../lib.ts';
+import { TermInfo } from '../pages/Glossary.tsx';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
   return <span className={`badge ${tone}`}>{children}</span>;
@@ -65,20 +66,15 @@ export function Modal({ title, onClose, children, footer, wide }: { title: React
   );
 }
 
-export function Drawer({ title, onClose, children, footer }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+/** Details open as their own page — never a side panel or drawer (owner rule). */
+export function DetailPage({ title, back, backLabel, children, footer }: { title: ReactNode; back: string; backLabel: string; children: ReactNode; footer?: ReactNode }) {
   return (
-    <Overlay onClose={onClose}>
-      <aside className="drawer" role="dialog" aria-modal="true">
-        <div className="drawer-head">
-          <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Закрити">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="drawer-body">{children}</div>
-        {footer && <div className="drawer-foot">{footer}</div>}
-      </aside>
-    </Overlay>
+    <div className="page detail-page">
+      <div className="crumb"><a href={back}>{backLabel}</a></div>
+      <div className="page-head"><div><h1>{title}</h1></div></div>
+      <div className="detail-body">{children}</div>
+      {footer && <div className="detail-foot">{footer}</div>}
+    </div>
   );
 }
 
@@ -266,7 +262,7 @@ export function LookArt({ look, w = 700, max }: { look: Look; w?: number; max?: 
   return (
     <span className="look-art">
       {cover ? <img src={thumb(cover.imagePath, w)} alt={look.name} loading="lazy" /> : <LookCollage slots={look.slots} max={max} />}
-      {lookBusy(db, look.id) && <span className="progress" role="progressbar" aria-label="Генерую примірку" />}
+      {lookBusy(db, look.id) && <span className="busy-bar" role="progressbar" aria-label="Генерую примірку" />}
     </span>
   );
 }
@@ -440,7 +436,7 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
         {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
       </div>
-      <span className="nm">{r.title}</span>
+      <span className="nm">{r.title}<TermInfo texts={[r.title]} /></span>
     </a>
   );
   return (

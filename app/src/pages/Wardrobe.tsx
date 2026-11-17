@@ -3,7 +3,7 @@ import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Loader2, Me
 import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, Drawer, Empty, Img, LookArt, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, ConfirmButton, DetailPage, Empty, Img, LookArt, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, distinctLooks, fmtDate, looksUsing } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import type { Capsule, DB, Look } from '../api.ts';
@@ -18,7 +18,7 @@ function groupByCapsule(db: DB, looks: Look[]) {
   }
   return groups;
 }
-import { TermLinks } from './Glossary.tsx';
+import { TermInfo } from './Glossary.tsx';
 import { useIntake } from './Home.tsx';
 
 const STATUS_LABEL: Record<ItemStatus, string> = { needs_confirmation: 'Потребує підтвердження', confirmed: 'Підтверджено', inactive: 'Неактуальна' };
@@ -33,7 +33,7 @@ function usePackshotState() {
   return busy;
 }
 
-function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
+function ItemPage({ item, onClose }: { item: Item; onClose: () => void }) {
   const db = useDb();
   const { act } = useApp();
   const busy = usePackshotState();
@@ -50,9 +50,10 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
   const state = busy.get(item.id);
 
   return (
-    <Drawer
-      title={<span className="row">{item.title} <span className="faint small" style={{ whiteSpace: 'nowrap' }}>{item.id}</span></span>}
-      onClose={onClose}
+    <DetailPage
+      title={<>{item.title}<TermInfo texts={[item.title, item.fit]} /></>}
+      back="/wardrobe"
+      backLabel="Гардероб"
       footer={
         <>
           <ConfirmButton
@@ -99,7 +100,6 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
               {item.mergedInto && <Badge>обʼєднано в {item.mergedInto}</Badge>}
               {item.splitFrom && <Badge>відокремлено від {item.splitFrom}</Badge>}
             </div>
-            <TermLinks texts={[item.title, item.fit, item.observation]} />
             {item.confirmedFact && <div className="note ok small">{item.confirmedFact}</div>}
             {item.observation && <div className="note small"><b>З фото:</b> {item.observation}</div>}
             <button
@@ -228,7 +228,7 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
           </div>
         </div>
       </div>
-    </Drawer>
+    </DetailPage>
   );
 }
 
@@ -308,6 +308,8 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const done = db.items.filter((i) => i.packshotId).length;
   const missing = db.items.filter((i) => !i.packshotId && i.status !== 'inactive' && !busy.has(i.id)).length;
   const title = view === 'new' ? 'Нові з фото' : cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі';
+  // An item opens as its own page, not a side panel over the grid.
+  if (open) return <ItemPage item={open} onClose={() => go('/wardrobe')} />;
 
   return (
     <div className="page">
@@ -399,7 +401,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
                       {!mergeSel && (useCount.get(i.id) ?? 0) > 0 && <span className="uses" title="У скількох образах">{useCount.get(i.id)} обр.</span>}
                       {st && <span className="gen"><Loader2 size={12} className={st === 'running' ? 'spin' : ''} /> {st === 'running' ? 'Packshot генерується' : 'Packshot у черзі'}</span>}
                     </div>
-                    <span className="nm">{i.title}</span>
+                    <span className="nm">{i.title}<TermInfo texts={[i.title]} /></span>
                   </button>
                 );
               })}
@@ -439,7 +441,6 @@ export function WardrobePage({ openId }: { openId?: string }) {
               )}
                     </div>
       )}
-      {open && <ItemDrawer item={open} onClose={() => go('/wardrobe')} />}
       {creating && <NewItem onClose={() => setCreating(false)} />}
     </div>
   );

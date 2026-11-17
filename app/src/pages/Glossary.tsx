@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Info } from 'lucide-react';
 
 // Five-part legend from the specification (§3): what it is, how to recognise
 // it, why it is proposed, what fit to check, what to reject in a store.
@@ -50,47 +51,66 @@ export function termsIn(...texts: (string | undefined)[]) {
   return TERMS.filter((t) => MATCHERS[t.id]?.test(text));
 }
 
-export function TermLinks({ texts }: { texts: (string | undefined)[] }) {
+/**
+ * Help lives next to the word, not on its own page (owner, 17.11): a small
+ * info mark after a piece's name; hovering shows the five-part legend, a tap
+ * opens it on phones. It never triggers the tile it sits on.
+ */
+export function TermInfo({ texts }: { texts: (string | undefined)[] }) {
   const found = termsIn(...texts);
-  if (!found.length) return null;
-  return (
-    <div className="chips">
-      {found.map((t) => (
-        <a key={t.id} className="badge info" href={`/glossary?term=${t.id}`} title={t.what}>
-          ? {t.name}
-        </a>
-      ))}
-    </div>
-  );
-}
-
-export function GlossaryPage({ focus }: { focus?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [at, setAt] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
   useEffect(() => {
-    if (focus) document.getElementById(`term-${focus}`)?.scrollIntoView({ block: 'center' });
-  }, [focus]);
+    if (!at) return;
+    const close = () => setAt(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('click', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('click', close);
+    };
+  }, [at]);
+  if (!found.length) return null;
+  const open = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = Math.min(300, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(r.left - 12, window.innerWidth - width - 12));
+    setAt(r.bottom > window.innerHeight * 0.6 ? { left, bottom: window.innerHeight - r.top + 6 } : { left, top: r.bottom + 6 });
+  };
   return (
-    <div className="page" style={{ maxWidth: 860 }}>
-      <div className="page-head">
-        <div>
-          <h1>Довідка</h1>
-        </div>
-      </div>
-      <div className="card pad">
-        {TERMS.map((t) => (
-          <div key={t.id} id={`term-${t.id}`} className="term">
-            <div className="term-head">
+    <span
+      ref={ref}
+      className="term-i"
+      role="button"
+      tabIndex={0}
+      aria-label={`Що таке ${found.map((t) => t.name).join(', ')}`}
+      onMouseEnter={open}
+      onMouseLeave={() => setAt(null)}
+      onFocus={open}
+      onBlur={() => setAt(null)}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (at) setAt(null);
+        else open();
+      }}
+    >
+      <Info size={13} />
+      {at && (
+        <span className="term-pop" style={at} role="tooltip">
+          {found.map((t) => (
+            <span key={t.id} className="term-card">
               <b>{t.name}</b>
-            </div>
-            <ol>
-              <li><span>Що це:</span> {t.what}</li>
-              <li><span>Як упізнати:</span> {t.recognise}</li>
-              <li><span>Чому пропонується тобі:</span> {t.why}</li>
-              <li><span>Яку посадку перевірити:</span> {t.fit}</li>
-              <li><span>Коли відхилити в магазині:</span> {t.reject}</li>
-            </ol>
-          </div>
-        ))}
-      </div>
-    </div>
+              <span>{t.what}</span>
+              <span><i>Упізнати:</i> {t.recognise}</span>
+              <span><i>Чому тобі:</i> {t.why}</span>
+              <span><i>Посадка:</i> {t.fit}</span>
+              <span><i>Не брати:</i> {t.reject}</span>
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }

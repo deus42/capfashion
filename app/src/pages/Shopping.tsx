@@ -5,6 +5,7 @@ import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, distinctLooks, fmtDay, itemArt, looksUsing } from '../lib.ts';
+import { TermInfo } from './Glossary.tsx';
 
 const AVAIL_ONLINE = { unknown: 'Онлайн: не перевірено', in_stock: 'Онлайн: є', out_of_stock: 'Онлайн: немає' } as const;
 const AVAIL_TOWER = { unknown: 'Tower: не перевірено', confirmed: 'Tower: підтверджено', not_found: 'Tower: не знайдено' } as const;
@@ -257,7 +258,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
       <div className="need-head">
         <div className="grow stack" style={{ gap: 4 }}>
           <div className="row wrap">
-            <h3>{need.title}</h3>
+            <h3>{need.title}<TermInfo texts={[need.title, need.description]} /></h3>
             <Badge tone={need.priority === 'core' ? 'dark' : ''}>{need.priority === 'core' ? 'основне' : 'опційно'}</Badge>
             <Badge>{CATEGORY_LABEL[need.category]}</Badge>
             {need.status === 'covered' ? <Badge tone="ok">{bought ? 'закрито покупкою' : 'вже є своя річ'}</Badge> : products.length === 0 ? <Badge tone="warn">товар ще не знайдено</Badge> : null}

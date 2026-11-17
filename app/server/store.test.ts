@@ -9,7 +9,7 @@ import { createStore } from './store.ts';
 import { createJob, dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
 import { verifyReferenceFiles } from './identity.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
-import { analyzePrompt, applyAnalyze, applyIntake } from './analysis.ts';
+import { analyzePrompt, applyAnalyze, applyIntake, intakePrompt } from './analysis.ts';
 import { hiddenLookIds, isCapsuleHidden, sameLook } from '../src/rating.ts';
 import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
@@ -657,4 +657,22 @@ test('regeneration is checked against liked and disliked looks; hidden looks get
     const queued = queueMissingRenders(db);
     assert.ok(!queued.some((j) => j.lookId === 'L-no'), 'a disliked look is not rendered');
   });
+});
+
+test('an upload joined to an existing item names it; the duplicate rule needs matching details, not just type and colour', async () => {
+  const { store } = setup();
+  await store.mutate((db) => {
+    db.photos.push({ id: 'P-belt', kind: 'item', path: 'assets/photos/belt.jpeg', originalName: 'belt.jpeg', source: 'upload', createdAt: at });
+    const job = { id: 'J-belt', kind: 'intake' as const, inputPhotoIds: ['P-belt'], lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+    assert.match(intakePrompt(db, job, ['belt.jpeg']), /same type and colour alone is NOT enough/);
+    const out = applyIntake(db, job, {
+      status: 'done', reason: '', photoType: 'garments_only', singlePerson: false, baseSuitable: false, baseIssues: '',
+      label: { itemId: '', brand: '', size: '', composition: '' },
+      garments: [{ title: 'Штани', category: 'trousers', color: 'синій', notes: '', duplicateOf: 'W-1' }],
+    });
+    assert.deepEqual(out.attachedTo, ['W-1']);
+    assert.match(out.note, /«Navy chinos»/);
+    db.jobs.push({ ...job, state: 'done', attachedItemIds: out.attachedTo });
+  });
+  assert.equal(validateDb(store.read()), null);
 });

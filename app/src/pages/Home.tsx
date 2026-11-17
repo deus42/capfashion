@@ -85,7 +85,7 @@ function ProcCard({ j }: { j: Job }) {
   const db = useDb();
   const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
   const done = j.state === 'done';
-  const href = j.kind === 'analyze' ? '#/capsules?tab=selections' : photo?.kind === 'base' ? '#/profile/base' : j.createdItemIds?.[0] ? `#/wardrobe/${j.createdItemIds[0]}` : '#/wardrobe';
+  const href = j.kind === 'analyze' ? '#/capsules?tab=selections' : photo?.kind === 'base' ? '#/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `#/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '#/wardrobe';
   return (
     <a className="proc-card" href={href} title={j.stateNote}>
       <div className="img">

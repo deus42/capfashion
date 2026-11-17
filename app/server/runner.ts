@@ -273,6 +273,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       if (j.kind === 'intake') {
         const outcome = applyIntake(db, j, reply as never);
         j.createdItemIds = outcome.created;
+        j.attachedItemIds = outcome.attachedTo;
         for (const id of outcome.created) packshotJob(db, { itemId: id });
         j.state = 'done';
         j.stateNote = outcome.note;

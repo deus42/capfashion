@@ -235,6 +235,8 @@ export interface Job {
   inputPhotoIds?: string[];
   /** intake: wardrobe candidates created from the photo. */
   createdItemIds?: string[];
+  /** Existing items an upload was attached to (shown and linked so nothing disappears silently). */
+  attachedItemIds?: string[];
   /** analyze: the selection created. */
   capsuleId?: string;
   /** analyze ("Доповнити образ"): items every proposed look must contain. */
@@ -417,6 +419,7 @@ export function validateDb(db: unknown): string | null {
     if (j.photoId && !has('photos', j.photoId)) return `Завдання ${j.id}: немає фото результату`;
     if (j.kind === 'intake' && !(j.inputPhotoIds?.length && j.inputPhotoIds.every((p) => has('photos', p)))) return `Завдання ${j.id}: немає фото для розпізнавання`;
     for (const id of j.createdItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає створеної речі ${id}`;
+    for (const id of j.attachedItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає речі ${id}`;
     if (j.capsuleId && !has('capsules', j.capsuleId)) return `Завдання ${j.id}: немає підбірки`;
     for (const id of j.requiredItemIds ?? []) if (!has('items', id)) return `Завдання ${j.id}: немає речі ${id}`;
     if (j.retryOf && !has('jobs', j.retryOf)) return `Завдання ${j.id}: немає попередньої спроби`;

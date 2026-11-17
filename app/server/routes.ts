@@ -226,6 +226,7 @@ export function deleteItem(db: DB, id: string) {
   if (item.packshotId) db.photos = db.photos.filter((p) => p.id !== item.packshotId);
   for (const j of db.jobs) {
     if (j.createdItemIds?.includes(id)) j.createdItemIds = j.createdItemIds.filter((x) => x !== id);
+    if (j.attachedItemIds?.includes(id)) j.attachedItemIds = j.attachedItemIds.filter((x) => x !== id);
     if (j.requiredItemIds?.includes(id)) j.requiredItemIds = j.requiredItemIds.filter((x) => x !== id);
   }
   for (const n of db.needs) if (n.coveredByItem === id) {

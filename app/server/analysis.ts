@@ -90,7 +90,7 @@ export function intakePrompt(db: DB, job: Job, photoNames: string[]) {
     'label: for photoType label, read the tag: brand, size, composition (as printed, keep original language) and itemId of the wardrobe item it most likely belongs to (empty string if unclear). For other photo types all label fields are empty strings.',
     'garments: for person_full_body, person_partial and garments_only list every distinct garment, pair of shoes and visible accessory of the main person or shown on its own (ignore other people, the phone, mirror and background). Only wearable items: clothing, shoes and fashion accessories (watch, glasses, cap/hat, belt, scarf, bag or backpack worn as part of the outfit). Never list shopping bags, phones, headphones/earbuds, keys or other objects. Skip anything barely visible that cannot be described reliably. For person_face, label and other: an empty array.',
     'For each: title in Ukrainian (short, descriptive: colour + type + visible brand only if the logo is clearly legible), category from the enum, colour in Ukrainian, notes in Ukrainian (visible construction, material look, uncertainty). Never guess sizes, exact models or composition.',
-    'duplicateOf: check the existing wardrobe list carefully before treating anything as new — watches, glasses, caps, bags, shoes and basics usually already exist. If the garment very likely is the same physical item (same type, colour and visible details) as a listed one, put that id (e.g. W-047); otherwise an empty string.',
+    'duplicateOf: check the existing wardrobe list before treating anything as new. Put a listed id (e.g. W-047) only when distinctive details visible here match that item\'s notes — hardware shape and colour (buckle, zip, buttons), texture, stitching, logo, pattern. The same type and colour alone is NOT enough: the owner may have several black belts, white tees or dark jackets. If the listed item is known only from a worn or mirror photo, or any visible detail differs, use an empty string — a new candidate the owner can merge is better than hiding a new item inside an old one.',
     'Return status "error" only if the image cannot be analysed at all; otherwise status "done" and reason "" (photoType other is still "done").',
     job.instructions ? `Owner note: ${job.instructions}` : '',
     '',
@@ -275,7 +275,10 @@ export function applyIntake(db: DB, job: Job, reply: IntakeReply): IntakeOutcome
     out.created.push(item.id);
   }
   if (out.created.length) notes.push(`нових речей: ${out.created.length}`);
-  if (out.attachedTo.length) notes.push(`фото додано до наявних: ${out.attachedTo.length}`);
+  if (out.attachedTo.length) {
+    const titles = out.attachedTo.map((id) => db.items.find((i) => i.id === id)?.title ?? id);
+    notes.push(`фото додано до наявних: ${titles.slice(0, 2).map((t) => `«${t}»`).join(', ')}${titles.length > 2 ? ` і ще ${titles.length - 2}` : ''}`);
+  }
   if (!notes.length) notes.push(type === 'other' ? 'Тут немає ні тебе, ні одягу' : 'Нічого нового не знайдено');
   out.note = notes.join(' · ');
   return out;

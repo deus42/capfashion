@@ -68,7 +68,7 @@ export function QueuePage() {
             const input = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
             const href =
               j.kind === 'packshot' ? `#/wardrobe/${j.itemId ?? ''}`
-              : j.kind === 'intake' ? (input?.kind === 'base' ? '#/profile/base' : j.createdItemIds?.[0] ? `#/wardrobe/${j.createdItemIds[0]}` : '#/wardrobe')
+              : j.kind === 'intake' ? (input?.kind === 'base' ? '#/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `#/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '#/wardrobe')
               : j.kind === 'analyze' ? (j.capsuleId ? `#/capsules/${j.capsuleId}` : '#/capsules?tab=selections')
               : `#/studio?look=${j.lookId}${result ? `&result=${result.id}` : ''}`;
             const prev = j.retryOf ? db.jobs.find((x) => x.id === j.retryOf) : undefined;

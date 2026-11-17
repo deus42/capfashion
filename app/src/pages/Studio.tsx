@@ -3,7 +3,7 @@ import { Check, Columns2, Download, Heart, ImagePlus, Loader2, Maximize2, Play, 
 import type { DB, Job, Look, Result, ReworkReason, SlotKey, SlotRef, Slots } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, Img, KindDot, LookCollage, PhotoPicker } from '../components/ui.tsx';
+import { Badge, CategoryIcon, Img, KindDot, LookCollage, Modal, PhotoPicker } from '../components/ui.tsx';
 import { useIntake } from './Home.tsx';
 import { CATEGORY_LABEL, JOB_LABEL, REASON_LABEL, REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SLOT_CATEGORIES, SLOT_LABEL, fmtDate, resolveRef, resultsForLook } from '../lib.ts';
 
@@ -127,10 +127,10 @@ function SlotPicker({ look, slot, anchor, onClose }: { look: Look; slot: SlotKey
 
 export function ReviewBar({ result }: { result: Result }) {
   const { act } = useApp();
-  const [mode, setMode] = useState<'idle' | 'rework'>('idle');
-  const [reason, setReason] = useState<ReworkReason | null>(null);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<ReworkReason>('face');
   const [note, setNote] = useState('');
-  if (result.review !== 'pending' && mode === 'idle') {
+  if (result.review !== 'pending') {
     return (
       <div className="review-bar">
         <div className="row">
@@ -142,37 +142,39 @@ export function ReviewBar({ result }: { result: Result }) {
       </div>
     );
   }
-  if (mode === 'idle') {
-    return (
-      <div className="review-bar">
-        <div className="row">
-          <button className="btn" style={{ flex: 1 }} onClick={() => setMode('rework')}><RotateCcw size={15} /> Переробити</button>
-          <button className="btn primary" style={{ flex: 1 }} onClick={() => void act(() => api('POST', `/api/results/${result.id}/review`, { decision: 'accepted' }), 'Прийнято')}><Check size={15} /> Схоже, приймаю</button>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="review-bar">
-      <div className="chips">
-        {(Object.keys(REASON_LABEL) as ReworkReason[]).map((r) => (
-          <button key={r} className={`chip${reason === r ? ' active' : ''}`} onClick={() => setReason(r)}>{REASON_LABEL[r]}</button>
-        ))}
+      <div className="row">
+        <button className="btn" style={{ flex: 1 }} onClick={() => setOpen(true)}><RotateCcw size={15} /> Переробити</button>
+        <button className="btn primary" style={{ flex: 1 }} onClick={() => void act(() => api('POST', `/api/results/${result.id}/review`, { decision: 'accepted' }), 'Прийнято')}><Check size={15} /> Схоже, приймаю</button>
       </div>
-      <input className="input sm" placeholder="Що не так? (необовʼязково)" value={note} onChange={(e) => setNote(e.target.value)} />
-      <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn sm ghost" onClick={() => setMode('idle')}>Скасувати</button>
-        <button
-          className="btn sm primary"
-          disabled={!reason}
-          onClick={async () => {
-            const ok = await act(() => api('POST', `/api/results/${result.id}/review`, { decision: 'rework', reason, note, run: true }), 'Нова спроба запущена');
-            if (ok) setMode('idle');
-          }}
+      {open && (
+        <Modal
+          title="Що не так?"
+          onClose={() => setOpen(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setOpen(false)}>Скасувати</button>
+              <button
+                className="btn primary"
+                onClick={async () => {
+                  const ok = await act(() => api('POST', `/api/results/${result.id}/review`, { decision: 'rework', reason, note, run: true }), 'Переробляю — нова примірка в черзі');
+                  if (ok) setOpen(false);
+                }}
+              >
+                <Play size={14} /> Переробити
+              </button>
+            </>
+          }
         >
-          <Play size={13} /> Переробити
-        </button>
-      </div>
+          <div className="reason-grid">
+            {(Object.keys(REASON_LABEL) as ReworkReason[]).map((r) => (
+              <button key={r} className={`chip${reason === r ? ' active' : ''}`} onClick={() => setReason(r)}>{REASON_LABEL[r]}</button>
+            ))}
+          </div>
+          <input className="input" style={{ marginTop: 14 }} placeholder="Деталі (необовʼязково)" value={note} onChange={(e) => setNote(e.target.value)} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -243,13 +245,17 @@ function CompareView({ left, onClose }: { left: Result; onClose: () => void }) {
       <div className="row wrap" style={{ marginBottom: 14 }}>
         <button className="btn sm ghost" onClick={onClose}><X size={14} /> Закрити</button>
         <span style={{ flex: 1 }} />
-        <select className="select sm" style={{ width: 'auto' }} value={rightId} onChange={(e) => setRightId(e.target.value)}>
-          {others.map((r) => <option key={r.id} value={r.id}>{db.looks.find((l) => l.id === r.lookId)?.name} · {fmtDate(r.createdAt)}</option>)}
-        </select>
         <input className="input sm" style={{ width: 220 }} placeholder="Нотатка" value={note} onChange={(e) => setNote(e.target.value)} />
         <button className="btn primary sm" disabled={!right} onClick={() => void act(() => api('POST', '/api/comparisons', { resultA: left.id, resultB: rightId, note, favorite: true }), 'Збережено')}>
           <Save size={13} /> Зберегти
         </button>
+      </div>
+      <div className="compare-picks" role="group" aria-label="З чим порівняти">
+        {others.map((r) => (
+          <button key={r.id} className={`compare-pick${r.id === rightId ? ' active' : ''}`} onClick={() => setRightId(r.id)} title={`${db.looks.find((l) => l.id === r.lookId)?.name ?? ''} · ${fmtDate(r.createdAt)}`}>
+            <Img path={r.imagePath} w={160} />
+          </button>
+        ))}
       </div>
       <div className="compare">{col(left)}{col(right)}</div>
     </div>
@@ -280,6 +286,7 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
   const basePhotos = baseIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as DB['photos'];
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
   const problem = jobs.find((j) => j.state === 'needs_data' || j.state === 'error');
+  const siblings = capsule ? capsule.lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l)) : db.looks.filter((l) => !l.capsuleId);
 
   const queue = async (run: boolean) => {
     const job = await act(() => api<Job>('POST', '/api/jobs', { lookId: look.id, basePhotoIds: baseIds, instructions, run }));
@@ -304,22 +311,12 @@ export function StudioPage({ lookId, resultId }: { lookId?: string; resultId?: s
       ) : (
         <div className="studio-stage">
           <div className="studio-left">
-            <select className="select" value={look.id} onChange={(e) => go(`/studio?look=${e.target.value}`)} aria-label="Образ">
-              {db.capsules.map((c) => (
-                <optgroup key={c.id} label={c.name}>
-                  {c.lookIds.map((lid) => {
-                    const l = db.looks.find((x) => x.id === lid);
-                    return l ? <option key={l.id} value={l.id}>{l.name}</option> : null;
-                  })}
-                </optgroup>
+            {capsule ? <a className="small muted" href={`#/capsules/${capsule.id}`} style={{ paddingLeft: 4 }}>← {capsule.name}</a> : <span className="small muted" style={{ paddingLeft: 4 }}>Мої комбінації</span>}
+            <div className="look-picks" role="group" aria-label="Образ">
+              {siblings.map((l) => (
+                <button key={l.id} className={`look-pick${l.id === look.id ? ' active' : ''}`} onClick={() => go(`/studio?look=${l.id}`)}>{l.name}</button>
               ))}
-              {db.looks.some((l) => !l.capsuleId) && (
-                <optgroup label="Мої комбінації">
-                  {db.looks.filter((l) => !l.capsuleId).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </optgroup>
-              )}
-            </select>
-            {capsule && <a className="small muted" href={`#/capsules/${capsule.id}`} style={{ paddingLeft: 4 }}>← {capsule.name}</a>}
+            </div>
             <div>
               <div className="label">Моє фото</div>
               <div className="input-thumbs">

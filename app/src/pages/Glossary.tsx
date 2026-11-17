@@ -77,11 +77,10 @@ export function GlossaryPage({ focus }: { focus?: string }) {
       </div>
       <div className="card pad">
         {TERMS.map((t) => (
-          <details key={t.id} id={`term-${t.id}`} className="term" open={t.id === focus}>
-            <summary>
+          <div key={t.id} id={`term-${t.id}`} className="term">
+            <div className="term-head">
               <b>{t.name}</b>
-              <span className="muted small">{t.what}</span>
-            </summary>
+            </div>
             <ol>
               <li><span>Що це:</span> {t.what}</li>
               <li><span>Як упізнати:</span> {t.recognise}</li>
@@ -89,7 +88,7 @@ export function GlossaryPage({ focus }: { focus?: string }) {
               <li><span>Яку посадку перевірити:</span> {t.fit}</li>
               <li><span>Коли відхилити в магазині:</span> {t.reject}</li>
             </ol>
-          </details>
+          </div>
         ))}
       </div>
     </div>

@@ -44,8 +44,18 @@ const REPLY_RULES = [
   'If image generation is unavailable or fails, reply with JSON only: {"status":"error","reason":"<why>"}',
 ];
 
-export function buildPrompt(job: Job, resultFile: string) {
-  if (job.kind === 'packshot') return buildPackshotPrompt(job, resultFile);
+/** Absolute reference files the image tool must receive (identity first, then garments). */
+export interface ImageRefs {
+  identity: string[];
+  garments: string[];
+}
+
+function refInstruction(refs: string[]) {
+  return `When you call the image generation tool, you MUST pass these exact files in its referenced_image_paths parameter (in this order): ${JSON.stringify(refs)}. Attaching them to the conversation is not enough — without referenced_image_paths the generator never sees them.`;
+}
+
+export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
+  if (job.kind === 'packshot') return buildPackshotPrompt(job, resultFile, refs);
   const outfit = job.snapshot.slots
     .map((s: SnapshotSlot) => {
       const ref = s.photoPaths.length
@@ -57,8 +67,9 @@ export function buildPrompt(job: Job, resultFile: string) {
   return [
     'You are the Cap Fashion render worker running unattended. Do exactly one task and finish.',
     `Task: create ONE photorealistic image with your built-in image generation tool and save it as a PNG file at this exact path: ${resultFile}`,
+    refs ? refInstruction([...refs.identity, ...refs.garments]) : '',
     '',
-    `Identity: the base photos (${job.snapshot.basePhotoPaths.map((p) => path.basename(p)).join(', ')}) show the SAME adult man. Use them only for his face, hair, skin, apparent age, build and body proportions. Do not copy their pose, head angle, phone, mirror, sunglasses, cap or background. Never use earlier generated images as identity reference.`,
+    `Identity: the first ${refs?.identity.length ?? job.snapshot.basePhotoPaths.length} reference photo(s) (${(refs?.identity ?? job.snapshot.basePhotoPaths).map((p) => path.basename(p)).join(', ')}) are original photos of the SAME adult man — the owner. The generated man must be recognisably this person: keep his exact face shape, eyes, nose, mouth, jawline, ears, hairline and hair colour, skin tone, apparent age, build and body proportions. Do not substitute a model face or beautify. Ignore their pose, head angle, phone, mirror, sunglasses, cap and background. Never use earlier generated images as identity reference.`,
     'Image standard: one person; full length from head to shoes with margin; front view; head level, eyes looking into the camera, neutral relaxed expression, arms relaxed at the sides; pure white (#FFFFFF) seamless studio background; soft even light; subtle ground shadow; no text, labels, logos or watermarks.',
     '',
     `Outfit "${job.snapshot.lookName}" — exactly these pieces, nothing else visible:`,
@@ -73,12 +84,13 @@ export function buildPrompt(job: Job, resultFile: string) {
     .join('\n');
 }
 
-export function buildPackshotPrompt(job: Job, resultFile: string) {
+export function buildPackshotPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
   const s = job.snapshot.slots[0];
   const fromPhotos = s.photoPaths.length > 0;
   return [
     'You are the Cap Fashion catalogue worker running unattended. Do exactly one task and finish.',
     `Task: create ONE photorealistic e-commerce packshot with your built-in image generation tool and save it as a PNG file at this exact path: ${resultFile}`,
+    refs?.garments.length ? refInstruction(refs.garments) : '',
     '',
     `Garment: ${s.title}.${s.description ? ` Notes: ${s.description}.` : ''}`,
     fromPhotos
@@ -265,7 +277,13 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const logFile = path.join(jobDir, 'codex.jsonl');
     const images = [...job.snapshot.basePhotoPaths, ...job.snapshot.slots.flatMap((s) => s.photoPaths)];
     const uniqueImages = [...new Set(images)].map((p) => resolveAllowed(projectRoot, store.dataDir, p));
-    const prompt = buildPrompt(job, resultFile);
+    // Identity comes only from the owner's original base photos; garment photos follow. A few strong references beat many.
+    const identity = [...new Set(job.snapshot.basePhotoPaths)].slice(0, 3).map((p) => resolveAllowed(projectRoot, store.dataDir, p));
+    const garments = [...new Set(job.snapshot.slots.flatMap((s) => s.photoPaths))]
+      .map((p) => resolveAllowed(projectRoot, store.dataDir, p))
+      .filter((p) => !identity.includes(p))
+      .slice(0, 3);
+    const prompt = buildPrompt(job, resultFile, { identity: isPackshot ? [] : identity, garments });
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
     const settings = db0.settings;
     const args = [

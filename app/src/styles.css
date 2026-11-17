@@ -292,6 +292,18 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .sel-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px; z-index: 35; display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); max-width: calc(100% - 24px); }
 .sel-bar .small { white-space: nowrap; }
 @media (max-width: 820px) { .sel-bar { bottom: calc(84px + env(safe-area-inset-bottom)); } }
+.variants { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.variants-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.look-picks { display: flex; flex-direction: column; gap: 6px; }
+.look-pick { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; line-height: 1.25; color: var(--ink-2); }
+.look-pick:hover { background: var(--hover); }
+.look-pick.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.compare-picks { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin-bottom: 8px; }
+.compare-pick { flex: none; width: 64px; height: 84px; border-radius: 10px; overflow: hidden; border: 2px solid transparent; padding: 0; background: #eee; }
+.compare-pick img { width: 100%; height: 100%; object-fit: cover; }
+.compare-pick.active { border-color: var(--ink); }
+.reason-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.reason-grid .chip { height: 40px; padding: 0 16px; font-size: 14px; }
 .sel-box { width: 22px; height: 22px; border-radius: 7px; background: rgba(255,255,255,.95); border: 1px solid var(--line-strong); display: grid; place-items: center; }
 .progress { height: 4px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
 .progress > i { display: block; height: 100%; background: var(--ink); border-radius: 999px; transition: width .4s; }
@@ -324,9 +336,8 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .note.warn { background: var(--warn-bg); border-color: #f3dfb8; }
 .term { border-bottom: 1px solid var(--line); }
 .term:last-child { border-bottom: 0; }
-.term summary { list-style: none; cursor: pointer; padding: 18px 4px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-.term summary::-webkit-details-marker { display: none; }
-.term summary b { font-family: var(--font-display); font-size: 22px; font-weight: 450; font-variation-settings: 'wdth' 92; }
+.term-head { padding: 18px 4px 8px; }
+.term-head b { font-family: var(--font-display); font-size: 22px; font-weight: 450; font-variation-settings: 'wdth' 92; }
 .term ol { margin: 0 0 20px; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; color: var(--ink-2); }
 .term ol li span { color: var(--muted); }
 .measure-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 18px; }
@@ -364,7 +375,7 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .studio-card .tl { position: absolute; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; max-width: 80%; z-index: 3; }
 .studio-card .tr { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 3; }
 .studio-card > .collage { position: absolute; inset: 0; opacity: .45; }
-.studio-center .studio-card { flex: none; width: min(560px, calc((100vh - 330px) * 2 / 3)); }
+.studio-center .studio-card { flex: none; width: min(560px, calc((100vh - 410px) * 2 / 3)); }
 .studio-card.plain > .collage { opacity: 1; }
 .studio-cta { position: absolute; left: 0; right: 0; bottom: 20px; display: flex; justify-content: center; z-index: 3; }
 .slot-chip { display: inline-flex; align-items: center; gap: 9px; height: 46px; padding: 0 14px 0 5px; border-radius: 13px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; color: var(--ink-2); white-space: nowrap; box-shadow: var(--shadow-sm); flex: none; }
@@ -491,6 +502,7 @@ pre.log { background: #111113; color: #e4e4e7; padding: 14px; border-radius: 12p
   .studio-stage { flex-direction: column; align-items: center; padding: 12px; }
   .studio-center { order: -1; width: 100%; height: auto; }
   .studio-left { width: 100%; overflow: visible; }
+  .look-picks { flex-direction: row; flex-wrap: wrap; }
   .studio-left .input-thumbs { justify-content: flex-start; }
   .studio-left .label { text-align: left; }
   .studio-right { width: 100%; flex-direction: row; overflow-x: auto; }

@@ -229,9 +229,7 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
           <Trash2 size={13} />
         </ConfirmButton>
       </div>
-      <details>
-      <summary className="small muted" style={{ cursor: 'pointer' }}>Навіщо й що перевірити</summary>
-      <div className="kv" style={{ marginTop: 10 }}>
+      <div className="kv">
         <dt>Навіщо</dt>
         <dd>{need.why || '—'}</dd>
         <dt>Що перевірити</dt>
@@ -258,7 +256,6 @@ function NeedCard({ need, focus }: { need: Need; focus: boolean }) {
           </>
         )}
       </div>
-      </details>
       {products.length > 0 && (
         <div className="product-grid">
           {products.map((p) => <ProductCard key={p.id} p={p} need={need} />)}

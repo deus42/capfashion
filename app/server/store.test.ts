@@ -415,3 +415,14 @@ test('complete-the-look: every look keeps the picked items and adds different pi
   await call('DELETE', '/api/items/W-1');
   assert.ok(!store.read().jobs.find((x) => x.id === job.id)!.requiredItemIds?.length, 'deleting a picked item keeps the store valid');
 });
+
+test('try-on prompt sends original base photos to the image tool before garments, never renders', () => {
+  const db = fixture();
+  const job = { id: 'J', lookId: 'L-1', lookVersion: 1, snapshot: { lookName: 'Look', slots: snapshotSlots(db, db.looks[0].slots), basePhotoIds: ['P-1'], basePhotoPaths: ['assets/photos/a.jpeg'] }, instructions: '', state: 'queued' as const, origin: 'site' as const, createdAt: at };
+  const prompt = buildPrompt(job, '/tmp/x/result.png', { identity: ['/abs/assets/photos/a.jpeg'], garments: ['/abs/assets/photos/b.jpeg'] });
+  assert.match(prompt, /referenced_image_paths/);
+  const list = JSON.parse(prompt.match(/parameter \(in this order\): (\[[^\]]*\])/)![1]);
+  assert.deepEqual(list, ['/abs/assets/photos/a.jpeg', '/abs/assets/photos/b.jpeg'], 'identity first, then garments');
+  assert.ok(!/renders\//.test(prompt), 'no generated render is used as a reference');
+  assert.match(prompt, /recognisably this person/);
+});

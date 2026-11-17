@@ -214,14 +214,14 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
           {item.status === 'inactive' && looks.length > 0 && <div className="note warn" style={{ marginTop: 8 }}>Річ неактуальна, але є в образах — заміни її в Примірці.</div>}
         </div>
 
-        <details>
-          <summary className="small muted" style={{ cursor: 'pointer' }}>Історія змін ({item.history.length})</summary>
-          <div className="stack small" style={{ marginTop: 8 }}>
-            {item.history.slice().reverse().map((h, i) => (
+        <div>
+          <div className="h2" style={{ fontSize: 15, marginBottom: 8 }}>Історія</div>
+          <div className="stack small">
+            {item.history.slice().reverse().slice(0, 6).map((h, i) => (
               <div key={i} className="row"><span className="faint">{fmtDate(h.at)}</span><span>{h.action}</span>{h.note && <span className="muted">{h.note}</span>}</div>
             ))}
           </div>
-        </details>
+        </div>
       </div>
     </Drawer>
   );

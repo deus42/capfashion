@@ -13,3 +13,5 @@ output/*
 tasks/worklogs/
 .local/
 node_modules/
+
+app/dist/

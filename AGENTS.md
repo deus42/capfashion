@@ -23,7 +23,7 @@
 ## Project Purpose
 
 - Personal fashion and capsule-wardrobe workspace: preserve source conversations/photos, maintain source-backed wardrobe notes, and develop capsule plans.
-- Current phase is functional specification, candidate wardrobe catalogue and visual prototyping. Application code and deployment are not implemented; the specification remains for owner review.
+- Current phase: local site v1 (`app/`) built from the accepted specification (17 November 2026), with candidate catalogue confirmation and personal try-on review in progress. No deployment or public hosting.
 
 ## Execution Policy
 
@@ -67,7 +67,7 @@
 
 - Current context: `node /Users/deus/Projects/Vault-Tec/scripts/vault-preflight.mjs`.
 - Review: `git status --short` and `git diff --check`; separately validate new/untracked files.
-- No install, dev, build or application test command exists in this documentation workspace.
+- Site: `cd app && npm install && npm start` (http://127.0.0.1:4317); checks: `cd app && npm run check` (typecheck, server tests, build). Data: ignored `.local/app-data/`; never commit it.
 
 ## Testing & Validation
 

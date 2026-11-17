@@ -6,7 +6,8 @@ The source chat is **“Нагадай чорну п’ятницю”**, dated 
 
 ## Start here
 
-- [Cap Fashion v1 — functional specification for review](docs/superpowers/specs/2026-11-15-cap-fashion-design.md)
+- **Local site:** `cd app && npm start` → http://127.0.0.1:4317 ([app README](app/README.md))
+- [Cap Fashion v1 — functional specification](docs/superpowers/specs/2026-11-15-cap-fashion-design.md) (accepted as the implementation basis, 17 November)
 - [Project brief](docs/project.md)
 - [Source recovery and coverage](docs/source-status.md)
 - [Capsule plans](docs/capsules/README.md)
@@ -21,6 +22,7 @@ The source chat is **“Нагадай чорну п’ятницю”**, dated 
 ## Structure
 
 ```text
+app/                  Local site: React + Vite UI, Node server, Codex try-on runner
 docs/                 Curated project and capsule notes
 sources/chatgpt/      Local chat exports (ignored)
 sources/documents/    Local original documents (ignored)
@@ -30,7 +32,7 @@ output/               Generated reports/previews (ignored)
 tasks/worklogs/       Local execution checkpoints (ignored)
 ```
 
-This workspace contains source material, a functional specification for review, a candidate wardrobe catalogue and visual prototypes. Application code and deployment are not implemented. Original personal material and generated personal images stay outside Git; no remote publication is configured.
+This workspace contains source material, the accepted functional specification, a candidate wardrobe catalogue and the local Cap Fashion site (`app/`). Site data lives in ignored `.local/app-data/`. There is no deployment or public hosting; iPhone access is tailnet-only and opt-in. Original personal material and generated personal images stay outside Git.
 
 ## Vault
 

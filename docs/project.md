@@ -8,7 +8,7 @@ Keep the existing fashion/capsule work, original photos and future wardrobe deci
 
 - Source recovery is complete: preserve all 25 photos, the visible conversation and their provenance.
 - Build a source-backed candidate wardrobe catalogue; every item requires owner confirmation.
-- Maintain the [Cap Fashion v1 specification](superpowers/specs/2026-11-15-cap-fashion-design.md) and test personal visual prototypes before application implementation.
+- Maintain the [Cap Fashion v1 specification](superpowers/specs/2026-11-15-cap-fashion-design.md), accepted as the implementation basis on 17 November 2026, and the local site in `app/` that implements it.
 - Keep agent instructions, task checkpoints and the Vault project map synchronized.
 
 ## Working method
@@ -21,8 +21,8 @@ Use copies for photo transformations. Keep original filenames and order in a loc
 
 ## Boundaries
 
-Personal originals and derived images stay in ignored local storage. The user separately authorized scoped prototypes in FASHN and through Codex; this is not public-sharing, subscription-purchase or deployment authorization. The specification records a local technical baseline; application implementation has not started.
+Personal originals and derived images stay in ignored local storage. The user separately authorized scoped prototypes in FASHN and through Codex, and site-triggered local Codex generation; this is not public-sharing, subscription-purchase or deployment authorization. The site runs on loopback; iPhone access through `tailscale serve` needs the owner's explicit go-ahead.
 
 ## Current next step
 
-Review the saved specification, candidate catalogue and first own-person capsule visualization. The owner will supply new front-facing base photos to the specification's base-photo standard; the corrected Urban Casual render waits for them. Owner measurements and item confirmations remain open inputs. The source-status note retains the separate web-illustration limits.
+Use the local site: upload new front-facing base photos in Профіль (to the base-photo standard), confirm wardrobe candidates, then run the corrected Urban Casual try-on from Примірка and review it there. Owner measurements and item confirmations remain open inputs. The source-status note retains the separate web-illustration limits.

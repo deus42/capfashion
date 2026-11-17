@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "capfashion",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "app", "run", "serve"],
+      "port": 4317
+    }
+  ]
+}

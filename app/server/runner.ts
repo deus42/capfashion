@@ -472,7 +472,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'packshot' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
-          .sort((a, b) => batch(a.kind) - batch(b.kind) || a.createdAt.localeCompare(b.createdAt));
+          // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.
+          .sort((a, b) => batch(a.kind) - batch(b.kind) || (batch(a.kind) === 1 ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt)));
         if (!queued.length && active.size === 0) break;
         while (active.size < limit && queued.length) {
           // Uploads are triaged one at a time so the same garment on several photos is recognised as one item.

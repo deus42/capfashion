@@ -181,7 +181,8 @@ export function coverNeed(db: DB, needId: string, itemId: string) {
   bump(need, undefined);
   history(item, 'covers_need', `${need.id} · ${need.title}`);
   bump(item, undefined);
-  return { need, looks, renders: queueRerenders(db, looks) };
+  // The picture is updated only when the owner asks (look page: «Оновити»).
+  return { need, looks, renders: [] as Job[] };
 }
 
 /** Puts a recommendation back on the shopping list and its stand-in back into the looks it was replaced in. */
@@ -200,7 +201,7 @@ export function uncoverNeed(db: DB, needId: string) {
     history(item, 'uncovers_need', `${need.id} · ${need.title}`);
     bump(item, undefined);
   }
-  return { need, looks, renders: queueRerenders(db, looks) };
+  return { need, looks, renders: [] as Job[] };
 }
 
 function history(item: Item, action: string, note?: string) {
@@ -467,11 +468,10 @@ on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
     bump(look, b.rev);
     pick(look, b, ['name', 'note']);
     if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
-    const changed = b.slots ? setLookSlots(look, cleanSlots(b.slots), str(b.versionNote)) : false;
+    if (b.slots) setLookSlots(look, cleanSlots(b.slots), str(b.versionNote));
     if (!look.name) throw new HttpError(400, 'Назва не може бути порожньою');
-    // A changed composition gets its try-on by itself (owner, 17.11: no queue to manage).
-    const renders = changed ? queueRerenders(db, [look.id]) : [];
-    return { look, run: renders.some((j) => j.state === 'queued') };
+    // A changed composition is not re-rendered by itself: the look page offers «Оновити» (owner, 17.11).
+    return { look, run: false };
   });
   if (out.run) ctx.drain();
   return out.look;
@@ -723,8 +723,8 @@ on('POST', '/api/products/:id/purchase', async (ctx, [id], b) => {
     const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
     need.coveredLookIds = looks;
     bump(need, undefined);
-    // The bought piece replaces the stand-in in every render, too.
-    return { item, renders: queueRerenders(db, looks) };
+    // The look pages offer «Оновити» for the changed pictures.
+    return { item, renders: [] as Job[] };
   });
   if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
   return out.item;

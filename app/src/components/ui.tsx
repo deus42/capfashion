@@ -245,13 +245,13 @@ export function PieceStrip({ slots, size = 44 }: { slots: Slots; size?: number }
 
 /** Flat-lay of an outfit's pieces: used wherever a try-on does not exist yet. */
 /** The look's best try-on, or its pieces laid out — never an empty card; a thin bar runs while a try-on is made. */
-export function LookArt({ look, w = 700, max }: { look: Look; w?: number; max?: number }) {
+export function LookArt({ look, w = 700, max, busy }: { look: Look; w?: number; max?: number; busy?: boolean }) {
   const db = useDb();
   const cover = coverForLook(db, look);
   return (
     <span className="look-art">
       {cover ? <img src={thumb(cover.imagePath, w)} alt={look.name} loading="lazy" /> : <LookCollage slots={look.slots} max={max} />}
-      {lookBusy(db, look.id) && <span className="busy-bar" role="progressbar" aria-label="Генерую примірку" />}
+      {(busy ?? lookBusy(db, look.id)) && <span className="busy-bar" role="progressbar" aria-label="Оновлюю картинку" />}
     </span>
   );
 }

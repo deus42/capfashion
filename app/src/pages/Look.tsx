@@ -1,11 +1,11 @@
 import { Fragment, useState } from 'react';
-import { Check, ImageOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { ImageOff, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { DB, Job, Look, SlotKey, SlotRef } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, LookArt, Missing, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookBusy, resolveRef } from '../lib.ts';
+import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, resolveRef } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
@@ -60,6 +60,7 @@ export function LookPage({ id }: { id: string }) {
   const { act, toast } = useApp();
   const [editing, setEditing] = useState(false);
   const [swap, setSwap] = useState<{ slot?: SlotKey; current?: SlotRef } | null>(null);
+  const [keptNow, setKeptNow] = useState('');
   const look = db.looks.find((l) => l.id === id);
   if (!look) return <div className="page"><Empty icon={<ImageOff />} title="Образ не знайдено" /></div>;
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
@@ -68,21 +69,24 @@ export function LookPage({ id }: { id: string }) {
   const stale = cover && cover.lookVersion !== look.version;
   const hidden = hiddenLookIds(db).has(look.id);
   const siblings = capsule ? distinctLooks(db, capsuleLooks(db, capsule.lookIds)).filter((l) => l.id !== look.id) : [];
-  const busy = lookBusy(db, look.id);
+  // The owner asked for a new picture: the slider runs until it arrives (queued or being made).
+  const busy = db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === look.id && (j.state === 'queued' || j.state === 'running'));
   const paused = rendersPaused(db);
+  const keepKey = `cf-keep-${look.id}`;
+  const kept = (() => { try { return localStorage.getItem(keepKey) === String(look.version); } catch { return false; } })();
+  // After pieces change, ask once whether to update the picture (owner, 17.11): never automatic.
+  const askUpdate = Boolean(stale) && !busy && !paused && !kept && keptNow !== `${look.id}:${look.version}`;
   const options = accessoryOptions(db, look);
 
-  const newPicture = async () => {
+  const update = async () => {
     // The server uses the pinned identity reference when there is one.
     const job = await act(() => api<Job>('POST', '/api/jobs', { lookId: look.id, basePhotoIds: db.profile.basePhotoIds, instructions: '', run: true }));
     if (job?.state === 'needs_data') toast(job.stateNote ?? 'Зараз не вийде', true);
   };
-  const itsMe = (yes: boolean) =>
-    cover &&
-    act(
-      () => api('POST', `/api/results/${cover.id}/review`, yes ? { decision: 'accepted' } : { decision: 'rework', reason: 'face' }),
-      yes ? 'Прийнято' : 'Прибрано',
-    );
+  const keep = () => {
+    try { localStorage.setItem(keepKey, String(look.version)); } catch { /* the hint simply returns next time */ }
+    setKeptNow(`${look.id}:${look.version}`);
+  };
   const swapAccessory = (current: SlotRef, id: string) =>
     act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, slots: { ...look.slots, accessories: look.slots.accessories.map((r) => (same(r, current) ? { kind: 'item', id } : r)) } }));
 
@@ -118,18 +122,23 @@ export function LookPage({ id }: { id: string }) {
 
       <div className="look-page">
         <div className="look-hero">
-          <a className="cover" href={cover ? media(cover.imagePath) : undefined} target={cover ? '_blank' : undefined} rel="noreferrer">
-            <LookArt look={look} w={960} />
-            {stale && <span className="corner"><Badge tone="glass">старий склад</Badge></span>}
-          </a>
-          {cover?.review === 'pending' && (
-            <div className="its-me">
-              <span>Це я?</span>
-              <button className="btn" onClick={() => void itsMe(false)}>Ні</button>
-              <button className="btn primary" onClick={() => void itsMe(true)}><Check size={15} /> Так</button>
+          <div className="hero-pic">
+            <a className="cover" href={cover ? media(cover.imagePath) : undefined} target={cover ? '_blank' : undefined} rel="noreferrer">
+              <LookArt look={look} w={960} busy={busy} />
+            </a>
+            {!paused && (
+              <button className="refresh-btn" disabled={busy} onClick={() => void update()} aria-label="Оновити картинку" title="Оновити картинку">
+                <RefreshCw size={15} className={busy ? 'spin' : ''} />
+              </button>
+            )}
+          </div>
+          {askUpdate && (
+            <div className="update-ask">
+              <span>Речі змінено</span>
+              <button className="btn sm" onClick={keep}>Ні</button>
+              <button className="btn sm primary" onClick={() => void update()}>Оновити</button>
             </div>
           )}
-          {!paused && <button className="btn" disabled={busy} onClick={() => void newPicture()}><Sparkles size={15} /> Нова картинка</button>}
         </div>
         <div className="look-side">
           <div className="section-head"><h2 className="h2">Речі образу <span className="count">{own.length}</span></h2></div>

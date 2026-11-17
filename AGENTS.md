@@ -86,6 +86,8 @@
 
 ### Mandatory original-photo identity — owner instruction, 17 November 2026
 
+- LATEST STOP, 17 November: after rejecting the Photo 5 render and the montage direction, the owner ordered the bad face removed. Personal render generation is STOPPED until a new explicit request. Keep the identity setup disabled. Rejected face attempts are retained locally as history but marked `hiddenAt` and excluded from all site views/result links/comparisons; never restore them through retries or automatic queue repair. Do not display another face attempt in the chat. Original personal reference photos remain protected; belt/polo catalogue updates remain active.
+
 - Every personal try-on MUST take the owner's face AND physique from the owner's ORIGINAL photographs. Preserve actual facial features, apparent age, hairline, skin, build and body proportions. Do not replace, average, beautify, de-age, slim, lengthen or muscularize the person.
 - Pin one selected primary original and consistent body references for the whole generation batch. Selection requires owner confirmation or an explicit instruction to choose from the originals. Record exact source paths, SHA-256 values and face/body/hair/garment roles. Do not silently switch the primary between looks or mix facial anatomy from different photos.
 - Owner presentation, 17 November: head upright, facing forward, both eyes looking directly into the camera; natural expression. Same real hair length and colour, neatly swept back and slightly sideways. NO GLASSES of any kind, including sunglasses or eyewear on the head/clothing. Change presentation only, never facial anatomy or physique. The IMG_3615-based front control was explicitly REJECTED for a changed face; its identity setup is disabled and must not resume.

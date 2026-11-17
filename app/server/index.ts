@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createStore, HttpError } from './store.ts';
 import { buildSeed } from './seed.ts';
 import { createRunner } from './runner.ts';
+import { stateView } from './state-view.ts';
 import { dispatch, upload } from './routes.ts';
 import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, thumbnail } from './media.ts';
 
@@ -61,15 +62,6 @@ function send(res: http.ServerResponse, status: number, data: unknown, req?: htt
   }
   res.writeHead(status, headers);
   res.end(body);
-}
-
-/** The UI does not need prompts or snapshots of finished non-try-on jobs; keep polling light. */
-function stateView(db: ReturnType<typeof store.read>) {
-  return {
-    ...db,
-    results: db.results.map(({ prompt: _p, ...r }) => r),
-    jobs: db.jobs.map((j) => ((j.kind ?? 'tryon') === 'tryon' ? j : { ...j, snapshot: { lookName: j.snapshot.lookName, slots: [], basePhotoIds: [], basePhotoPaths: [] } })),
-  };
 }
 
 const gzCache = new Map<string, { mtime: number; buf: Buffer }>();

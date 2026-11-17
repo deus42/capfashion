@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { DB } from './schema.ts';
 import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
+import { stateView } from './state-view.ts';
 import { createJob, dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
 import { verifyReferenceFiles } from './identity.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
@@ -17,6 +18,22 @@ import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts'
 import { looksNeedingRender } from '../src/render-need.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
+
+test('hidden personal attempts stay in history but never reach site covers, gallery or result links', () => {
+  const db = fixture();
+  const result = { id: 'R-hide', jobId: 'J-hide', lookId: 'L-1', lookVersion: 1, imagePath: 'bad.png', tool: 'test', model: 'test', prompt: 'private prompt', sources: [], usedItemPhotos: true, review: 'rework' as const, favorite: false, createdAt: at, hiddenAt: at };
+  db.results.push(result, { ...result, id: 'R-show', hiddenAt: undefined });
+  db.jobs.push({ id: 'J-hide', lookId: 'L-1', resultId: 'R-hide', lookVersion: 1, snapshot: { lookName: 'Look', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'done', origin: 'import', createdAt: at });
+  db.comparisons.push({ id: 'CMP-hide', resultA: 'R-hide', resultB: 'R-show', note: '', favorite: false, createdAt: at });
+  const view = stateView(db);
+  assert.deepEqual(view.results.map((r) => r.id), ['R-show']);
+  assert.equal(view.jobs[0].resultId, undefined);
+  assert.equal(view.comparisons.length, 0);
+  assert.equal('prompt' in view.results[0], false);
+  assert.equal(db.results.length, 2, 'retained local history is not deleted');
+  assert.equal(db.jobs[0].resultId, 'R-hide', 'the stored attempt link remains');
+  assert.equal(db.comparisons.length, 1);
+});
 
 function fixture(): DB {
   const slots = { ...emptySlots(), bottom: [{ kind: 'item' as const, id: 'W-1' }], top: [{ kind: 'need' as const, id: 'N-1' }] };

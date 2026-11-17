@@ -271,6 +271,8 @@ export interface Job {
 }
 
 export interface Result {
+  /** Owner removed this attempt from site display; original file/history remain local. */
+  hiddenAt?: string;
   id: string;
   jobId: string;
   lookId: string;

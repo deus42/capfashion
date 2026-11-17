@@ -100,15 +100,48 @@ export function intakePrompt(db: DB, job: Job, photoNames: string[]) {
     .join('\n');
 }
 
+export const ANALYZE_THEMES = [
+  'Smart casual для зустрічей і вечері',
+  'Спортивний вікенд і активний день',
+  'Теплі шари на холодну погоду',
+  'Монохромні образи й тон-в-тон',
+  'Кольорові акценти на спокійній базі',
+  'Легкі образи на теплий день',
+  'Подорож: зручно й охайно',
+  'Денім у різних поєднаннях',
+];
+
+/** A theme not used by recent selections, so an empty request still gives something new. */
+export function pickTheme(db: DB) {
+  const recent = db.capsules.filter((c) => c.kind === 'selection').map((c) => c.sourceNote ?? '').join(' ');
+  const fresh = ANALYZE_THEMES.filter((t) => !recent.includes(t));
+  const pool = fresh.length ? fresh : ANALYZE_THEMES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const lookItems = (l: Look) => new Set(SLOT_KEYS.flatMap((k) => l.slots[k].filter((r) => r.kind === 'item').map((r) => r.id)));
+
+/** Same outfit, or the same outfit with only one piece swapped. */
+export function nearDuplicate(a: Set<string>, b: Set<string>) {
+  let shared = 0;
+  for (const x of a) if (b.has(x)) shared += 1;
+  return shared >= Math.max(3, Math.min(a.size, b.size) - 1);
+}
+
 export function analyzePrompt(db: DB, job: Job, attached: string[]) {
   const items = ownedItems(db);
+  const existing = db.looks.filter((l) => lookItems(l).size >= 3).slice(-40);
+  const names = db.capsules.filter((c) => c.kind === 'selection').map((c) => c.name);
   return [
     'You are the Cap Fashion stylist running unattended. Build outfits ONLY from the owner\'s existing wardrobe listed below and answer with JSON only (schema enforced).',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
     `Profile notes: ${Object.values(db.profile.preferences).filter(Boolean).join(' ')}`,
     job.instructions ? `Request from the owner: ${job.instructions}` : 'Request: a balanced set of everyday outfits for the current season.',
     '',
-    'Rules: use only ids from the list (exact strings). Each look needs a bottom and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Do not repeat the same exact combination. Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
+    'Rules: use only ids from the list (exact strings). Each look needs a bottom and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
+    'Variety is required: every look must differ from every other look AND from every existing outfit below in at least two of top / outer layer / bottom / shoes. Spread the wardrobe: use pieces that existing outfits rarely use, vary colours and silhouettes. Give the selection a new name, different from the existing names.',
+    existing.length ? `Existing outfits (do not repeat or near-copy):\n${existing.map((l) => `- ${[...lookItems(l)].join(', ')}`).join('\n')}` : '',
+    names.length ? `Existing selection names (do not reuse): ${names.join('; ')}` : '',
     'Write name, description, look names, occasion and why in Ukrainian, short (why: one sentence on colour/silhouette logic). season: all | warm | transitional | cold.',
     attached.length ? `Packshot images are attached as files named by item id (${attached.length} files) — use them to judge colours and styles.` : '',
     'If the wardrobe is not enough for a single sensible outfit, return status "error" with the reason.',
@@ -249,6 +282,7 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
   const at = now();
   const capsuleId = newId('C');
   const looks: Look[] = [];
+  const taken = db.looks.map(lookItems).filter((s) => s.size >= 3);
   for (const l of reply.looks ?? []) {
     const slots = emptySlots();
     for (const k of SLOT_KEYS) {
@@ -256,8 +290,9 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
       slots[k] = [...new Set((l[k] ?? []).filter((id) => owned.has(id)))].slice(0, limit).map((id) => ({ kind: 'item' as const, id }));
     }
     if (!slots.bottom.length || !slots.shoes.length) continue;
-    const key = JSON.stringify(slots);
-    if (looks.some((x) => JSON.stringify(x.slots) === key)) continue;
+    const set = new Set(SLOT_KEYS.flatMap((k) => slots[k].map((r) => r.id)));
+    if (taken.some((t) => nearDuplicate(set, t))) continue;
+    taken.push(set);
     looks.push({
       id: newId('L'),
       rev: 1,
@@ -278,11 +313,14 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
   const seasons = new Set(reply.looks.map((l) => l.season).filter((s) => (SEASONS as readonly string[]).includes(s)));
   const season: Season = seasons.size === 1 ? ([...seasons][0] as Season) : 'all';
   db.looks.push(...looks);
+  const base = String(reply.name || 'Підбірка з моїх речей').slice(0, 76);
+  let name = base;
+  for (let n = 2; db.capsules.some((c) => c.name === name); n += 1) name = `${base} · ${n}`;
   db.capsules.push({
     id: capsuleId,
     rev: 1,
     kind: 'selection',
-    name: String(reply.name || 'Підбірка з моїх речей').slice(0, 80),
+    name,
     season,
     description: String(reply.description || '').slice(0, 400),
     situations: [...new Set(reply.looks.map((l) => l.occasion).filter(Boolean))].slice(0, 6),

@@ -184,6 +184,7 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .home-hero h1 { font-family: var(--font-display); font-weight: 420; font-size: 48px; line-height: 1.05; letter-spacing: -0.015em; font-variation-settings: 'wdth' 92; }
 .home-hero .sub { color: var(--muted); margin-top: 10px; font-size: 14.5px; }
 .home-hero .prompt-box { margin: 26px auto 0; text-align: left; }
+.hero-prompt textarea { font-size: 16px; min-height: 52px; }
 .home-hero .suggest { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
 .shortcuts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .shortcut { position: relative; aspect-ratio: 4 / 3.1; border-radius: 18px; overflow: hidden; background: var(--sunken); display: block; isolation: isolate; box-shadow: var(--shadow-sm); }
@@ -221,6 +222,8 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 .piece.ph .faint { font-size: 10.5px; letter-spacing: .04em; }
 .piece .pk { position: absolute; left: 6px; bottom: 6px; }
 
+.render-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 14px; background: radial-gradient(ellipse at center, #ffffff 0%, #f3f3f4 100%); }
+.render-ph svg { color: var(--faint); }
 .capsule-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; }
 .capsule-card { display: flex; flex-direction: column; gap: 12px; }
 .capsule-card .cover { position: relative; aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden; background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-sm); transition: box-shadow .2s, transform .2s; }

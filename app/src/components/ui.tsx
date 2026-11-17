@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Check, Footprints, ImagePlus, Layers, Loader2, Shirt, Upload, Watch, X } from 'lucide-react';
+import { Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, Upload, Watch, X } from 'lucide-react';
 import type { Category, Photo, PhotoKind, Slots } from '../api.ts';
 import { thumb, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
@@ -364,5 +364,20 @@ export function ConfirmButton({
         </Modal>
       )}
     </>
+  );
+}
+
+/** What a cover shows while the owner's try-on for these looks is not ready. */
+export function RenderPlaceholder({ lookIds }: { lookIds: string[] }) {
+  const db = useDb();
+  const jobs = db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId && lookIds.includes(j.lookId));
+  const running = jobs.some((j) => j.state === 'running');
+  const queued = jobs.some((j) => j.state === 'queued');
+  const noBase = db.profile.basePhotoIds.length === 0;
+  return (
+    <div className="render-ph">
+      {running || queued ? <Loader2 size={22} className={running ? 'spin' : ''} /> : <PersonStanding size={24} />}
+      <span>{running ? 'Генерую примірку…' : queued ? 'Примірка в черзі' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>
+    </div>
   );
 }

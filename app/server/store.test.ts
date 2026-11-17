@@ -336,3 +336,53 @@ test('deleting capsule, look, item and photo cascades without dangling reference
   assert.deepEqual(db.profile.basePhotoIds, []);
   await assert.rejects(call('DELETE', '/api/photos/P-1'), (e: any) => e.status === 409, 'chat originals are protected');
 });
+
+test('a new selection gets a try-on for every look; missing renders are queued once', async () => {
+  const { dir, store, call } = setup();
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(
+    fake,
+    '#!/bin/sh\nschema=""\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; --output-schema) schema="$2"; shift;; esac; shift; done\ncat >/dev/null\nif [ -n "$schema" ]; then echo \'{"status":"done","reason":"","name":"Вихідні","description":"","looks":[{"name":"A","occasion":"","season":"all","top":[],"layer":[],"bottom":["W-1"],"shoes":["W-S"],"accessories":[],"why":""},{"name":"B","occasion":"","season":"all","top":[],"layer":[],"bottom":["W-2"],"shoes":["W-S"],"accessories":[],"why":""}]}\' > "$o"; else printf PNG > "$d/result.png"; echo \'{"status":"done"}\' > "$o"; fi\n',
+    { mode: 0o755 },
+  );
+  await store.mutate((db) => {
+    db.items.push({ id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    db.profile.basePhotoIds = ['P-1'];
+  });
+  const job = await call('POST', '/api/analyze', {});
+  assert.match(job.instructions, /^Тема: /, 'an empty request gets a theme for variety');
+  await createRunner(store, dir, fake).drain();
+  const db = store.read();
+  const sel = db.capsules.find((c) => c.kind === 'selection')!;
+  assert.equal(sel.lookIds.length, 2);
+  for (const id of sel.lookIds) assert.ok(db.results.some((r) => r.lookId === id), `look ${id} has a render`);
+  const again = await call('POST', '/api/renders/missing', {});
+  assert.equal(again.queued, 1, 'only the seed look L-1 still lacked a render');
+  const twice = await call('POST', '/api/renders/missing', {});
+  assert.equal(twice.queued, 0, 'no duplicate jobs while one is queued');
+});
+
+test('analyzer drops near-copies of existing looks and keeps names unique', async () => {
+  const { store } = setup();
+  await store.mutate((db) => {
+    db.items.push(
+      { id: 'W-S', rev: 1, category: 'shoes', title: 'Stan Smith', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+      { id: 'W-T', rev: 1, category: 'tees', title: 'Tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+      { id: 'W-J', rev: 1, category: 'outerwear', title: 'Jacket', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at },
+    );
+    const slots = { ...emptySlots(), top: [{ kind: 'item' as const, id: 'W-T' }], bottom: [{ kind: 'item' as const, id: 'W-1' }], shoes: [{ kind: 'item' as const, id: 'W-S' }] };
+    db.looks.push({ id: 'L-old', rev: 1, capsuleId: null, name: 'old', slots, version: 1, versions: [{ version: 1, slots, at }], favorite: false, origin: 'agent', createdAt: at, updatedAt: at });
+    db.capsules.push({ id: 'C-s', rev: 1, kind: 'selection', name: 'Вихідні', season: 'all', description: '', situations: [], favorite: false, lookIds: [], origin: 'agent', createdAt: at, updatedAt: at });
+    const job = { id: 'J-a', kind: 'analyze' as const, lookVersion: 0, snapshot: { lookName: '', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+    const id = applyAnalyze(db, job, {
+      status: 'done', reason: '', name: 'Вихідні', description: '',
+      looks: [
+        { name: 'copy', occasion: '', season: 'all', top: ['W-T'], layer: ['W-J'], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
+        { name: 'new', occasion: '', season: 'all', top: [], layer: ['W-J'], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: '' },
+      ],
+    })!;
+    const cap = db.capsules.find((c) => c.id === id)!;
+    assert.equal(cap.name, 'Вихідні · 2');
+    assert.deepEqual(cap.lookIds.map((l) => db.looks.find((x) => x.id === l)!.name), ['new']);
+  });
+});

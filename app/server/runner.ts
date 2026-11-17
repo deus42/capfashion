@@ -7,7 +7,7 @@ import type { Store } from './store.ts';
 import { newId, now } from './store.ts';
 import { prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
-import { packshotJob } from './routes.ts';
+import { packshotJob, queueMissingRenders } from './routes.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
@@ -246,8 +246,10 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         return;
       }
       j.capsuleId = capsuleId;
+      // Every look of a new selection gets the owner's try-on straight away.
+      const renders = queueMissingRenders(db, db.capsules.find((c) => c.id === capsuleId)?.lookIds ?? []);
       j.state = 'done';
-      j.stateNote = `Підбірка готова: ${db.capsules.find((c) => c.id === capsuleId)?.lookIds.length ?? 0} образів`;
+      j.stateNote = `Підбірка готова: ${db.capsules.find((c) => c.id === capsuleId)?.lookIds.length ?? 0} образів${renders.length ? ` — примірки в черзі: ${renders.length}` : ''}`;
     });
   }
 

@@ -1,19 +1,18 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Camera, Check, Loader2, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
+import { ArrowRight, Check, Loader2, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
 import type { Capsule, DB, Job } from '../api.ts';
 import { api, thumb, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, LookCollage } from '../components/ui.tsx';
+import { Badge, RenderPlaceholder } from '../components/ui.tsx';
 import { REVIEW_LABEL, REVIEW_TONE, capsuleCover } from '../lib.ts';
 
 export function CapsuleTile({ c }: { c: Capsule }) {
   const db = useDb();
   const cover = capsuleCover(db, c.lookIds);
-  const first = db.looks.find((l) => l.id === c.lookIds[0]);
   return (
     <a href={`#/capsules/${c.id}`} className="capsule-card">
       <div className="cover">
-        {cover ? <img src={thumb(cover.imagePath, 900)} alt={c.name} /> : first && <LookCollage slots={first.slots} />}
+        {cover ? <img src={thumb(cover.imagePath, 900)} alt={c.name} /> : <RenderPlaceholder lookIds={c.lookIds} />}
         {cover && <div className="corner"><Badge tone={`${REVIEW_TONE[cover.review]} glass`}>{REVIEW_LABEL[cover.review]}</Badge></div>}
       </div>
       <div>
@@ -99,15 +98,11 @@ function ProcCard({ j }: { j: Job }) {
 export function HomePage() {
   const db = useDb();
   const { act } = useApp();
-  const intake = useIntake();
   const [text, setText] = useState('');
   const procs = processing(db);
   const selections = db.capsules.filter((c) => c.kind === 'selection').slice().reverse();
   const capsules = db.capsules.filter((c) => c.kind !== 'selection');
   const analyzing = db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'));
-  const pending = db.results.filter((r) => r.review === 'pending');
-  const packDone = db.items.filter((i) => i.packshotId).length;
-  const packBusy = db.jobs.filter((j) => j.kind === 'packshot' && (j.state === 'queued' || j.state === 'running')).length;
 
   const analyze = async () => {
     const ok = await act(() => api('POST', '/api/analyze', { prompt: text }), 'Аналізатор складає образи з твоїх речей');
@@ -118,34 +113,26 @@ export function HomePage() {
     <div className="page">
       <section className="home-hero">
         <h1>Що одягнемо сьогодні?</h1>
-        <div className="prompt-box">
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="Куди? Напр.: вихідні в місті, вечеря, офіс" />
-        </div>
-        <div className="big-actions">
-          <button className="big-action" onClick={intake.pick} disabled={intake.busy}>
-            {intake.busy ? <Loader2 size={20} className="spin" /> : <Camera size={20} />} Додати фото
-          </button>
-          <button className="big-action primary" onClick={() => void analyze()} disabled={analyzing}>
-            {analyzing ? <Loader2 size={20} className="spin" /> : <Sparkles size={20} />} {analyzing ? 'Підбираю…' : 'Підібрати образи'}
-          </button>
-        </div>
-        {intake.field}
-        {(pending.length > 0 || packBusy > 0) && (
-          <div className="suggest">
-            {pending.length > 0 && (
-              <a className="pill" href={`#/studio?look=${pending[0].lookId}&result=${pending[0].id}`}>
-                <span className="pi"><img src={thumb(pending[0].imagePath, 80)} alt="" /></span>
-                Перевірити примірку
-              </a>
-            )}
-            {packBusy > 0 && (
-              <a className="pill" href="#/wardrobe">
-                <span className="pi"><Loader2 size={13} className="spin" /></span>
-                Packshot {packDone}/{db.items.length}
-              </a>
-            )}
+        <div className="prompt-box hero-prompt">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !analyzing) {
+                e.preventDefault();
+                void analyze();
+              }
+            }}
+            rows={2}
+            placeholder="Куди йдеш? Напр.: вихідні в місті, вечеря, офіс"
+          />
+          <div className="bar">
+            <span className="grow" />
+            <button className="btn primary" onClick={() => void analyze()} disabled={analyzing}>
+              {analyzing ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} {analyzing ? 'Підбираю…' : 'Підібрати'}
+            </button>
           </div>
-        )}
+        </div>
       </section>
 
       {procs.length > 0 && (

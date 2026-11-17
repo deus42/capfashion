@@ -3,8 +3,8 @@ import { Heart, ImageOff, Loader2, Pencil, Plus, ShoppingBag, Sparkles, Trash2 }
 import type { Capsule, Look, Season } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
-import { Badge, ConfirmButton, Empty, LookCollage, Modal, PieceStrip } from '../components/ui.tsx';
-import { REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, coverForLook, resolveRef } from '../lib.ts';
+import { Badge, CategoryIcon, ConfirmButton, Empty, Modal, RenderPlaceholder } from '../components/ui.tsx';
+import { REF_KIND_LABEL, REVIEW_LABEL, REVIEW_TONE, SEASON_LABEL, coverForLook, piecesOf } from '../lib.ts';
 import { CapsuleTile } from './Home.tsx';
 
 function AnalyzeBox() {
@@ -117,7 +117,7 @@ function LookCard({ look }: { look: Look }) {
   return (
     <div className="look-card">
       <a className="cover" href={`#/studio?look=${look.id}`}>
-        {cover ? <img src={thumb(cover.imagePath, 700)} alt={look.name} /> : <LookCollage slots={look.slots} />}
+        {cover ? <img src={thumb(cover.imagePath, 700)} alt={look.name} /> : <RenderPlaceholder lookIds={[look.id]} />}
         <div className="corner">
           {cover && <Badge tone={`${REVIEW_TONE[cover.review]} glass`}>{REVIEW_LABEL[cover.review]}</Badge>}
           {stale && <Badge tone="warn">склад змінено</Badge>}
@@ -128,7 +128,6 @@ function LookCard({ look }: { look: Look }) {
         <h4 title={look.note}>{look.name}</h4>
         <button className="icon-btn" style={{ width: 30, height: 30 }} onClick={() => setEditing(true)} aria-label="Редагувати образ"><Pencil size={13} /></button>
       </div>
-      <PieceStrip slots={look.slots} size={40} />
       {editing && <EditLook look={look} onClose={() => setEditing(false)} />}
     </div>
   );
@@ -169,8 +168,9 @@ export function CapsuleDetail({ id }: { id: string }) {
   const looks = useMemo(() => (capsule?.lookIds ?? []).map((l) => db.looks.find((x) => x.id === l)).filter((l): l is Look => Boolean(l)), [capsule, db.looks]);
   if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
 
-  const needs = new Set<string>();
-  for (const l of looks) for (const list of Object.values(l.slots)) for (const ref of list) if (ref.kind !== 'item') needs.add(resolveRef(db, ref).ref.id);
+  const pieces = new Map<string, ReturnType<typeof piecesOf>[number]>();
+  for (const l of looks) for (const r of piecesOf(db, l.slots)) pieces.set(`${r.ref.kind}:${r.ref.id}`, r);
+  const needs = [...pieces.values()].filter((r) => r.kind === 'need' || r.kind === 'product');
   const isSelection = capsule.kind === 'selection';
 
   const addLook = async () => {
@@ -191,7 +191,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           </div>
         </div>
         <div className="actions">
-          {needs.size > 0 && <button className="btn" onClick={() => go('/shopping')}><ShoppingBag size={15} /> Докупити {needs.size}</button>}
+          {needs.length > 0 && <button className="btn" onClick={() => go('/shopping')}><ShoppingBag size={15} /> Докупити {needs.length}</button>}
           <button className={`icon-btn${capsule.favorite ? ' on' : ''}`} aria-label="Обране" onClick={() => void act(() => api('PATCH', `/api/capsules/${capsule.id}`, { favorite: !capsule.favorite }))}>
             <Heart size={15} fill={capsule.favorite ? 'currentColor' : 'none'} />
           </button>
@@ -211,6 +211,19 @@ export function CapsuleDetail({ id }: { id: string }) {
         </div>
       </div>
       <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} />)}</div>
+
+      <div className="section-head"><h2 className="h2">Речі капсули <span className="count">{pieces.size}</span></h2></div>
+      <div className="ward-grid">
+        {[...pieces.values()].map((r) => (
+          <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `#/wardrobe/${r.ref.id}` : `#/shopping?need=${r.ref.id}`}>
+            <div className="img">
+              {r.art ? <img src={thumb(r.art, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
+              {r.kind !== 'owned' && r.kind !== 'candidate' && <span className="tl"><Badge tone="warn glass">{REF_KIND_LABEL[r.kind] === 'Бажаний тип' ? 'докупити' : REF_KIND_LABEL[r.kind]}</Badge></span>}
+            </div>
+            <span className="nm">{r.title}</span>
+          </a>
+        ))}
+      </div>
       {editing && <EditCapsule capsule={capsule} onClose={() => setEditing(false)} />}
     </div>
   );

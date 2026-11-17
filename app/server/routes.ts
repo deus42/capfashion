@@ -4,6 +4,7 @@ import { CATEGORIES, ITEM_STATUSES, MEASURE_KEYS, PHOTO_KINDS, REWORK_REASONS, S
 import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
 import { prewarm, saveUpload } from './media.ts';
+import { pickTheme } from './analysis.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -70,7 +71,7 @@ export function snapshotSlots(db: DB, slots: Slots): SnapshotSlot[] {
   return out;
 }
 
-function createJob(db: DB, look: Look, basePhotoIds: string[], instructions: string, retryOf?: string, frozen?: Job['snapshot']): Job {
+export function createJob(db: DB, look: Look, basePhotoIds: string[], instructions: string, retryOf?: string, frozen?: Job['snapshot']): Job {
   const basePaths = basePhotoIds.map((id) => findOr404(db.photos, id, 'Базове фото').path);
   const snapshot = frozen ?? { lookName: look.name, slots: snapshotSlots(db, look.slots), basePhotoIds, basePhotoPaths: basePaths };
   const job: Job = { id: newId('J'), lookId: look.id, lookVersion: frozen ? (db.jobs.find((j) => j.id === retryOf)?.lookVersion ?? look.version) : look.version, snapshot, instructions, state: 'queued', origin: 'site', retryOf, createdAt: now() };
@@ -396,12 +397,36 @@ on('POST', '/api/packshots', async (ctx, _p, b) => {
 on('POST', '/api/analyze', async (ctx, _p, b) => {
   const job = await ctx.store.mutate((db) => {
     if (db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Аналізатор уже працює — зачекай на поточну підбірку');
-    const j: Job = { id: newId('J'), kind: 'analyze', lookVersion: 0, snapshot: { lookName: 'Підбірка з моїх речей', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: str(b.prompt, 600) ?? '', state: 'queued', origin: 'site', createdAt: now() };
+    const asked = str(b.prompt, 600) ?? '';
+    const instructions = asked || `Тема: ${pickTheme(db)}`;
+    const j: Job = { id: newId('J'), kind: 'analyze', lookVersion: 0, snapshot: { lookName: 'Підбірка з моїх речей', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions, state: 'queued', origin: 'site', createdAt: now() };
     db.jobs.push(j);
     return j;
   });
   ctx.drain();
   return job;
+});
+
+/** Queues a try-on for every look that has no render and no active job, so every look shows the owner. */
+export function queueMissingRenders(db: DB, lookIds?: string[]) {
+  if (!db.profile.basePhotoIds.length) return [] as Job[];
+  const busy = new Set(db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && (j.state === 'queued' || j.state === 'running')).map((j) => j.lookId));
+  const rendered = new Set(db.results.map((r) => r.lookId));
+  const out: Job[] = [];
+  for (const look of db.looks) {
+    if (lookIds && !lookIds.includes(look.id)) continue;
+    if (rendered.has(look.id) || busy.has(look.id)) continue;
+    if (!SLOT_KEYS.some((k) => look.slots[k].length)) continue;
+    const job = createJob(db, look, db.profile.basePhotoIds, '');
+    if (job.state === 'queued') out.push(job);
+  }
+  return out;
+}
+
+on('POST', '/api/renders/missing', async (ctx) => {
+  const jobs = await ctx.store.mutate((db) => queueMissingRenders(db));
+  ctx.drain();
+  return { queued: jobs.length };
 });
 
 on('POST', '/api/runner/run', (ctx) => {

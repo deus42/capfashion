@@ -74,7 +74,7 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
       }
     >
       <div className="stack" style={{ gap: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 18, alignItems: 'start' }}>
+        <div className="drawer-hero">
           <div className="hero-art">
             {packshot ? <img src={thumb(packshot.path, 700)} alt={item.title} /> : photos[0] ? <img src={thumb(photos[0].path, 700)} alt="" style={{ objectFit: 'cover' }} /> : <CategoryIcon category={item.category} size={28} />}
             {packshot && <span className="tl"><Badge tone="glass">packshot · реконструкція</Badge></span>}
@@ -101,9 +101,9 @@ function ItemDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
         </div>
 
         <div>
-          <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <div className="row wrap" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
             <div className="h2" style={{ fontSize: 15 }}>Оригінальні фото <span className="count">{photos.length}</span></div>
-            <div className="row">
+            <div className="row wrap">
               <UploadButton kind="item" params={{ item: item.id }} className="btn sm" label="Фото" />
               <UploadButton kind="label" params={{ item: item.id }} className="btn sm" label="Етикетка" />
               <UploadButton kind="detail" params={{ item: item.id }} className="btn sm" label="Деталь" />
@@ -236,16 +236,17 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const intake = useIntake();
   const intakeBusy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const status = (['needs_confirmation', 'confirmed', 'inactive'] as ItemStatus[]).includes(view as ItemStatus) ? (view as ItemStatus) : null;
+  const isNew = (i: Item) => i.origin === 'intake' && i.status === 'needs_confirmation';
   const cat = CATS.includes(view as Category) ? (view as Category) : null;
   // Inactive items only appear in the «Неактуальні» filter.
   const list = db.items.filter(
-    (i) => !i.mergedInto && (!cat || i.category === cat) && (status ? i.status === status : i.status !== 'inactive') && `${i.title} ${i.id} ${i.brand ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
+    (i) => !i.mergedInto && (view !== 'new' || isNew(i)) && (!cat || i.category === cat) && (status ? i.status === status : i.status !== 'inactive') && `${i.title} ${i.id} ${i.brand ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
   const visible = db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto);
   const open = openId ? db.items.find((i) => i.id === openId) : undefined;
   const done = db.items.filter((i) => i.packshotId).length;
   const missing = db.items.filter((i) => !i.packshotId && i.status !== 'inactive' && !busy.has(i.id)).length;
-  const title = cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі';
+  const title = view === 'new' ? 'Нові з фото' : cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі';
 
   return (
     <div className="page">
@@ -279,14 +280,18 @@ export function WardrobePage({ openId }: { openId?: string }) {
               )}
               <button className="icon-btn" onClick={() => setMergeSel([])} title="Обʼєднати дублікати"><Merge size={15} /></button>
               <button className="icon-btn" onClick={() => setCreating(true)} title="Додати вручну"><Plus size={16} /></button>
-              <button className="btn primary" onClick={intake.pick} disabled={intake.busy}>
-                {intake.busy || intakeBusy ? <Loader2 size={16} className="spin" /> : <Camera size={16} />} Додати фото{intakeBusy ? ` · ${intakeBusy}` : ''}
-              </button>
+
             </>
           )
         }
       />
 
+      {intakeBusy > 0 && (
+        <div className="row" style={{ marginBottom: 12, gap: 12 }}>
+          <Loader2 size={15} className="spin" />
+          <span className="small muted">Розбираю фото: {intakeBusy} — нові речі з’являться тут</span>
+        </div>
+      )}
       {busy.size > 0 && (
         <div className="row" style={{ marginBottom: 22, gap: 12 }}>
           <Loader2 size={15} className="spin" />
@@ -300,7 +305,12 @@ export function WardrobePage({ openId }: { openId?: string }) {
           value={view}
           onChange={(k) => setView(k)}
           groups={[
-            { items: [{ key: 'all', label: 'Усі речі', icon: <Grid2x2 size={17} />, n: visible.length }] },
+            {
+              items: [
+                { key: 'all', label: 'Усі речі', icon: <Grid2x2 size={17} />, n: visible.length },
+                ...(db.items.some(isNew) ? [{ key: 'new', label: 'Нові з фото', icon: <Camera size={17} />, n: db.items.filter(isNew).length }] : []),
+              ],
+            },
             { label: 'Категорії', items: CATS.map((c) => ({ key: c, label: CATEGORY_LABEL[c], icon: <CategoryIcon category={c} size={17} />, n: visible.filter((i) => i.category === c).length })) },
             {
               label: 'Статус',

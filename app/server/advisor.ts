@@ -6,7 +6,7 @@ import type { DB, Item, Job, Need, Season, Slots, Suggestion } from './schema.ts
 import { CATEGORIES, SEASONS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
-import { itemUsage, openSuggestions, siteLooks } from '../src/lib.ts';
+import { isEyewear, itemUsage, openSuggestions, siteLooks } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden, lookKeys, sameLookKeys } from '../src/rating.ts';
 
 const str = { type: 'string' } as const;
@@ -50,7 +50,13 @@ export interface AdviseReply {
 }
 
 /** Items whose rating is missing or older than the item itself: the agent looks at them (with photos). */
-export const itemsToRate = (db: DB) => ownedItems(db).filter((i) => !i.rating || i.rating.rev !== i.rev);
+export const itemsToRate = (db: DB) => advisable(db).filter((i) => !i.rating || i.rating.rev !== i.rev);
+
+/** Owned items the advisor works with: eyewear stays out of looks entirely (owner rule). */
+const advisable = (db: DB) => ownedItems(db).filter((i) => !isEyewear(i.title));
+
+/** Open «замінить» purchases at a time: the rest stay as a line on the item page (no flood in «Покупки»). */
+export const MAX_OPEN_REPLACEMENTS = 3;
 
 /** One advise job at a time in the queue; several changes in a row share it. */
 export function queueAdvice(db: DB, reason: string): Job | null {
@@ -73,7 +79,7 @@ const piecesLine = (db: DB, slots: Slots) =>
   SLOT_KEYS.flatMap((k) => slots[k].map((r) => (r.kind === 'item' ? `${k}:${r.id}` : `${k}:${r.kind === 'need' ? 'TO BUY ' + (db.needs.find((n) => n.id === r.id)?.title ?? r.id) : r.id}`))).join(', ');
 
 export function advisePrompt(db: DB, job: Job, attached: string[]) {
-  const items = ownedItems(db);
+  const items = advisable(db);
   const prefs = db.profile.preferences;
   const hidden = hiddenLookIds(db);
   const capsules = db.capsules.filter((c) => !isCapsuleHidden(db, c));
@@ -96,6 +102,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     '3. newLooks — up to 3 new outfits from owned item ids only. Prefer items rated 7+ that have 0–1 shown looks (good piece, too few looks). capsuleId: the id of the listed capsule whose style and season fits, else empty. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.',
     `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short Ukrainian name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases listed below. Usually empty.`,
     '4. newCapsules — at most 1, only when 3 or more strong outfits of one style and season are not covered by any listed capsule: a name, season (all | warm | transitional | cold), why and 3–5 looks (same rules). Usually empty.',
+    'Never use eyewear (glasses, sunglasses, frames) anywhere — the owner wears none in looks.',
     'Same-look rule (the owner\'s): two outfits are the SAME look when identical or different by only one piece. Every new outfit must be a different look from each other, from every listed look and from every rejected outfit.',
     'Return status "error" only if the wardrobe cannot be read.',
     '',
@@ -134,16 +141,18 @@ function slotsFrom(o: Outfit, owned: Set<string>): Slots | null {
 /** Saves the advisor's answer: ratings, look advice, new proposals (older open ones are replaced), replacement purchases. */
 export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
   const at = now();
-  const owned = new Map(ownedItems(db).map((i) => [i.id, i] as const));
+  const owned = new Map(advisable(db).map((i) => [i.id, i] as const));
   let rated = 0;
   let replaced = 0;
-  for (const r of reply.items ?? []) {
+  // Lowest scores first, so the clearest replacements take the few open purchase places.
+  for (const r of [...(reply.items ?? [])].sort((a, b) => (Number(a.score) || 0) - (Number(b.score) || 0))) {
     const item = owned.get(r.id);
     if (!item) continue;
     const replace = item.rating?.kept ? '' : text(r.replace, 200);
     item.rating = { score: clampScore(r.score), note: text(r.note, 200), replace: replace || undefined, replaceWith: replace ? text(r.replaceWith, 80) || undefined : undefined, rev: item.rev, at, kept: item.rating?.kept };
     rated += 1;
-    if (replace && item.rating.replaceWith && !db.needs.some((n) => n.replaces === item.id && n.status === 'open')) {
+    const openReplacements = db.needs.filter((n) => n.replaces && n.status === 'open').length;
+    if (replace && item.rating.replaceWith && openReplacements < MAX_OPEN_REPLACEMENTS && !db.needs.some((n) => n.replaces === item.id && n.status === 'open')) {
       replaced += 1;
       db.needs.push(replacementNeed(item, replace, item.rating.replaceWith, at));
     }

@@ -1021,6 +1021,7 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
     add('W-T', 'tees', 'White tee');
     add('W-T2', 'tees', 'Milk tee');
     add('W-LOGO', 'tees', 'Big logo tee');
+    db.items.push({ id: 'W-G', rev: 1, category: 'accessories', title: 'Окуляри в черепаховій оправі', status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
     db.looks[0].slots = { ...emptySlots(), top: [{ kind: 'item', id: 'W-T' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] };
   });
   // A rating queues one advice; more changes share it.
@@ -1040,7 +1041,7 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
     looks: [{ id: 'L-1', score: 7, weakItem: 'W-T', swapTo: 'W-T2', why: 'Молочна тепліша.' }],
     newLooks: [
       { name: 'Майже той самий', capsuleId: 'C-1', top: ['W-T2'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
-      { name: 'Новий', capsuleId: 'C-1', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: 'Вводить дубль чиносів.' },
+      { name: 'Новий', capsuleId: 'C-1', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: ['W-G'], why: 'Вводить дубль чиносів.' },
     ],
     newCapsules: [],
     newNeeds: [
@@ -1071,6 +1072,7 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
   db = store.read();
   const newLook = db.looks.find((l) => `/looks/${l.id}` === added.href)!;
   assert.equal(newLook.capsuleId, 'C-1');
+  assert.equal(Object.values(newLook.slots).flat().some((r) => r.id === 'W-G'), false, 'never eyewear in a look');
   assert.ok(db.capsules[0].lookIds.includes(newLook.id));
   await assert.rejects(call('POST', `/api/suggestions/${open[0].id}/reject`, {}), /вже розглянуто/);
   await call('POST', '/api/looks/L-1/advice', { accept: false });

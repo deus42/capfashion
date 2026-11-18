@@ -230,9 +230,12 @@ export function itemVerdict(db: DB, item: Item): { line: string; note: string; k
   return { kind: 'plain', line: `${r.score}/10 · ${inLooks}`, note: r.note };
 }
 
-/** Advisor proposals still worth showing: open and made only of active owned pieces. */
+/** Glasses never go into the owner's looks (owner rule: no eyewear of any kind). */
+export const isEyewear = (title: string) => /окуляр|оправ|glasses|eyewear/i.test(title);
+
+/** Advisor proposals still worth showing: open and made only of active owned pieces, never eyewear. */
 export function openSuggestions(db: DB) {
-  const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto).map((i) => i.id));
+  const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title)).map((i) => i.id));
   return (db.suggestions ?? []).filter((s) => s.status === 'open' && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))));
 }
 

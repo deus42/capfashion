@@ -146,7 +146,7 @@ export function LookPage({ id }: { id: string }) {
         <div className="look-hero">
           <div className="hero-pic">
             <a className="cover" href={cover ? media(cover.imagePath) : undefined} target={cover ? '_blank' : undefined} rel="noreferrer">
-              <LookArt look={look} w={960} busy={busy} />
+              <LookArt look={look} w={960} busy={busy} label />
             </a>
             {!paused && (
               <button className="refresh-btn" disabled={busy} onClick={() => void update()} aria-label="Оновити картинку" title="Оновити картинку">

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Archive, Camera, Check, CircleCheck, CircleDashed, Grid2x2, Merge, Pencil, Plus, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
-import type { Category, Item, ItemStatus } from '../api.ts';
+import type { Category, Item, ItemStatus, Job } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, Empty, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, ConfirmButton, Empty, JobBar, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
 import { CATEGORY_LABEL, itemVerdict, siteLooks } from '../lib.ts';
 
 import { InfoMark, TermInfo } from './Glossary.tsx';
@@ -15,9 +15,8 @@ const CATS = Object.keys(CATEGORY_LABEL) as Category[];
 
 function usePackshotState() {
   const db = useDb();
-  const busy = new Map<string, 'queued' | 'running'>();
-  for (const j of db.jobs) if (j.kind === 'packshot' && j.itemId && (j.state === 'queued' || j.state === 'running')) busy.set(j.itemId, j.state);
-  // Only work that is happening now animates; queued work waits quietly.
+  const busy = new Map<string, Job>();
+  for (const j of db.jobs) if (j.kind === 'packshot' && j.itemId && (j.state === 'queued' || j.state === 'running') && busy.get(j.itemId)?.state !== 'running') busy.set(j.itemId, j);
   return busy;
 }
 
@@ -61,7 +60,7 @@ function ItemPage({ item }: { item: Item }) {
       <div className="item-hero">
         <a className="item-main" href={main ? media(main.path) : undefined} target={main ? '_blank' : undefined} rel="noreferrer">
           {main ? <img src={thumb(main.path, 960)} alt={item.title} /> : <CategoryIcon category={item.category} size={34} />}
-          {busy.get(item.id) === 'running' && <span className="busy-bar" role="progressbar" aria-label="Фото речі" />}
+          {busy.get(item.id) && <JobBar job={busy.get(item.id)!} label />}
         </a>
         <div className="item-thumbs">
           {photos.map((p) => (
@@ -314,7 +313,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
                       {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
                       {!mergeSel && (useCount.get(i.id) ?? 0) > 0 && <span className="uses" title="У скількох образах">{useCount.get(i.id)} обр.</span>}
-                      {st === 'running' && <span className="busy-bar" role="progressbar" aria-label="Фото речі" />}
+                      {st?.state === 'running' && <JobBar job={st} />}
                     </div>
                     <span className="nm">{i.title}<TermInfo texts={[i.title]} /></span>
                   </button>

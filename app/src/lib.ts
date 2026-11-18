@@ -97,6 +97,35 @@ export function coverForLook(db: DB, look: Look): Result | undefined {
 /** A try-on of this look is being made right now (a queued one is not shown as work in progress). */
 export const lookBusy = (db: DB, lookId: string) => db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && j.state === 'running');
 
+/** The look's picture job: running, or also waiting when the owner just asked for it. */
+export const lookJob = (db: DB, lookId: string, includeQueued = false) =>
+  db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && (j.state === 'running' || (includeQueued && j.state === 'queued'))).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+
+const FALLBACK_SECONDS: Record<string, number> = { tryon: 140, packshot: 80, intake: 25, analyze: 60, shopsearch: 320, advise: 240 };
+
+/** How long a job of this kind usually takes here: the median of the last 20 finished ones (owner, 18.11). */
+export function expectedSeconds(db: DB, kind: Job['kind']) {
+  const k = kind ?? 'tryon';
+  const recent = db.jobs
+    .filter((j) => (j.kind ?? 'tryon') === k && j.state === 'done' && j.startedAt && j.finishedAt)
+    .sort((a, b) => b.finishedAt!.localeCompare(a.finishedAt!))
+    .slice(0, 20)
+    .map((j) => (new Date(j.finishedAt!).getTime() - new Date(j.startedAt!).getTime()) / 1000)
+    .filter((s) => s > 0)
+    .sort((a, b) => a - b);
+  return recent.length >= 3 ? recent[Math.floor(recent.length / 2)] : FALLBACK_SECONDS[k] ?? 120;
+}
+
+/** Real progress of one job: share of its usual time (never 100% before it ends) and what is left. */
+export function jobProgress(db: DB, job: Job, now = Date.now()) {
+  if (job.state !== 'running' || !job.startedAt) return { pct: 0, label: 'у черзі' };
+  const total = expectedSeconds(db, job.kind);
+  const elapsed = Math.max(0, (now - new Date(job.startedAt).getTime()) / 1000);
+  const left = total - elapsed;
+  const label = left <= 5 ? 'майже готово' : left < 60 ? 'ще < 1 хв' : `ще ≈ ${Math.ceil(left / 60)} хв`;
+  return { pct: Math.min(0.96, elapsed / total), label };
+}
+
 /** Looks (visible on the site) that use this piece. */
 export function looksUsing(db: DB, kind: SlotRef['kind'], id: string) {
   const hidden = hiddenLookIds(db);

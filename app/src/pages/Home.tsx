@@ -3,7 +3,7 @@ import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-reac
 import type { Capsule } from '../api.ts';
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
+import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
 import { capsuleLooks, distinctLooks, openSuggestions, rankCapsules, readyLine } from '../lib.ts';
 import { isCapsuleHidden } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
@@ -96,7 +96,8 @@ export function HomePage() {
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const capsules = rankCapsules(db, shown.filter((c) => c.kind !== 'selection'));
-  const analyzing = db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'));
+  const analyzeJob = db.jobs.find((j) => j.kind === 'analyze' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'analyze' && j.state === 'queued');
+  const analyzing = Boolean(analyzeJob);
 
   const analyze = async () => {
     const ok = await act(() => api('POST', '/api/analyze', { prompt: text }), 'Аналізатор складає образи з твоїх речей');
@@ -123,7 +124,7 @@ export function HomePage() {
           <div className="bar">
             <span className="grow" />
             <button className="btn primary" onClick={() => void analyze()} disabled={analyzing}>
-              {analyzing ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} {analyzing ? 'Підбираю…' : 'Підібрати'}
+              {analyzing ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} {analyzeJob ? <>Підбираю · <JobEta job={analyzeJob} /></> : 'Підібрати'}
             </button>
           </div>
         </div>

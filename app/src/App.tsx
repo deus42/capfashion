@@ -4,7 +4,8 @@ import {
   Camera, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
-import { Img } from './components/ui.tsx';
+import { Img, JobBar } from './components/ui.tsx';
+import { expectedSeconds } from './lib.ts';
 import { HomePage, useIntake } from './pages/Home.tsx';
 import { CapsuleDetail, CapsulesPage } from './pages/Capsules.tsx';
 import { LookPage } from './pages/Look.tsx';
@@ -53,7 +54,10 @@ export default function App() {
 
   const { db } = state;
   // The thin bar means work is happening now; queued work waiting for its turn shows nothing.
-  const runningJobs = db.jobs.filter((j) => j.state === 'running').length;
+  // The top bar follows the running work that will finish last, so it fills once from start to end.
+  const lastToFinish = db.jobs
+    .filter((j) => j.state === 'running' && j.startedAt)
+    .sort((a, b) => new Date(b.startedAt!).getTime() + expectedSeconds(db, b.kind) * 1000 - (new Date(a.startedAt!).getTime() + expectedSeconds(db, a.kind) * 1000))[0];
   const avatar = db.profile.identity?.approvedPortrait ? db.profile.identity.face : db.profile.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).find(Boolean);
   const ic = 20;
 
@@ -87,7 +91,7 @@ export default function App() {
         </a>
       </nav>
       <div className="frame">
-        {runningJobs > 0 && <div className="busy-bar app-progress" role="progressbar" aria-label="Обробка" />}
+        {lastToFinish && <JobBar job={lastToFinish} className="app-progress" />}
         <header className="topbar">
           <a href="/home" className="wordmark m-only">Cap Fashion</a>
           <div className="grow" />

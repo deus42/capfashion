@@ -3,7 +3,7 @@ import { Check, Pencil, Plus, RefreshCw, ShoppingBag, Trash2, Undo2, X } from 'l
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
+import { Badge, CategoryIcon, ConfirmButton, Empty, Img, JobBar, Modal, UploadButton } from '../components/ui.tsx';
 import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, shopLocation, siteLooks } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
@@ -245,8 +245,9 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   // Found variants, best match first.
   const products = db.products.filter((p) => p.needId === need.id).sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
   const searches = db.jobs.filter((j) => j.kind === 'shopsearch' && j.needId === need.id);
-  const running = searches.some((j) => j.state === 'running');
-  const waiting = running || searches.some((j) => j.state === 'queued');
+  const waitJob = searches.find((j) => j.state === 'running') ?? searches.find((j) => j.state === 'queued');
+  const running = waitJob?.state === 'running';
+  const waiting = Boolean(waitJob);
   // The last search that added nothing or failed says so in one grey line.
   const last = [...searches].filter((j) => j.state === 'done' || j.state === 'error').sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0];
   const lastNote = !waiting && last && (last.state === 'error' || !/^Знайдено/.test(last.stateNote ?? '')) ? last.stateNote : '';
@@ -326,7 +327,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
           </>
         )}
       </div>
-      {running && <div className="search-run"><span className="busy-bar" role="progressbar" aria-label="Пошук" /></div>}
+      {waitJob && <div className="search-run"><JobBar job={waitJob} label /></div>}
       {lastNote && <span className="small muted">{lastNote}</span>}
       {products.length > 0 && (
         <div className="product-grid">

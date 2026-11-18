@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, ThumbsDown, ThumbsUp, Upload, Watch, X } from 'lucide-react';
-import type { Category, Look, Photo, PhotoKind, Slots } from '../api.ts';
+import type { Category, Job, Look, Photo, PhotoKind, Slots } from '../api.ts';
 import { thumb, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { api } from '../api.ts';
 import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
-import { REF_KIND_LABEL, coverForLook, lookBusy, missingInfo, piecesOf } from '../lib.ts';
+import { REF_KIND_LABEL, coverForLook, jobProgress, lookJob, missingInfo, piecesOf } from '../lib.ts';
 import { TermInfo } from '../pages/Glossary.tsx';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
@@ -245,13 +245,50 @@ export function PieceStrip({ slots, size = 44 }: { slots: Slots; size?: number }
 
 /** Flat-lay of an outfit's pieces: used wherever a try-on does not exist yet. */
 /** The look's best try-on, or its pieces laid out — never an empty card; a thin bar runs while a try-on is made. */
-export function LookArt({ look, w = 700, max, busy }: { look: Look; w?: number; max?: number; busy?: boolean }) {
+/** A second-by-second clock for progress bars. */
+function useNow(ms = 1000) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), ms);
+    return () => window.clearInterval(t);
+  }, [ms]);
+  return now;
+}
+
+/**
+ * Real progress (owner, 18.11): the thin bar fills from the start to the usual end of this kind of
+ * work, so start and end are clear; with `label`, a small «ще ≈ 2 хв» (or «у черзі» while waiting).
+ */
+export function JobBar({ job, label = false, className = '' }: { job: Job; label?: boolean; className?: string }) {
+  const db = useDb();
+  const now = useNow();
+  const p = jobProgress(db, job, now);
+  return (
+    <>
+      <span className={`busy-bar det ${className}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p.pct * 100)} aria-label={p.label} title={p.label}>
+        <i style={{ width: `${p.pct * 100}%` }} />
+      </span>
+      {label && <span className="eta">{p.label}</span>}
+    </>
+  );
+}
+
+/** Just the words: «ще ≈ 2 хв», «майже готово», «у черзі» — ticking on its own. */
+export function JobEta({ job }: { job: Job }) {
+  const db = useDb();
+  const now = useNow();
+  return <>{jobProgress(db, job, now).label}</>;
+}
+
+export function LookArt({ look, w = 700, max, busy, label = false }: { look: Look; w?: number; max?: number; busy?: boolean; label?: boolean }) {
   const db = useDb();
   const cover = coverForLook(db, look);
+  // `busy` = the owner asked on this page: waiting counts too; elsewhere only running work shows.
+  const job = busy === false ? undefined : lookJob(db, look.id, busy === true);
   return (
     <span className="look-art">
       {cover ? <img src={thumb(cover.imagePath, w)} alt={look.name} loading="lazy" /> : <LookCollage slots={look.slots} max={max} />}
-      {(busy ?? lookBusy(db, look.id)) && <span className="busy-bar" role="progressbar" aria-label="Оновлюю картинку" />}
+      {job && <JobBar job={job} label={label} />}
     </span>
   );
 }

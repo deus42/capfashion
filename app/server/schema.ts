@@ -243,6 +243,8 @@ export interface Capsule {
   disliked?: boolean;
   ratedAt?: string;
   lookIds: string[];
+  /** A retired capsule's old URL leads to the capsules that received its looks. */
+  redirectCapsuleIds?: string[];
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   createdAt: string;

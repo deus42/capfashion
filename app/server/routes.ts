@@ -8,6 +8,7 @@ import { pickTheme } from './analysis.ts';
 import { acceptSuggestion, queueAdvice } from './advisor.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
 import { sameIdentity } from './identity.ts';
+import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -301,8 +302,10 @@ export function deleteLook(db: DB, id: string) {
 
 export function deleteCapsule(db: DB, id: string) {
   const c = findOr404(db.capsules, id, 'Капсула');
-  for (const lid of [...c.lookIds]) deleteLook(db, lid);
-  for (const l of db.looks) if (l.capsuleId === id) l.capsuleId = null;
+  for (const l of db.looks.filter((look) => look.capsuleId === id)) deleteLook(db, l.id);
+  for (const other of db.capsules) {
+    if (other.redirectCapsuleIds?.includes(id)) other.redirectCapsuleIds = other.redirectCapsuleIds.filter((target) => target !== id);
+  }
   for (const j of db.jobs) if (j.capsuleId === id) delete j.capsuleId;
   db.capsules = db.capsules.filter((x) => x.id !== id);
 }
@@ -441,7 +444,13 @@ on('PATCH', '/api/capsules/:id', (ctx, [id], b) =>
     if (typeof b.favorite === 'boolean') rate(c, b.favorite ? 'like' : null);
     if (b.season && SEASONS.includes(b.season as never)) c.season = b.season as typeof c.season;
     if (Array.isArray(b.situations)) c.situations = (b.situations as string[]).map((s) => String(s).trim()).filter(Boolean);
-    if (Array.isArray(b.lookIds)) c.lookIds = (b.lookIds as string[]).filter((l) => db.looks.some((x) => x.id === l));
+    if (Array.isArray(b.lookIds)) {
+      const ids: unknown[] = b.lookIds;
+      if (ids.length !== c.lookIds.length || new Set(ids).size !== ids.length || ids.some((id) => typeof id !== 'string' || !c.lookIds.includes(id))) {
+        throw new HttpError(400, 'Переносити образ між капсулами можна зі сторінки образу');
+      }
+      c.lookIds = ids as string[];
+    }
     return c;
   }),
 );
@@ -520,17 +529,12 @@ on('POST', '/api/looks/:id/advice', (ctx, [id], b) =>
 
 on('POST', '/api/looks', (ctx, _p, b) =>
   ctx.store.mutate((db) => {
-    const capsuleId = str(b.capsuleId) || null;
-    if (capsuleId) findOr404(db.capsules, capsuleId, 'Капсула');
+    const capsule = requireParentCapsule(db, str(b.capsuleId));
     const slots = cleanSlots(b.slots);
     const at = now();
-    const look: Look = { id: newId('L'), rev: 1, capsuleId, name: str(b.name, 120) || 'Мій образ', note: str(b.note), slots, version: 1, versions: [{ version: 1, slots, at }], favorite: false, origin: 'owner', createdAt: at, updatedAt: at };
+    const look: Look = { id: newId('L'), rev: 1, capsuleId: capsule.id, name: str(b.name, 120) || 'Мій образ', note: str(b.note), slots, version: 1, versions: [{ version: 1, slots, at }], favorite: false, origin: 'owner', createdAt: at, updatedAt: at };
     db.looks.push(look);
-    if (capsuleId) {
-      const c = db.capsules.find((x) => x.id === capsuleId)!;
-      c.lookIds.push(look.id);
-      bump(c, undefined);
-    }
+    placeLook(db, look, capsule);
     return look;
   }),
 );
@@ -540,6 +544,7 @@ on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
     const look = findOr404(db.looks, id, 'Образ');
     bump(look, b.rev);
     pick(look, b, ['name', 'note']);
+    if ('capsuleId' in b) placeLook(db, look, requireParentCapsule(db, str(b.capsuleId)));
     if (b.keptVersion === look.version) look.keptVersion = look.version;
     if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
     if (b.slots) setLookSlots(look, cleanSlots(b.slots), str(b.versionNote));

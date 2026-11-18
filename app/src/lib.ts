@@ -1,5 +1,5 @@
 import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Result, Season, SlotKey, SlotRef } from './api.ts';
-import { hiddenLookIds } from './rating.ts';
+import { hiddenLookIds, isCapsuleHidden } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -192,6 +192,37 @@ const hasPieces = (look: Pick<Look, 'slots'>) => Object.values(look.slots).some(
 /** Everything in the look is in the wardrobe and in use: it can be worn today. */
 export const isComplete = (db: DB, look: Look) => hasPieces(look) && missingTitles(db, look).length === 0;
 
+export const WARDROBE_CAPSULE_ID = 'my-wardrobe';
+export const WARDROBE_CAPSULE_NAME = 'З моїх речей';
+
+export function wardrobeCapsule(db: DB) {
+  const active = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
+  const looks = distinctLooks(db, db.looks.filter((l) => l.capsuleId && active.has(l.capsuleId) && isComplete(db, l)));
+  return { id: WARDROBE_CAPSULE_ID, name: WARDROBE_CAPSULE_NAME, lookIds: looks.map((l) => l.id), favorite: false };
+}
+
+/** Count where an item is used, including when it appears only in a saved variant. */
+export function itemPlacements(db: DB, itemId: string, ready = wardrobeCapsule(db)) {
+  const contains = (look: Look) => Object.values(look.slots).flat().some((r) => r.kind === 'item' && r.id === itemId);
+  const matching = db.looks.filter(contains);
+  const groups = db.capsules.flatMap((capsule) => {
+    if (isCapsuleHidden(db, capsule)) return [];
+    const looks = distinctLooks(db, matching.filter((l) => l.capsuleId === capsule.id && capsule.lookIds.includes(l.id)));
+    return looks.length ? [{ id: capsule.id, name: capsule.name, looks }] : [];
+  });
+  const readyLooks = capsuleLooks(db, ready.lookIds).filter(contains);
+  const looks = distinctLooks(db, [...new Map([...groups.flatMap((c) => c.looks), ...readyLooks].map((l) => [l.id, l])).values()]);
+  const capsules = [...groups, ...(readyLooks.length ? [{ id: ready.id, name: ready.name, looks: readyLooks }] : [])];
+  return { looks, capsules };
+}
+
+const ukrainianPlural = new Intl.PluralRules('uk');
+export function usageLabel(capsules: number, looks: number) {
+  const ending = ukrainianPlural.select(capsules);
+  const lookEnding = ukrainianPlural.select(looks);
+  return `${capsules ? `у ${capsules} ${ending === 'one' ? 'капсулі' : 'капсулах'}` : '0 капсул'} · ${looks} ${lookEnding === 'one' ? 'образ' : lookEnding === 'few' ? 'образи' : 'образів'}`;
+}
+
 /** Quiet line under an incomplete look's name (owner, 17.11): what is missing first, then how many more. */
 export function missingInfo(db: DB, look: Look): { text: string; more: number } | null {
   if (!hasPieces(look)) return { text: 'порожній образ', more: 0 };
@@ -205,7 +236,7 @@ export const rankLooks = (db: DB, looks: Look[]) =>
   looks.map((l, i) => ({ l, i, full: isComplete(db, l) })).sort((a, b) => Number(b.l.favorite) - Number(a.l.favorite) || Number(b.full) - Number(a.full) || a.i - b.i).map((e) => e.l);
 
 /** How many of a capsule's looks are ready to wear. */
-export function capsuleReady(db: DB, c: Capsule) {
+export function capsuleReady(db: DB, c: Pick<Capsule, 'lookIds'>) {
   // An empty look just added with «+ Образ» does not count yet.
   const looks = distinctLooks(db, capsuleLooks(db, c.lookIds)).filter(hasPieces);
   return { done: looks.filter((l) => isComplete(db, l)).length, total: looks.length };
@@ -236,7 +267,8 @@ export const isEyewear = (title: string) => /окуляр|оправ|glasses|eye
 /** Advisor proposals still worth showing: open and made only of active owned pieces, never eyewear. */
 export function openSuggestions(db: DB) {
   const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title)).map((i) => i.id));
-  return (db.suggestions ?? []).filter((s) => s.status === 'open' && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))));
+  const parents = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
+  return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))));
 }
 
 /** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */
@@ -244,7 +276,7 @@ export const DEFAULT_LOCATION = 'Tower Center Rijeka, Rijeka, Croatia';
 export const shopLocation = (db: DB) => db.profile.location ?? DEFAULT_LOCATION;
 
 /** «4 з 6 готові» / «усі готові» — the quiet capsule line. */
-export function readyLine(db: DB, c: Capsule) {
+export function readyLine(db: DB, c: Pick<Capsule, 'lookIds'>) {
   const { done, total } = capsuleReady(db, c);
   if (!total) return '';
   return done === total ? 'усі готові' : `${done} з ${total} готові`;

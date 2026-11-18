@@ -1,15 +1,14 @@
 import { useRef, useState } from 'react';
 import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
-import type { Capsule } from '../api.ts';
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
-import { capsuleLooks, distinctLooks, openSuggestions, rankCapsules, readyLine } from '../lib.ts';
-import { isCapsuleHidden } from '../rating.ts';
+import { capsuleLooks, distinctLooks, openSuggestions, rankCapsules, readyLine, wardrobeCapsule, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
 
 /** A capsule is a set of looks: its tile shows up to four of them, each with its own try-on. */
-export function CapsuleTile({ c }: { c: Capsule }) {
+export function CapsuleTile({ c }: { c: CapsuleView }) {
   const db = useDb();
   // A hidden capsule (👎 or all its looks hidden) still shows its looks, so its tile is never empty.
   const looks = isCapsuleHidden(db, c) ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds));
@@ -25,7 +24,7 @@ export function CapsuleTile({ c }: { c: Capsule }) {
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{readyLine(db, c) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
+        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
       </div>
     </a>
   );
@@ -95,7 +94,7 @@ export function HomePage() {
   const [text, setText] = useState('');
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
-  const capsules = rankCapsules(db, shown.filter((c) => c.kind !== 'selection'));
+  const capsules = [wardrobeCapsule(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
   const analyzeJob = db.jobs.find((j) => j.kind === 'analyze' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'analyze' && j.state === 'queued');
   const analyzing = Boolean(analyzeJob);
 

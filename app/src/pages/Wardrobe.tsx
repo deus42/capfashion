@@ -4,7 +4,7 @@ import type { Category, Item, ItemStatus, Job } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, JobBar, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, itemVerdict, siteLooks } from '../lib.ts';
+import { CATEGORY_LABEL, itemPlacements, itemVerdict, usageLabel, wardrobeCapsule } from '../lib.ts';
 
 import { InfoMark, TermInfo } from './Glossary.tsx';
 
@@ -33,7 +33,7 @@ function ItemPage({ item }: { item: Item }) {
   const photos = item.photoIds.map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
   const packshot = item.packshotId ? db.photos.find((p) => p.id === item.packshotId) : undefined;
   const main = packshot ?? photos[0];
-  const looks = siteLooks(db).filter((l) => Object.values(l.slots).flat().some((r) => r.kind === 'item' && r.id === item.id));
+  const { looks, capsules } = itemPlacements(db, item.id);
   const covers = db.needs.filter((n) => n.coveredByItem === item.id);
   const verdict = itemVerdict(db, item);
   const patch = (body: Record<string, unknown>, msg: string) => act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...body }), msg);
@@ -85,13 +85,16 @@ function ItemPage({ item }: { item: Item }) {
       )}
 
       <div className="section-head">
-        <h2 className="h2">Образи <span className="count">{looks.length}</span></h2>
+        <h2 className="h2">Де використано <span className="count">{usageLabel(capsules.length, looks.length)}</span></h2>
         {item.status !== 'inactive' && (
           <button className="btn sm" onClick={() => void act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи — зʼявляться в «Підбірках»')}>
             <Sparkles size={13} /> Ще образ
           </button>
         )}
       </div>
+      {capsules.length > 0 && <div className="row wrap" style={{ gap: 6, marginBottom: 12 }}>
+        {capsules.map((c) => <a className="btn sm" key={c.id} href={`/capsules/${c.id}`}>{c.name} <span className="count">{c.looks.length}</span></a>)}
+      </div>}
       {looks.length > 0 && (
         <div className="sib-strip">
           {looks.map((l) => (
@@ -222,9 +225,8 @@ export function WardrobePage({ openId }: { openId?: string }) {
     setMode(null);
   };
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : mode === 'compose' && s.length >= 4 ? s : [...s, id]));
-  const useCount = new Map<string, number>();
   // Same count as the item page: distinct looks (near-copies fold into one).
-  for (const l of siteLooks(db)) for (const id of new Set(Object.values(l.slots).flat().filter((r) => r.kind === 'item').map((r) => r.id))) useCount.set(id, (useCount.get(id) ?? 0) + 1);
+  const ready = wardrobeCapsule(db);
   const [creating, setCreating] = useState(false);
   const status = (['needs_confirmation', 'confirmed', 'inactive'] as ItemStatus[]).includes(view as ItemStatus) ? (view as ItemStatus) : null;
   const isNew = (i: Item) => i.origin === 'intake' && i.status === 'needs_confirmation';
@@ -301,6 +303,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
                 const photo = db.photos.find((p) => p.id === i.photoIds[0]);
                 const selected = mergeSel?.includes(i.id);
                 const st = busy.get(i.id);
+                const usage = mergeSel ? null : itemPlacements(db, i.id, ready);
                 return (
                   <button
                     key={i.id}
@@ -312,10 +315,10 @@ export function WardrobePage({ openId }: { openId?: string }) {
                       {i.status !== 'needs_confirmation' && <span className="tl"><Badge tone={`${STATUS_TONE[i.status]} glass`}>{STATUS_SHORT[i.status]}</Badge></span>}
                       {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
-                      {!mergeSel && (useCount.get(i.id) ?? 0) > 0 && <span className="uses" title="У скількох образах">{useCount.get(i.id)} обр.</span>}
                       {st?.state === 'running' && <JobBar job={st} />}
                     </div>
                     <span className="nm">{i.title}<TermInfo texts={[i.title]} /></span>
+                    {usage && <span className="sub">{usageLabel(usage.capsules.length, usage.looks.length)}</span>}
                   </button>
                 );
               })}

@@ -8,6 +8,7 @@ import { newId, now } from './store.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
 import { isEyewear, itemUsage, openSuggestions, siteLooks } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden, lookKeys, sameLookKeys } from '../src/rating.ts';
+import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 
 const str = { type: 'string' } as const;
 const ids = { type: 'array', items: str } as const;
@@ -99,7 +100,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     attached.length ? `Photos of the items to rate are attached, named by item id (${attached.length} files).` : '',
     kept.length ? `The owner keeps these items — never suggest replacing them: ${kept.join(', ')}.` : '',
     '2. looks — for every look listed below: score 0–10 (harmony of colours, silhouette, formality, season). weakItem: an item id in that look that clearly weakens it, and swapTo: an owned item id for the same slot that is clearly better and not already in the look; both empty if nothing is clearly better. why: one sentence.',
-    '3. newLooks — up to 3 new outfits from owned item ids only. Prefer items rated 7+ that have 0–1 shown looks (good piece, too few looks). capsuleId: the id of the listed capsule whose style and season fits, else empty. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.',
+    '3. newLooks — up to 3 new outfits from owned item ids only. Prefer items rated 7+ that have 0–1 shown looks (good piece, too few looks). Every outfit requires the id of a listed capsule whose style and season fits. If none fits, propose a new capsule in newCapsules. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.',
     `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short Ukrainian name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases listed below. Usually empty.`,
     '4. newCapsules — at most 1, only when 3 or more strong outfits of one style and season are not covered by any listed capsule: a name, season (all | warm | transitional | cold), why and 3–5 looks (same rules). Usually empty.',
     'Never use eyewear (glasses, sunglasses, frames) anywhere — the owner wears none in looks.',
@@ -181,10 +182,11 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
     return { name: text(o.name, 80) || 'Образ', why: text(o.why, 240), slots };
   };
   for (const o of (reply.newLooks ?? []).slice(0, 3)) {
+    const capsule = db.capsules.find((c) => c.id === o.capsuleId);
+    if (!capsule || isCapsuleHidden(db, capsule)) continue;
     const look = take(o);
     if (!look) continue;
-    const capsuleId = db.capsules.some((c) => c.id === o.capsuleId) ? o.capsuleId : null;
-    fresh.push({ id: newId('A'), kind: 'look', status: 'open', name: look.name, why: look.why, capsuleId, looks: [look], jobId: job.id, createdAt: at });
+    fresh.push({ id: newId('A'), kind: 'look', status: 'open', name: look.name, why: look.why, capsuleId: capsule.id, looks: [look], jobId: job.id, createdAt: at });
   }
   for (const c of (reply.newCapsules ?? []).slice(0, 1)) {
     const looks = (c.looks ?? []).slice(0, 5).map(take).filter((l): l is NonNullable<typeof l> => Boolean(l));
@@ -200,7 +202,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
     const capsule = db.capsules.find((c) => c.id === g.capsuleId);
     const category = (CATEGORIES as readonly string[]).includes(g.category) ? (g.category as Need['category']) : null;
     const title = text(g.title, 80);
-    if (!capsule || !category || !title) continue;
+    if (!capsule || isCapsuleHidden(db, capsule) || !category || !title) continue;
     if (db.needs.filter((n) => n.status === 'open' && n.forCapsule).length >= 3) break;
     if (db.needs.some((n) => n.status === 'open' && norm(n.title) === norm(title))) continue;
     db.needs.push({ id: newId('N'), rev: 1, title, category, priority: 'optional', description: '', why: text(g.why, 240), fitCheck: '', status: 'open', origin: 'agent', forCapsule: capsule.id, sourceNote: `Порадник ${at.slice(0, 10)}: бракує в капсулі «${capsule.name}»`, createdAt: at, updatedAt: at });
@@ -214,10 +216,10 @@ function replacementNeed(item: Item, why: string, title: string, at: string): Ne
   return { id: newId('N'), rev: 1, title, category: item.category, priority: 'optional', description: '', why, fitCheck: '', status: 'open', origin: 'agent', replaces: item.id, sourceNote: `Порадник ${at.slice(0, 10)}: замінить «${item.title}»`, createdAt: at, updatedAt: at };
 }
 
-/** «Додати»: a look goes into its capsule (or stands alone), a capsule is created with its looks. */
+/** «Додати»: a look goes into its capsule, or a new capsule is created with its looks. */
 export function acceptSuggestion(db: DB, s: Suggestion) {
   const at = now();
-  const make = (l: Suggestion['looks'][number], capsuleId: string | null) => {
+  const make = (l: Suggestion['looks'][number], capsuleId: string) => {
     const look = { id: newId('L'), rev: 1, capsuleId, name: l.name, note: l.why, slots: l.slots, version: 1, versions: [{ version: 1, slots: l.slots, at }], favorite: false, origin: 'agent' as const, sourceNote: `Порадник (${s.jobId}), додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
     db.looks.push(look);
     return look;
@@ -229,9 +231,9 @@ export function acceptSuggestion(db: DB, s: Suggestion) {
     db.capsules.push({ id, rev: 1, kind: 'capsule', name: s.name, season: s.season ?? 'all', description: s.why, situations: [], favorite: false, lookIds: looks.map((l) => l.id), origin: 'agent', sourceNote: `Порадник, додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at });
     target = `/capsules/${id}`;
   } else {
-    const capsule = s.capsuleId ? db.capsules.find((c) => c.id === s.capsuleId) : undefined;
-    const look = make(s.looks[0], capsule?.id ?? null);
-    if (capsule) capsule.lookIds.push(look.id);
+    const capsule = requireParentCapsule(db, s.capsuleId ?? undefined);
+    const look = make(s.looks[0], capsule.id);
+    placeLook(db, look, capsule);
     target = `/looks/${look.id}`;
   }
   s.status = 'accepted';

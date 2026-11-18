@@ -26,6 +26,8 @@ export const sameLookKeys = (a: Set<string>, b: Set<string>) => pieceDifference(
 export const sameLook = (a: Pick<Look, 'slots'>, b: Pick<Look, 'slots'>) => sameLookKeys(lookKeys(a), lookKeys(b));
 
 type RatedDb = Pick<DB, 'looks' | 'capsules'>;
+export type CapsuleView = Pick<Capsule, 'id' | 'name' | 'lookIds' | 'favorite' | 'disliked' | 'redirectCapsuleIds'>;
+export const isCapsuleArchived = (capsule: CapsuleView) => capsule.redirectCapsuleIds !== undefined;
 const hiddenCache = new WeakMap<object, Set<string>>();
 
 /**
@@ -48,8 +50,8 @@ export function hiddenLookIds(db: RatedDb): Set<string> {
 }
 
 /** A capsule is hidden when disliked, or when every one of its looks is hidden (unless liked). */
-export function isCapsuleHidden(db: RatedDb, c: Capsule) {
-  if (c.disliked) return true;
+export function isCapsuleHidden(db: RatedDb, c: CapsuleView) {
+  if (c.disliked || isCapsuleArchived(c)) return true;
   if (c.favorite || !c.lookIds.length) return false;
   const hidden = hiddenLookIds(db);
   return c.lookIds.every((id) => hidden.has(id));

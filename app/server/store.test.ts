@@ -16,7 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { isComplete, missingInfo, purchaseRanking } from '../src/lib.ts';
+import { isComplete, itemPlacements, missingInfo, purchaseRanking, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
 import { adviceDue, advisePrompt } from './advisor.ts';
 
@@ -174,15 +174,40 @@ test('merge keeps sources and repoints looks; split moves photos (A02)', async (
   assert.equal(part.splitFrom, merged.id);
 });
 
-test('cross-capsule combination saves as a separate look; renaming does not bump version (A04)', async () => {
-  const { call } = setup();
-  const look = await call('POST', '/api/looks', { name: 'Мікс', slots: { bottom: [{ kind: 'item', id: 'W-2' }] } });
-  assert.equal(look.capsuleId, null);
-  const renamed = await call('PATCH', `/api/looks/${look.id}`, { rev: 1, name: 'Мікс 2' });
-  assert.equal(renamed.version, 1);
+test('a look requires one capsule and moving it preserves its identity and versions (A04)', async () => {
+  const { store, call } = setup();
+  await store.mutate((db) => {
+    db.capsules.push({ ...db.capsules[0], id: 'C-2', name: 'Інша', lookIds: [] });
+    db.capsules.push({ ...db.capsules[0], id: 'C-old', name: 'Перенесена', lookIds: [], redirectCapsuleIds: ['C-2'] });
+  });
+  await assert.rejects(call('POST', '/api/looks', { name: 'Мікс' }), /Вибери капсулу/);
+  await assert.rejects(call('POST', '/api/looks', { capsuleId: 'C-old' }), /Капсулу вже перенесено/);
+  const look = await call('POST', '/api/looks', { capsuleId: 'C-1', name: 'Мікс', slots: { bottom: [{ kind: 'item', id: 'W-2' }] } });
+  assert.equal(look.capsuleId, 'C-1');
+  await assert.rejects(call('PATCH', '/api/capsules/C-1', { lookIds: [] }), /Переносити образ/);
+  const moved = await call('PATCH', `/api/looks/${look.id}`, { rev: 1, name: 'Мікс 2', capsuleId: 'C-2' });
+  assert.equal(moved.version, 1);
+  assert.deepEqual(moved.versions, look.versions);
+  assert.deepEqual(store.read().capsules.filter((c) => c.lookIds.includes(look.id)).map((c) => c.id), ['C-2']);
   const changed = await call('PATCH', `/api/looks/${look.id}`, { rev: 2, slots: { bottom: [{ kind: 'item', id: 'W-1' }] } });
   assert.equal(changed.version, 2);
   assert.equal(changed.versions.length, 2);
+});
+
+test('wardrobe capsule follows readiness and item placement counts each look once', () => {
+  const db = fixture();
+  const look = db.looks[0];
+  assert.deepEqual(wardrobeCapsule(db).lookIds, [], 'a purchase still needed');
+  look.slots = { ...emptySlots(), bottom: [{ kind: 'item', id: 'W-1' }], top: [{ kind: 'item', id: 'W-2' }] };
+  assert.deepEqual(wardrobeCapsule(db).lookIds, [look.id]);
+  const usage = itemPlacements(db, 'W-2');
+  assert.deepEqual(usage.capsules.map((c) => c.id), ['C-1', 'my-wardrobe']);
+  assert.deepEqual(usage.looks.map((l) => l.id), [look.id]);
+  db.items.find((i) => i.id === 'W-2')!.status = 'inactive';
+  assert.deepEqual(wardrobeCapsule(db).lookIds, [], 'ready list follows changes to the wardrobe');
+  db.items.find((i) => i.id === 'W-2')!.status = 'confirmed';
+  db.looks = db.looks.map((l) => ({ ...l, disliked: true }));
+  assert.deepEqual(wardrobeCapsule(db).lookIds, [], 'disliked looks stay out of the ready list');
 });
 
 test('job without base photo needs data; job snapshot is frozen; retry links (A05, A06)', async () => {
@@ -1040,6 +1065,7 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
     ],
     looks: [{ id: 'L-1', score: 7, weakItem: 'W-T', swapTo: 'W-T2', why: 'Молочна тепліша.' }],
     newLooks: [
+      { name: 'Без капсули', capsuleId: '', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: '' },
       { name: 'Майже той самий', capsuleId: 'C-1', top: ['W-T2'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
       { name: 'Новий', capsuleId: 'C-1', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: ['W-G'], why: 'Вводить дубль чиносів.' },
     ],
@@ -1064,7 +1090,7 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
   const gaps = db.needs.filter((n) => n.forCapsule === 'C-1');
   assert.deepEqual(gaps.map((n) => n.title), ['Тепла куртка'], 'a capsule gap becomes one purchase; an open purchase is not repeated');
   const open = db.suggestions!.filter((s) => s.status === 'open');
-  assert.equal(open.length, 1, 'a near-copy of an existing look is not proposed');
+  assert.deepEqual(open.map((s) => s.name), ['Новий'], 'near-copies and looks without a capsule are skipped');
   assert.equal(db.looks.length, 1, 'nothing enters a capsule before «Додати»');
   assert.equal(validateDb(db), null);
   // «Додати» puts the look into its capsule; «Ні» on a swap never offers it again.

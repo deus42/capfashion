@@ -2,9 +2,9 @@ import { useRef, useState } from 'react';
 import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import type { Capsule } from '../api.ts';
 import { api, uploadFile } from '../api.ts';
-import { useApp, useDb } from '../store.tsx';
-import { LookArt, RenderPlaceholder } from '../components/ui.tsx';
-import { capsuleLooks, distinctLooks, rankCapsules, readyLine } from '../lib.ts';
+import { go, useApp, useDb } from '../store.tsx';
+import { LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
+import { capsuleLooks, distinctLooks, openSuggestions, rankCapsules, readyLine } from '../lib.ts';
 import { isCapsuleHidden } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
 
@@ -28,6 +28,36 @@ export function CapsuleTile({ c }: { c: Capsule }) {
         <div className="meta">{readyLine(db, c) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
       </div>
     </a>
+  );
+}
+
+/** Advisor proposals (owner, 18.11): a new look or capsule from owned items, added only on «Додати». */
+function Advice() {
+  const db = useDb();
+  const { act } = useApp();
+  const list = openSuggestions(db).slice(0, 2);
+  if (!list.length) return null;
+  const add = async (id: string) => {
+    const r = await act(() => api<{ href: string }>('POST', `/api/suggestions/${id}/accept`), 'Додано');
+    if (r?.href) go(r.href);
+  };
+  return (
+    <>
+      {list.map((s) => (
+        <div key={s.id} className="next-buy advice-card">
+          <span className="img"><LookCollage slots={s.looks[0].slots} max={4} /></span>
+          <span className="txt">
+            <span className="eyebrow">{s.kind === 'capsule' ? `Нова капсула · ${s.looks.length} ${s.looks.length < 5 ? 'образи' : 'образів'}` : 'Новий образ'}</span>
+            <span className="t">{s.name}</span>
+            {s.why && <span className="miss">{s.why}</span>}
+            <span className="row" style={{ gap: 8 }}>
+              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/suggestions/${s.id}/reject`))}>Ні</button>
+              <button className="btn sm primary" onClick={() => void add(s.id)}>Додати</button>
+            </span>
+          </span>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -100,6 +130,7 @@ export function HomePage() {
       </section>
 
       <NextPurchase />
+      <Advice />
 
       {selections.length > 0 && (
         <>

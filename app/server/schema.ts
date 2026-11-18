@@ -116,11 +116,25 @@ export interface Item {
   purchasedFromProduct?: string;
   /** Generated catalogue image (reconstruction, not evidence). */
   packshotId?: string;
+  /** Advisor's rating (agent judgement; the site adds the counts). Stale when `rev` differs from the item's. */
+  rating?: ItemRating;
   /** Face-free crop of an original garment photo, never an identity reference. */
   tryonReference?: HashedFile & { source: HashedFile };
   history: HistoryEntry[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ItemRating {
+  score: number;
+  note: string;
+  /** A visible or stated reason to replace the item; empty when it is fine. */
+  replace?: string;
+  replaceWith?: string;
+  rev: number;
+  at: string;
+  /** The owner keeps the item: never suggest replacing it again. */
+  kept?: boolean;
 }
 
 export interface Need {
@@ -205,6 +219,8 @@ export interface Look {
   ratedAt?: string;
   /** «Речі змінено → Ні»: the owner keeps the picture for this version, so the question does not return. */
   keptVersion?: number;
+  /** Advisor: harmony 0–10 for this version and, maybe, one better owned piece; rejected swaps never return. */
+  advice?: { score: number; why: string; version: number; swap?: { from: string; to: string }; rejected?: string[] };
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   createdAt: string;
@@ -246,7 +262,7 @@ export interface SnapshotSlot {
 export interface Job {
   id: string;
   /** Missing kind means a try-on (records created before packshots). */
-  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch';
+  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch' | 'advise';
   lookId?: string;
   /** intake: uploaded photos to recognise. */
   inputPhotoIds?: string[];
@@ -348,6 +364,21 @@ export interface Settings {
   concurrency?: number;
 }
 
+/** Advisor proposal: a new look or a new capsule from owned items, added only on the owner's «Додати». */
+export interface Suggestion {
+  id: string;
+  kind: 'look' | 'capsule';
+  status: 'open' | 'accepted' | 'rejected';
+  name: string;
+  why: string;
+  capsuleId?: string | null;
+  season?: Season;
+  looks: { name: string; why: string; slots: Slots }[];
+  jobId: string;
+  createdAt: string;
+  decidedAt?: string;
+}
+
 export interface DB {
   schemaVersion: number;
   revision: number;
@@ -363,6 +394,8 @@ export interface DB {
   comparisons: Comparison[];
   profile: Profile;
   settings: Settings;
+  /** Advisor proposals (optional: older databases have none). */
+  suggestions?: Suggestion[];
 }
 
 export function emptySlots(): Slots {

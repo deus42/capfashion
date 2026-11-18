@@ -71,8 +71,23 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
   );
 }
 
+/** One question for a replacement (owner, 18.11): may the old item leave the wardrobe? */
+function RetireOld({ need, value, onChange }: { need?: Need; value: boolean; onChange: (v: boolean) => void }) {
+  const db = useDb();
+  const old = need?.replaces ? db.items.find((i) => i.id === need.replaces && i.status !== 'inactive') : undefined;
+  if (!old) return null;
+  return (
+    <label className="row" style={{ gap: 8 }}>
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <span>Прибрати «{old.title}» з гардероба</span>
+    </label>
+  );
+}
+
 function PurchaseModal({ product, onClose }: { product: Product; onClose: () => void }) {
+  const db = useDb();
   const { act } = useApp();
+  const [retire, setRetire] = useState(false);
   const [size, setSize] = useState(product.recommendedSize ?? '');
   const [photoId, setPhotoId] = useState<string | undefined>();
   return (
@@ -85,7 +100,7 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
           <button
             className="btn primary"
             onClick={async () => {
-              const ok = await act(() => api('POST', `/api/products/${product.id}/purchase`, { size, photoId }), 'Річ додано в гардероб, образи оновлено');
+              const ok = await act(() => api('POST', `/api/products/${product.id}/purchase`, { size, photoId, retire }), 'Річ додано в гардероб, образи оновлено');
               if (ok) onClose();
             }}
           >
@@ -103,6 +118,7 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
         <div className="row">
           <UploadButton kind="item" multiple={false} className="btn sm" label={photoId ? 'Фото додано ✓' : 'Додати своє фото'} onDone={(ids) => setPhotoId(ids[0])} />
         </div>
+        <RetireOld need={db.needs.find((n) => n.id === product.needId)} value={retire} onChange={setRetire} />
       </div>
     </Modal>
   );
@@ -168,15 +184,17 @@ const coverToast = (verb: string, r: CoverReply) =>
 function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
   const db = useDb();
   const { act, toast } = useApp();
-  const items = db.items.filter((i) => i.category === need.category && i.status !== 'inactive' && !i.mergedInto);
+  const [retire, setRetire] = useState(false);
+  const items = db.items.filter((i) => i.category === need.category && i.status !== 'inactive' && !i.mergedInto && i.id !== need.replaces);
   const cover = async (itemId: string) => {
-    const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/cover`, { itemId }));
+    const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/cover`, { itemId, retire }));
     if (!r) return;
     toast(coverToast('Прибрано з покупок', r));
     onClose();
   };
   return (
     <Modal title={`Вже маю: ${need.title}`} onClose={onClose} wide>
+      <RetireOld need={need} value={retire} onChange={setRetire} />
       {items.length === 0 ? (
         <p className="muted">У гардеробі немає речей цієї категорії. Додай фото — збіг знайдеться сам.</p>
       ) : (

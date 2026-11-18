@@ -9,6 +9,7 @@ import { detectImageType, prewarm, resolveAllowed, thumbnail } from './media.ts'
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
 import { coverNeed, queueMissingItemPackshots, queueMissingRenders } from './routes.ts';
 import { SHOP_SEARCH_SCHEMA, applyShopSearch, fetchProductImage, shopSearchPrompt } from './shop-search.ts';
+import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -235,6 +236,24 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     } else if (job.kind === 'shopsearch') {
       prompt = shopSearchPrompt(db0, job);
       fs.writeFileSync(schemaFile, JSON.stringify(SHOP_SEARCH_SCHEMA));
+    } else if (job.kind === 'advise') {
+      // The advisor sees the catalogue photos of the items it rates now (never personal photos).
+      const dir = path.join(jobDir, 'items');
+      fs.mkdirSync(dir, { recursive: true });
+      for (const it of itemsToRate(db0)) {
+        const p = it.packshotId ? db0.photos.find((x) => x.id === it.packshotId) : undefined;
+        if (!p) continue;
+        try {
+          const t = await thumbnail(projectRoot, store.dataDir, p.path, p.path, 320);
+          const dest = path.join(dir, `${it.id}.jpg`);
+          fs.copyFileSync(t, dest);
+          images.push(dest);
+        } catch {
+          /* a missing thumbnail only removes visual context */
+        }
+      }
+      prompt = advisePrompt(db0, job, images);
+      fs.writeFileSync(schemaFile, JSON.stringify(ADVISE_SCHEMA));
     } else {
       const dir = path.join(jobDir, 'items');
       fs.mkdirSync(dir, { recursive: true });
@@ -266,7 +285,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const j = db.jobs.find((x) => x.id === jobId)!;
       j.state = 'running';
       j.startedAt = now();
-      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : 'Codex складає образи з твоїх речей…';
+      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
       j.logPath = path.relative(projectRoot, logFile);
     });
     const exit = await spawnCodex(args, prompt, jobDir, logFile);
@@ -290,6 +309,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         j.stateNote = String(reply.reason || 'Codex не зміг виконати аналіз');
         return;
       }
+      if (j.kind === 'advise') {
+        j.state = 'done';
+        j.stateNote = applyAdvice(db, j, reply as never);
+        return;
+      }
       if (j.kind === 'shopsearch') {
         const out = applyShopSearch(db, j, reply as never);
         productImages = out.images;
@@ -303,6 +327,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         // A label photo joins its item too, so the upload card links to it.
         j.attachedItemIds = [...new Set([...outcome.attachedTo, ...(outcome.labelFor ? [outcome.labelFor] : [])])];
         queueMissingItemPackshots(db, [...outcome.created, ...outcome.attachedTo]);
+        if (outcome.created.length || outcome.covers.length) queueAdvice(db, `Нові речі з фото: ${outcome.created.length}`);
         // An upload that is an open recommendation leaves the shopping list and replaces the stand-in in looks and renders.
         const covered: string[] = [];
         for (const c of outcome.covers) {
@@ -346,7 +371,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   async function runOne(jobId: string) {
     const db0 = store.read();
     const job = db0.jobs.find((j) => j.id === jobId)!;
-    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch') return runAnalysis(jobId);
+    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch' || job.kind === 'advise') return runAnalysis(jobId);
     const isPackshot = job.kind === 'packshot';
     if (!isPackshot && (db0.profile.identity?.disabledReason || job.snapshot.identity?.disabledReason)) throw Error(db0.profile.identity?.disabledReason || job.snapshot.identity!.disabledReason);
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
@@ -519,7 +544,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
         // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
         // Shop searches take minutes: they come after uploads and «Підібрати», one at a time, so a slot stays free.
-        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'shopsearch' ? 0.5 : k === 'packshot' ? 2 : 1);
+        // The advisor is background text work: after try-ons, alongside packshots.
+        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'shopsearch' ? 0.5 : k === 'packshot' || k === 'advise' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
           // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.
@@ -528,7 +554,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         while (active.size < limit && queued.length) {
           // Uploads are triaged one at a time so the same garment on several photos is recognised as one item.
           const activeKinds = [...active].map((id) => db.jobs.find((x) => x.id === id)?.kind);
-          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !(j.kind === 'shopsearch' && activeKinds.includes('shopsearch')));
+          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !(j.kind === 'shopsearch' && activeKinds.includes('shopsearch')) && !(j.kind === 'advise' && activeKinds.includes('advise')));
           if (idx < 0) break;
           const next = queued.splice(idx, 1)[0];
           active.add(next.id);
@@ -561,6 +587,20 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     });
     return interrupted;
   }
+
+  // The weekly review (owner, 18.11): first checked two minutes after start, then hourly;
+  // the timers never keep the process alive by themselves.
+  const weeklyCheck = () => {
+    if (!adviceDue(store.read())) return;
+    void store
+      .mutate((db) => {
+        if (adviceDue(db)) queueAdvice(db, 'Тижневий перегляд');
+      })
+      .then(() => drain())
+      .catch(() => undefined);
+  };
+  setTimeout(weeklyCheck, 2 * 60 * 1000).unref?.();
+  setInterval(weeklyCheck, 60 * 60 * 1000).unref?.();
 
   return { state, drain, recover };
 }

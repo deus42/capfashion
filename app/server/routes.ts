@@ -5,6 +5,7 @@ import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
 import { prewarm, saveUpload } from './media.ts';
 import { pickTheme } from './analysis.ts';
+import { acceptSuggestion, queueAdvice } from './advisor.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
 import { sameIdentity } from './identity.ts';
 
@@ -187,7 +188,7 @@ export function coverNeed(db: DB, needId: string, itemId: string) {
   if (item.category !== need.category) throw new HttpError(400, 'Річ іншої категорії, ніж рекомендація');
   if (item.status === 'inactive' || item.mergedInto) throw new HttpError(400, 'Неактуальна річ не закриває покупку');
   const options = new Set(db.products.filter((p) => p.needId === need.id && p.status !== 'purchased').map((p) => p.id));
-  const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)), { kind: 'item', id: item.id }, `Своя річ замість «${need.title}»`);
+  const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)) || (r.kind === 'item' && r.id === need.replaces), { kind: 'item', id: item.id }, `Своя річ замість «${need.title}»`);
   need.status = 'covered';
   need.coveredByItem = item.id;
   need.coveredLookIds = looks;
@@ -204,7 +205,9 @@ export function uncoverNeed(db: DB, needId: string) {
   if (need.status !== 'covered') throw new HttpError(409, `«${need.title}» і так у покупках`);
   if (db.products.some((p) => p.needId === need.id && p.status === 'purchased')) throw new HttpError(409, 'Закрито покупкою — це запис покупки, не збіг із фото');
   const itemId = need.coveredByItem;
-  const looks = itemId ? replaceRefs(db, (r) => r.kind === 'item' && r.id === itemId, { kind: 'need', id: need.id }, `Повернуто в покупки: «${need.title}»`, new Set(need.coveredLookIds ?? [])) : [];
+  // A replacement purchase gives its looks the old item back; any other gets its stand-in back.
+  const old = need.replaces ? db.items.find((i) => i.id === need.replaces && i.status !== 'inactive' && !i.mergedInto) : undefined;
+  const looks = itemId ? replaceRefs(db, (r) => r.kind === 'item' && r.id === itemId, old ? { kind: 'item', id: old.id } : { kind: 'need', id: need.id }, `Повернуто в покупки: «${need.title}»`, new Set(need.coveredLookIds ?? [])) : [];
   need.status = 'open';
   delete need.coveredByItem;
   delete need.coveredLookIds;
@@ -215,6 +218,15 @@ export function uncoverNeed(db: DB, needId: string) {
     bump(item, undefined);
   }
   return { need, looks, renders: [] as Job[] };
+}
+
+/** «Прибрати стару річ»: after a replacement is bought or found, the old item may leave the wardrobe. */
+function retireReplaced(db: DB, oldId: string | undefined, retire: unknown) {
+  const old = oldId && retire === true ? db.items.find((i) => i.id === oldId) : undefined;
+  if (!old || old.status === 'inactive') return;
+  old.status = 'inactive';
+  history(old, 'replaced', 'Замінено покупкою');
+  bump(old, undefined);
 }
 
 function history(item: Item, action: string, note?: string) {
@@ -443,19 +455,64 @@ function rate(target: { favorite: boolean; disliked?: boolean; ratedAt?: string 
   target.ratedAt = now();
 }
 
-on('POST', '/api/capsules/:id/rating', (ctx, [id], b) =>
-  ctx.store.mutate((db) => {
+on('POST', '/api/capsules/:id/rating', async (ctx, [id], b) => {
+  const out = await ctx.store.mutate((db) => {
     const c = findOr404(db.capsules, id, 'Капсула');
     rate(c, b.rating ?? null);
     bump(c, undefined);
+    queueAdvice(db, `Оцінка капсули «${c.name}»: ${b.rating ?? 'знято'}`);
     return c;
+  });
+  ctx.drain();
+  return out;
+});
+
+on('POST', '/api/looks/:id/rating', async (ctx, [id], b) => {
+  const out = await ctx.store.mutate((db) => {
+    const look = findOr404(db.looks, id, 'Образ');
+    rate(look, b.rating ?? null);
+    bump(look, undefined);
+    queueAdvice(db, `Оцінка образу «${look.name}»: ${b.rating ?? 'знято'}`);
+    return look;
+  });
+  ctx.drain();
+  return out;
+});
+
+// ── Advisor (spec 2026-11-18): proposals only — the owner adds or declines ──
+on('POST', '/api/suggestions/:id/accept', async (ctx, [id]) => {
+  const out = await ctx.store.mutate((db) => {
+    const s = findOr404(db.suggestions ?? [], id, 'Пропозиція');
+    if (s.status !== 'open') throw new HttpError(409, 'Пропозицію вже розглянуто');
+    return { href: acceptSuggestion(db, s) };
+  });
+  return out;
+});
+
+on('POST', '/api/suggestions/:id/reject', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    const s = findOr404(db.suggestions ?? [], id, 'Пропозиція');
+    if (s.status !== 'open') throw new HttpError(409, 'Пропозицію вже розглянуто');
+    s.status = 'rejected';
+    s.decidedAt = now();
+    return s;
   }),
 );
 
-on('POST', '/api/looks/:id/rating', (ctx, [id], b) =>
+// «Порада: X → Y» on a look: «Так» swaps the piece, «Ні» never offers that swap again.
+on('POST', '/api/looks/:id/advice', (ctx, [id], b) =>
   ctx.store.mutate((db) => {
     const look = findOr404(db.looks, id, 'Образ');
-    rate(look, b.rating ?? null);
+    const swap = look.advice?.swap;
+    if (!look.advice || !swap || look.advice.version !== look.version) throw new HttpError(409, 'Порада вже неактуальна');
+    if (b.accept === true) {
+      const next = cleanSlots(look.slots);
+      for (const k of SLOT_KEYS) next[k] = next[k].map((r) => (r.kind === 'item' && r.id === swap.from ? { kind: 'item' as const, id: swap.to } : r));
+      setLookSlots(look, next, 'Порада порадника');
+    } else {
+      look.advice.rejected = [...(look.advice.rejected ?? []), `${swap.from}>${swap.to}`];
+    }
+    delete look.advice.swap;
     bump(look, undefined);
     return look;
   }),
@@ -672,14 +729,23 @@ on('POST', '/api/needs/:id/search', async (ctx, [id], b) => {
 
 // "Вже маю": the owner's own item is what the recommendation asked for.
 on('POST', '/api/needs/:id/cover', async (ctx, [id], b) => {
-  const out = await ctx.store.mutate((db) => coverNeed(db, id, str(b.itemId) ?? ''));
-  if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
+  const out = await ctx.store.mutate((db) => {
+    const res = coverNeed(db, id, str(b.itemId) ?? '');
+    retireReplaced(db, res.need.replaces, b.retire);
+    queueAdvice(db, `Вже маю: ${res.need.title}`);
+    return res;
+  });
+  ctx.drain();
   return { looks: out.looks.length, queued: out.renders.filter((j) => j.state === 'queued').length, waiting: out.renders.filter((j) => j.state === 'needs_data').length };
 });
 
 on('POST', '/api/needs/:id/uncover', async (ctx, [id]) => {
-  const out = await ctx.store.mutate((db) => uncoverNeed(db, id));
-  if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
+  const out = await ctx.store.mutate((db) => {
+    const res = uncoverNeed(db, id);
+    queueAdvice(db, `Повернуто в покупки: ${res.need.title}`);
+    return res;
+  });
+  ctx.drain();
   return { looks: out.looks.length, queued: out.renders.filter((j) => j.state === 'queued').length, waiting: out.renders.filter((j) => j.state === 'needs_data').length };
 });
 
@@ -752,13 +818,15 @@ on('POST', '/api/products/:id/purchase', async (ctx, [id], b) => {
     need.coveredByItem = item.id;
     // Every shop option of the bought need leaves the looks too, not only the one bought.
     const options = new Set(db.products.filter((x) => x.needId === need.id && (x.status !== 'purchased' || x.id === p.id)).map((x) => x.id));
-    const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
+    const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)) || (r.kind === 'item' && r.id === need.replaces), { kind: 'item', id: item.id }, `Куплено: ${item.title}`);
     need.coveredLookIds = looks;
     bump(need, undefined);
+    retireReplaced(db, need.replaces, b.retire);
+    queueAdvice(db, `Куплено: ${item.title}`);
     // The look pages offer «Оновити» for the changed pictures.
     return { item, renders: [] as Job[] };
   });
-  if (out.renders.some((j) => j.state === 'queued')) ctx.drain();
+  ctx.drain();
   return out.item;
 });
 
@@ -874,7 +942,10 @@ on('DELETE', '/api/products/:id', (ctx, [id]) =>
 
 on('DELETE', '/api/needs/:id', (ctx, [id]) =>
   ctx.store.mutate((db) => {
-    findOr404(db.needs, id, 'Потреба');
+    const need = findOr404(db.needs, id, 'Потреба');
+    // Declining a replacement keeps the item: the advisor does not suggest replacing it again.
+    const kept = need.replaces ? db.items.find((i) => i.id === need.replaces) : undefined;
+    if (kept?.rating) kept.rating.kept = true;
     if (db.products.some((p) => p.needId === id && p.status === 'purchased')) throw new HttpError(409, 'За цією потребою вже є покупка');
     for (const p of db.products.filter((x) => x.needId === id)) stripRefs(db, 'product', p.id);
     db.products = db.products.filter((p) => p.needId !== id);

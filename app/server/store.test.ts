@@ -18,6 +18,7 @@ import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts'
 import { looksNeedingRender } from '../src/render-need.ts';
 import { isComplete, missingInfo, purchaseRanking } from '../src/lib.ts';
 import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
+import { adviceDue, advisePrompt } from './advisor.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
@@ -1009,5 +1010,73 @@ test('«Знайти» searches the shops for a recommendation and saves dated v
   assert.equal(p.towerAvailability, 'confirmed');
   assert.equal(p.recommendedSize, 'M');
   assert.match(p.checkedAt ?? '', /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(validateDb(db), null);
+});
+
+test('the advisor rates items and looks, proposes looks only on «Додати», turns a replacement into a purchase; runs after changes, once at a time, and weekly', async () => {
+  const { dir, store, call } = setup();
+  await store.mutate((db) => {
+    const add = (id: string, category: 'tees' | 'shoes', title: string) => db.items.push({ id, rev: 1, category, title, status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+    add('W-S', 'shoes', 'Brown suede sneakers');
+    add('W-T', 'tees', 'White tee');
+    add('W-T2', 'tees', 'Milk tee');
+    add('W-LOGO', 'tees', 'Big logo tee');
+    db.looks[0].slots = { ...emptySlots(), top: [{ kind: 'item', id: 'W-T' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] };
+  });
+  // A rating queues one advice; more changes share it.
+  await call('POST', '/api/looks/L-1/rating', { rating: 'like' });
+  await call('POST', '/api/capsules/C-1/rating', { rating: 'like' });
+  let db = store.read();
+  assert.equal(db.jobs.filter((j) => j.kind === 'advise').length, 1);
+  assert.equal(adviceDue(db), false, 'one is already waiting');
+  const job = db.jobs.find((j) => j.kind === 'advise')!;
+  assert.match(advisePrompt(db, job, []), /rate ONLY these ids now: .*W-LOGO/);
+  const reply = {
+    status: 'done', reason: '',
+    items: [
+      { id: 'W-T', score: 8.4, note: 'Чиста база.', replace: '', replaceWith: '' },
+      { id: 'W-LOGO', score: 4, note: 'Логотип кричить.', replace: 'великий логотип', replaceWith: 'Однотонна темно-синя футболка' },
+    ],
+    looks: [{ id: 'L-1', score: 7, weakItem: 'W-T', swapTo: 'W-T2', why: 'Молочна тепліша.' }],
+    newLooks: [
+      { name: 'Майже той самий', capsuleId: 'C-1', top: ['W-T2'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
+      { name: 'Новий', capsuleId: 'C-1', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: 'Вводить дубль чиносів.' },
+    ],
+    newCapsules: [],
+  };
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(fake, `#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\necho '${JSON.stringify(reply)}' > "$o"\n`, { mode: 0o755 });
+  await createRunner(store, dir, fake).drain();
+  db = store.read();
+  assert.equal(db.jobs.find((j) => j.id === job.id)!.state, 'done');
+  assert.equal(db.items.find((i) => i.id === 'W-T')!.rating!.score, 8);
+  const logo = db.items.find((i) => i.id === 'W-LOGO')!;
+  assert.equal(logo.rating!.replace, 'великий логотип');
+  const replacement = db.needs.find((n) => n.replaces === 'W-LOGO')!;
+  assert.equal(replacement.status, 'open');
+  assert.equal(replacement.category, 'tees');
+  assert.deepEqual(db.looks[0].advice!.swap, { from: 'W-T', to: 'W-T2' });
+  const open = db.suggestions!.filter((s) => s.status === 'open');
+  assert.equal(open.length, 1, 'a near-copy of an existing look is not proposed');
+  assert.equal(db.looks.length, 1, 'nothing enters a capsule before «Додати»');
+  assert.equal(validateDb(db), null);
+  // «Додати» puts the look into its capsule; «Ні» on a swap never offers it again.
+  const added = await call('POST', `/api/suggestions/${open[0].id}/accept`, {});
+  db = store.read();
+  const newLook = db.looks.find((l) => `/looks/${l.id}` === added.href)!;
+  assert.equal(newLook.capsuleId, 'C-1');
+  assert.ok(db.capsules[0].lookIds.includes(newLook.id));
+  await assert.rejects(call('POST', `/api/suggestions/${open[0].id}/reject`, {}), /вже розглянуто/);
+  await call('POST', '/api/looks/L-1/advice', { accept: false });
+  db = store.read();
+  assert.equal(db.looks[0].advice!.swap, undefined);
+  assert.deepEqual(db.looks[0].advice!.rejected, ['W-T>W-T2']);
+  // Declining the replacement keeps the item for good.
+  await call('DELETE', `/api/needs/${replacement.id}`);
+  assert.equal(store.read().items.find((i) => i.id === 'W-LOGO')!.rating!.kept, true);
+  // The weekly review is due seven days after the last one.
+  db = store.read();
+  assert.equal(adviceDue(db), false);
+  assert.equal(adviceDue(db, Date.now() + 8 * 24 * 60 * 60 * 1000), true);
   assert.equal(validateDb(db), null);
 });

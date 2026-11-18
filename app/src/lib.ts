@@ -1,4 +1,4 @@
-import type { Capsule, Category, DB, Job, Look, MeasureKey, Result, Season, SlotKey, SlotRef } from './api.ts';
+import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Result, Season, SlotKey, SlotRef } from './api.ts';
 import { hiddenLookIds } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
 
@@ -180,6 +180,31 @@ export function capsuleReady(db: DB, c: Capsule) {
   // An empty look just added with «+ Образ» does not count yet.
   const looks = distinctLooks(db, capsuleLooks(db, c.lookIds)).filter(hasPieces);
   return { done: looks.filter((l) => isComplete(db, l)).length, total: looks.length };
+}
+
+/** Advisor counts for an item: shown looks with it, how many are complete or liked, capsules it is in. */
+export function itemUsage(db: DB, itemId: string) {
+  const looks = siteLooks(db).filter((l) => Object.values(l.slots).flat().some((r) => r.kind === 'item' && r.id === itemId));
+  const capsules = new Set(looks.map((l) => l.capsuleId).filter(Boolean));
+  return { looks: looks.length, complete: looks.filter((l) => isComplete(db, l)).length, liked: looks.filter((l) => l.favorite).length, capsules: capsules.size };
+}
+
+/** The item page's quiet line (owner, 18.11): «8/10 · сильна річ · у 5 образах», «гарна, мало образів», «варто замінити: …». */
+export function itemVerdict(db: DB, item: Item): { line: string; note: string; kind: 'strong' | 'underused' | 'replace' | 'plain'; need?: Need } | null {
+  const r = item.rating;
+  if (!r || item.status === 'inactive' || item.mergedInto) return null;
+  const n = itemUsage(db, item.id).looks;
+  const inLooks = n ? `у ${n} ${n === 1 ? 'образі' : 'образах'}` : 'ще без образів';
+  if (r.replace && !r.kept) return { kind: 'replace', line: `${r.score}/10 · варто замінити: ${r.replace}`, note: r.note, need: db.needs.find((x) => x.replaces === item.id && x.status === 'open') };
+  if (r.score >= 7 && n <= 1) return { kind: 'underused', line: `${r.score}/10 · гарна, мало образів`, note: r.note };
+  if (r.score >= 7) return { kind: 'strong', line: `${r.score}/10 · сильна річ · ${inLooks}`, note: r.note };
+  return { kind: 'plain', line: `${r.score}/10 · ${inLooks}`, note: r.note };
+}
+
+/** Advisor proposals still worth showing: open and made only of active owned pieces. */
+export function openSuggestions(db: DB) {
+  const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto).map((i) => i.id));
+  return (db.suggestions ?? []).filter((s) => s.status === 'open' && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))));
 }
 
 /** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */

@@ -89,6 +89,10 @@ export function LookPage({ id }: { id: string }) {
   // After pieces change, ask once whether to update the picture (owner, 17.11): never automatic.
   const askUpdate = Boolean(stale) && !busy && !paused && !kept && keptNow !== `${look.id}:${look.version}`;
   const options = accessoryOptions(db, look);
+  // The advisor's one better owned piece for this version of the look.
+  const sw = look.advice?.version === look.version ? look.advice.swap : undefined;
+  const active = (id?: string) => db.items.find((i) => i.id === id && i.status !== 'inactive' && !i.mergedInto);
+  const swapAdvice = sw && active(sw.from) && active(sw.to) ? { from: active(sw.from)!, to: active(sw.to)! } : null;
 
   const update = async () => {
     // The server uses the pinned identity reference when there is one.
@@ -155,6 +159,13 @@ export function LookPage({ id }: { id: string }) {
               <span>Речі змінено</span>
               <button className="btn sm" onClick={keep}>Ні</button>
               <button className="btn sm primary" onClick={() => void update()}>Оновити</button>
+            </div>
+          )}
+          {swapAdvice && (
+            <div className="update-ask">
+              <span>Порада: {swapAdvice.from.title} → {swapAdvice.to.title}</span>
+              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/looks/${look.id}/advice`, { accept: false }))}>Ні</button>
+              <button className="btn sm primary" onClick={() => void act(() => api('POST', `/api/looks/${look.id}/advice`, { accept: true }))}>Так</button>
             </div>
           )}
         </div>

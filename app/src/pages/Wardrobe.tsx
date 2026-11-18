@@ -4,9 +4,9 @@ import type { Category, Item, ItemStatus } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, siteLooks } from '../lib.ts';
+import { CATEGORY_LABEL, itemVerdict, siteLooks } from '../lib.ts';
 
-import { TermInfo } from './Glossary.tsx';
+import { InfoMark, TermInfo } from './Glossary.tsx';
 
 const STATUS_LABEL: Record<ItemStatus, string> = { needs_confirmation: 'Потребує підтвердження', confirmed: 'Підтверджено', inactive: 'Неактуальна' };
 const STATUS_SHORT: Record<ItemStatus, string> = { needs_confirmation: 'звірити', confirmed: 'моя річ', inactive: 'неактуальна' };
@@ -36,13 +36,23 @@ function ItemPage({ item }: { item: Item }) {
   const main = packshot ?? photos[0];
   const looks = siteLooks(db).filter((l) => Object.values(l.slots).flat().some((r) => r.kind === 'item' && r.id === item.id));
   const covers = db.needs.filter((n) => n.coveredByItem === item.id);
+  const verdict = itemVerdict(db, item);
   const patch = (body: Record<string, unknown>, msg: string) => act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...body }), msg);
 
   return (
     <div className="page">
       <div className="crumb"><a href="/wardrobe">Гардероб</a></div>
       <div className="page-head">
-        <div><h1>{item.title}<TermInfo texts={[item.title, item.fit]} /></h1></div>
+        <div>
+          <h1>{item.title}<TermInfo texts={[item.title, item.fit]} /></h1>
+          {verdict && (
+            <p className="item-verdict">
+              {verdict.line}
+              {verdict.note && <InfoMark title={`${item.rating!.score}/10`} text={verdict.note} />}
+              {verdict.need && <> · <a href={`/shopping?need=${verdict.need.id}`}>у покупках</a></>}
+            </p>
+          )}
+        </div>
         <div className="actions">
           <button className="icon-btn" aria-label="Редагувати річ" onClick={() => setEditing(true)}><Pencil size={14} /></button>
         </div>

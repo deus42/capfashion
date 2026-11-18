@@ -1043,6 +1043,10 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
       { name: 'Новий', capsuleId: 'C-1', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: 'Вводить дубль чиносів.' },
     ],
     newCapsules: [],
+    newNeeds: [
+      { capsuleId: 'C-1', title: 'Тепла куртка', category: 'outerwear', why: 'Капсулі бракує теплого шару.' },
+      { capsuleId: 'C-1', title: 'Молочна футболка', category: 'tees', why: 'Повтор відкритої покупки.' },
+    ],
   };
   const fake = path.join(dir, 'fake-codex.sh');
   fs.writeFileSync(fake, `#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\necho '${JSON.stringify(reply)}' > "$o"\n`, { mode: 0o755 });
@@ -1056,6 +1060,8 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
   assert.equal(replacement.status, 'open');
   assert.equal(replacement.category, 'tees');
   assert.deepEqual(db.looks[0].advice!.swap, { from: 'W-T', to: 'W-T2' });
+  const gaps = db.needs.filter((n) => n.forCapsule === 'C-1');
+  assert.deepEqual(gaps.map((n) => n.title), ['Тепла куртка'], 'a capsule gap becomes one purchase; an open purchase is not repeated');
   const open = db.suggestions!.filter((s) => s.status === 'open');
   assert.equal(open.length, 1, 'a near-copy of an existing look is not proposed');
   assert.equal(db.looks.length, 1, 'nothing enters a capsule before «Додати»');

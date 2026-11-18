@@ -156,6 +156,8 @@ export interface Need {
   conceptPhotoId?: string;
   /** Advisor: this purchase replaces an owned item («замінить: …»). */
   replaces?: string;
+  /** Advisor: what this capsule lacks for its style and season («Для капсули: …»). */
+  forCapsule?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -3,7 +3,7 @@
 // and proposes new looks and capsules from owned items — proposals only, «Додати / Ні». An item worth
 // replacing becomes an open purchase «замінить: …». Runs after changes and weekly; text only, never pictures.
 import type { DB, Item, Job, Need, Season, Slots, Suggestion } from './schema.ts';
-import { SEASONS, emptySlots } from './schema.ts';
+import { CATEGORIES, SEASONS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
 import { itemUsage, openSuggestions, siteLooks } from '../src/lib.ts';
@@ -18,13 +18,14 @@ const outfitKeys = ['name', 'top', 'layer', 'bottom', 'shoes', 'accessories', 'w
 export const ADVISE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['status', 'reason', 'items', 'looks', 'newLooks', 'newCapsules'],
+  required: ['status', 'reason', 'items', 'looks', 'newLooks', 'newCapsules', 'newNeeds'],
   properties: {
     status: { type: 'string', enum: ['done', 'error'] },
     reason: str,
     items: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'score', 'note', 'replace', 'replaceWith'], properties: { id: str, score: { type: 'number' }, note: str, replace: str, replaceWith: str } } },
     looks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'score', 'weakItem', 'swapTo', 'why'], properties: { id: str, score: { type: 'number' }, weakItem: str, swapTo: str, why: str } } },
     newLooks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['capsuleId', ...outfitKeys], properties: { capsuleId: str, ...outfit } } },
+    newNeeds: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['capsuleId', 'title', 'category', 'why'], properties: { capsuleId: str, title: str, category: { type: 'string', enum: [...CATEGORIES] }, why: str } } },
     newCapsules: {
       type: 'array',
       items: {
@@ -45,6 +46,7 @@ export interface AdviseReply {
   looks: { id: string; score: number; weakItem: string; swapTo: string; why: string }[];
   newLooks: (Outfit & { capsuleId: string })[];
   newCapsules: { name: string; season: string; why: string; looks: Outfit[] }[];
+  newNeeds?: { capsuleId: string; title: string; category: string; why: string }[];
 }
 
 /** Items whose rating is missing or older than the item itself: the agent looks at them (with photos). */
@@ -80,6 +82,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
   const disliked = db.looks.filter((l) => hidden.has(l.id));
   const kept = items.filter((i) => i.rating?.kept).map((i) => i.id);
   const toRate = itemsToRate(db).map((i) => i.id);
+  const openNeeds = db.needs.filter((n) => n.status === 'open').map((n) => `${n.title} (${n.category})`);
   return [
     'You are the Cap Fashion wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in Ukrainian, short.',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
@@ -91,6 +94,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     kept.length ? `The owner keeps these items — never suggest replacing them: ${kept.join(', ')}.` : '',
     '2. looks — for every look listed below: score 0–10 (harmony of colours, silhouette, formality, season). weakItem: an item id in that look that clearly weakens it, and swapTo: an owned item id for the same slot that is clearly better and not already in the look; both empty if nothing is clearly better. why: one sentence.',
     '3. newLooks — up to 3 new outfits from owned item ids only. Prefer items rated 7+ that have 0–1 shown looks (good piece, too few looks). capsuleId: the id of the listed capsule whose style and season fits, else empty. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.',
+    `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short Ukrainian name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases listed below. Usually empty.`,
     '4. newCapsules — at most 1, only when 3 or more strong outfits of one style and season are not covered by any listed capsule: a name, season (all | warm | transitional | cold), why and 3–5 looks (same rules). Usually empty.',
     'Same-look rule (the owner\'s): two outfits are the SAME look when identical or different by only one piece. Every new outfit must be a different look from each other, from every listed look and from every rejected outfit.',
     'Return status "error" only if the wardrobe cannot be read.',
@@ -102,6 +106,8 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     looks.map((l) => `${l.id} | ${l.capsuleId ?? '—'} | ${l.name}${l.favorite ? ' | LIKED' : ''} | ${piecesLine(db, l.slots)}`).join('\n'),
     disliked.length ? `\nLooks the owner disliked (avoid their direction):\n${disliked.map((l) => `- ${piecesLine(db, l.slots)}`).join('\n')}` : '',
     rejected.length ? `\nOutfits the owner rejected as suggestions (never again, nothing within one piece):\n${rejected.map((o) => `- ${piecesLine(db, o.slots)}`).join('\n')}` : '',
+    '',
+    openNeeds.length ? `Open purchases (already planned, do not repeat): ${openNeeds.join('; ')}` : '',
     '',
     'Wardrobe (id | category | title | details | usage):',
     items
@@ -178,7 +184,20 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
     fresh.push({ id: newId('A'), kind: 'capsule', status: 'open', name: text(c.name, 80) || 'Нова капсула', why: text(c.why, 240), season, looks, jobId: job.id, createdAt: at });
   }
   db.suggestions = [...keep, ...fresh];
-  const parts = [`Оцінено речей: ${rated}`, fresh.length ? `пропозицій: ${fresh.length}` : '', replaced ? `замінити: ${replaced}` : ''].filter(Boolean);
+  // What a capsule lacks becomes a purchase «Для капсули: …» — at most three such open at a time, never a repeat.
+  let gaps = 0;
+  const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  for (const g of (reply.newNeeds ?? []).slice(0, 2)) {
+    const capsule = db.capsules.find((c) => c.id === g.capsuleId);
+    const category = (CATEGORIES as readonly string[]).includes(g.category) ? (g.category as Need['category']) : null;
+    const title = text(g.title, 80);
+    if (!capsule || !category || !title) continue;
+    if (db.needs.filter((n) => n.status === 'open' && n.forCapsule).length >= 3) break;
+    if (db.needs.some((n) => n.status === 'open' && norm(n.title) === norm(title))) continue;
+    db.needs.push({ id: newId('N'), rev: 1, title, category, priority: 'optional', description: '', why: text(g.why, 240), fitCheck: '', status: 'open', origin: 'agent', forCapsule: capsule.id, sourceNote: `Порадник ${at.slice(0, 10)}: бракує в капсулі «${capsule.name}»`, createdAt: at, updatedAt: at });
+    gaps += 1;
+  }
+  const parts = [`Оцінено речей: ${rated}`, fresh.length ? `пропозицій: ${fresh.length}` : '', replaced ? `замінити: ${replaced}` : '', gaps ? `для капсул: ${gaps}` : ''].filter(Boolean);
   return parts.join(' · ');
 }
 

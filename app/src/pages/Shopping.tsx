@@ -255,6 +255,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   const bought = products.find((p) => p.status === 'purchased');
   const replaces = need.replaces ? db.items.find((i) => i.id === need.replaces) : undefined;
+  const forCapsule = need.forCapsule ? db.capsules.find((c) => c.id === need.forCapsule) : undefined;
   const replacedIn = need.coveredLookIds?.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is NonNullable<typeof l> => Boolean(l)) ?? [];
   const using = looksUsing(db, 'need', need.id);
   const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : siteLooks(db).filter((l) => using.some((x) => x.id === l.id));
@@ -297,6 +298,12 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
         <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
       </div>
       <div className="kv">
+        {forCapsule && (
+          <>
+            <dt>Для капсули</dt>
+            <dd><a href={`/capsules/${forCapsule.id}`} style={{ textDecoration: 'underline' }}>{forCapsule.name}</a></dd>
+          </>
+        )}
         {replaces && (
           <>
             <dt>Замінить</dt>
@@ -311,15 +318,15 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <dd>{need.fitCheck}</dd>
           </>
         )}
-        <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>
-        <dd>
+        {(looks.length > 0 || (!forCapsule && !replaces)) && <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>}
+        {(looks.length > 0 || (!forCapsule && !replaces)) && <dd>
           <div className="chips">
             {looks.length === 0 && <span className="muted small">не використовується</span>}
             {looks.map((l) => (
               <a key={l.id} className="badge" href={`/looks/${l.id}`}>{l.name}</a>
             ))}
           </div>
-        </dd>
+        </dd>}
         {covered && (
           <>
             <dt>{bought ? 'Куплено' : 'Своя річ'}</dt>

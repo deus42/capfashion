@@ -41,6 +41,19 @@ export interface ShopReply {
 /** The owner's brands: the saved list, or what the wardrobe shows until the owner edits it. */
 export const ownerBrands = (db: DB) => db.profile.brands ?? wardrobeBrands(db);
 
+const plain = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+/** A product the owner dropped is the same product under another link: same store and name. */
+export const productKey = (store: string, name: string) => `${plain(store)}|${plain(name)}`;
+/** A link without its tracking/colour parameters, for "already found or dropped". */
+const linkKey = (href: string) => {
+  try {
+    const u = new URL(href);
+    return `${u.hostname.replace(/^www\./, '')}${u.pathname.replace(/\/+$/, '')}`.toLowerCase();
+  } catch {
+    return href;
+  }
+};
+
 export function shopSearchPrompt(db: DB, job: Job) {
   const need = db.needs.find((n) => n.id === job.needId)!;
   const prefs = db.profile.preferences;
@@ -90,7 +103,8 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
   const created: string[] = [];
   const images: { productId: string; url: string }[] = [];
   if (!need) return { created, images, note: 'Покупку не знайдено' };
-  const known = new Set([...db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url), ...(need.droppedUrls ?? [])]);
+  const known = new Set([...db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url!), ...(need.droppedUrls ?? [])].map(linkKey));
+  const dropped = new Set(need.droppedModels ?? []);
   for (const r of (reply.products ?? []).slice(0, 4)) {
     const url = httpsUrl(String(r.url || '').trim());
     const store = String(r.store || '').trim().slice(0, 80);
@@ -98,8 +112,8 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
     const code = /\s*\((?=[^)]*\d)([A-Z0-9][A-Z0-9 /.-]{3,})\)\s*$/.exec(String(r.model || ''));
     const model = String(r.model || '').replace(code?.[0] ?? '', '').trim().slice(0, 160);
     const sku = String(r.sku || '').trim().slice(0, 60) || code?.[1];
-    if (!url || !store || !model || known.has(url.href)) continue;
-    known.add(url.href);
+    if (!url || !store || !model || known.has(linkKey(url.href)) || dropped.has(productKey(store, `${String(r.brand || '').trim()} ${model}`))) continue;
+    known.add(linkKey(url.href));
     const price = Number(String(r.price || '').replace(',', '.'));
     const p: Product = {
       id: newId('S'),

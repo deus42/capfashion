@@ -125,7 +125,7 @@ export function GalleryPage() {
     <div className="page">
       <PageHead title="Галерея" />
       <div className="toolbar">
-        <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
+        <div className="seg seg-scroll">
           <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>Примірки <span className="faint">{counts.tryon}</span></button>
           <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>Фото речей <span className="faint">{counts.packshot}</span></button>
           <button className={type === 'original' ? 'on' : ''} onClick={() => setType('original')}>Мої фото <span className="faint">{counts.original}</span></button>

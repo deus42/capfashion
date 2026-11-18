@@ -7,6 +7,8 @@ import { prewarm, saveUpload } from './media.ts';
 import { pickTheme } from './analysis.ts';
 import { acceptSuggestion, dropReplacementsFor, keepItem, queueAdvice, rememberDeclined } from './advisor.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
+import { isEyewear } from '../src/lib.ts';
+import { productKey } from './shop-search.ts';
 import { sameIdentity } from './identity.ts';
 import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 
@@ -188,6 +190,7 @@ export function coverNeed(db: DB, needId: string, itemId: string) {
   if (need.status !== 'open') throw new HttpError(409, `«${need.title}» уже закрито`);
   if (item.category !== need.category) throw new HttpError(400, 'Річ іншої категорії, ніж рекомендація');
   if (item.status === 'inactive' || item.mergedInto) throw new HttpError(400, 'Неактуальна річ не закриває покупку');
+  if (item.id === need.replaces) throw new HttpError(409, 'Це та сама річ, яку покупка має замінити');
   const options = new Set(db.products.filter((p) => p.needId === need.id && p.status !== 'purchased').map((p) => p.id));
   const looks = replaceRefs(db, (r) => (r.kind === 'need' && r.id === need.id) || (r.kind === 'product' && options.has(r.id)) || (r.kind === 'item' && r.id === need.replaces), { kind: 'item', id: item.id }, `Своя річ замість «${need.title}»`);
   need.status = 'covered';
@@ -336,7 +339,7 @@ function stripRefs(db: DB, kind: SlotRef['kind'], id: string) {
 
 export function deleteItem(db: DB, id: string) {
   const item = findOr404(db.items, id, 'Річ');
-  if (db.products.some((p) => p.purchasedItemId === id)) throw new HttpError(409, 'Річ створена покупкою — спершу видали товар у «Покупках»');
+  if (db.products.some((p) => p.purchasedItemId === id)) throw new HttpError(409, 'Річ створена покупкою — скасуй покупку в «Покупках» (✎ → «Скасувати покупку»)');
   busyJob(db, (j) => j.itemId === id);
   // A deleted item no longer covers a recommendation: its looks get the stand-in back.
   for (const n of db.needs) if (n.coveredByItem === id && n.status === 'covered') uncoverNeed(db, n.id);
@@ -425,6 +428,9 @@ on('POST', '/api/items/merge', async (ctx, _p, b) => {
       createdAt: at,
       updatedAt: at,
     };
+    // «Ні» on «варто замінити» survives a merge: the merged piece is rated again, still kept.
+    const kept = sources.find((x) => x.rating?.kept)?.rating;
+    if (kept) merged.rating = { ...kept, replace: undefined, replaceWith: undefined, rev: -1, kept: true };
     db.items.push(merged);
     for (const s of sources) {
       s.status = 'inactive';
@@ -533,23 +539,26 @@ on('POST', '/api/suggestions/:id/reject', (ctx, [id]) =>
 );
 
 // «Порада: X → Y» on a look: «Так» swaps the piece, «Ні» never offers that swap again.
-on('POST', '/api/looks/:id/advice', (ctx, [id], b) =>
-  ctx.store.mutate((db) => {
+on('POST', '/api/looks/:id/advice', async (ctx, [id], b) => {
+  const out = await ctx.store.mutate((db) => {
     const look = findOr404(db.looks, id, 'Образ');
     const swap = look.advice?.swap;
     if (!look.advice || !swap || look.advice.version !== look.version) throw new HttpError(409, 'Порада вже неактуальна');
     if (b.accept === true) {
       const next = cleanSlots(look.slots);
       for (const k of SLOT_KEYS) next[k] = next[k].map((r) => (r.kind === 'item' && r.id === swap.from ? { kind: 'item' as const, id: swap.to } : r));
-      setLookSlots(look, next, 'Порада порадника');
+      // The new composition gets a fresh score (it stays in «Найкращі» once rated again).
+      if (setLookSlots(look, next, 'Порада порадника')) queueAdvice(db, `Порада прийнята: ${look.name}`);
     } else {
       look.advice.rejected = [...(look.advice.rejected ?? []), `${swap.from}>${swap.to}`];
     }
     delete look.advice.swap;
     bump(look, undefined);
     return look;
-  }),
-);
+  });
+  ctx.drain();
+  return out;
+});
 
 on('POST', '/api/looks', (ctx, _p, b) =>
   ctx.store.mutate((db) => {
@@ -571,10 +580,11 @@ on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
     if ('capsuleId' in b) placeLook(db, look, requireParentCapsule(db, str(b.capsuleId)));
     if (b.keptVersion === look.version) look.keptVersion = look.version;
     if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
-    if (b.slots) setLookSlots(look, cleanSlots(b.slots), str(b.versionNote));
+    // A changed composition is rated again (never re-rendered by itself: the look page offers «Оновити», owner 17.11).
+    const changed = b.slots ? setLookSlots(look, cleanSlots(b.slots), str(b.versionNote)) : false;
     if (!look.name) throw new HttpError(400, 'Назва не може бути порожньою');
-    // A changed composition is not re-rendered by itself: the look page offers «Оновити» (owner, 17.11).
-    return { look, run: false };
+    if (changed) queueAdvice(db, `Змінено образ: ${look.name}`);
+    return { look, run: changed };
   });
   if (out.run) ctx.drain();
   return out.look;
@@ -631,6 +641,7 @@ on('POST', '/api/analyze', async (ctx, _p, b) => {
     const required = (Array.isArray(b.itemIds) ? (b.itemIds as string[]) : []).slice(0, 4);
     const picked = required.map((id) => findOr404(db.items, id, 'Річ'));
     if (picked.some((i) => i.status === 'inactive')) throw new HttpError(400, 'Неактуальну річ не можна брати в образ');
+    if (picked.some((i) => isEyewear(i.title))) throw new HttpError(400, 'Окуляри в образи не беру');
     const instructions = asked || (picked.length ? `Доповнити: ${picked.map((i) => i.title).join(', ')}` : `Тема: ${pickTheme(db)}`);
     const j: Job = { id: newId('J'), kind: 'analyze', requiredItemIds: picked.length ? required : undefined, lookVersion: 0, snapshot: { lookName: picked.length ? 'Доповнити образ' : 'Підбірка з моїх речей', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions, state: 'queued', origin: 'site', createdAt: now() };
     db.jobs.push(j);
@@ -985,9 +996,10 @@ on('POST', '/api/products/:id/unpurchase', async (ctx, [id]) => {
 on('DELETE', '/api/products/:id', (ctx, [id]) =>
   ctx.store.mutate((db) => {
     const p = findOr404(db.products, id, 'Товар');
-    if (p.status === 'purchased') throw new HttpError(409, 'Куплений товар уже в гардеробі — видали річ, якщо треба');
+    if (p.status === 'purchased') throw new HttpError(409, 'Куплений товар уже в гардеробі — скасуй покупку (✎ → «Скасувати покупку»)');
     const need = db.needs.find((n) => n.id === p.needId);
     if (need && p.url) need.droppedUrls = [...new Set([...(need.droppedUrls ?? []), p.url])].slice(-30);
+    if (need) need.droppedModels = [...new Set([...(need.droppedModels ?? []), productKey(p.store, `${p.brand ?? ''} ${p.model}`)])].slice(-30);
     stripRefs(db, 'product', id);
     db.products = db.products.filter((x) => x.id !== id);
   }),

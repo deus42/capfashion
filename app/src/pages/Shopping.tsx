@@ -244,6 +244,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const [owning, setOwning] = useState(false);
   // Found variants, best match first.
   const products = db.products.filter((p) => p.needId === need.id).sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
+  const shopPhoto = products.map((p) => db.photos.find((x) => p.photoId && x.id === p.photoId)).find((x) => x !== undefined);
   const searches = db.jobs.filter((j) => j.kind === 'shopsearch' && j.needId === need.id);
   const waitJob = searches.find((j) => j.state === 'running') ?? searches.find((j) => j.state === 'queued');
   const waiting = Boolean(waitJob);
@@ -276,6 +277,9 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
           <img src={thumb(db.photos.find((p) => p.id === need.conceptPhotoId)!.path, 360)} alt={need.title} />
         ) : covered?.packshotId && db.photos.find((p) => p.id === covered.packshotId) ? (
           <img src={thumb(db.photos.find((p) => p.id === covered.packshotId)!.path, 360)} alt={need.title} />
+        ) : shopPhoto ? (
+          // An advisor purchase has no concept picture: the best found product stands in.
+          <img src={thumb(shopPhoto.path, 360)} alt={need.title} />
         ) : (
           <CategoryIcon category={need.category} size={30} />
         )}

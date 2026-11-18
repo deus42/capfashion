@@ -16,7 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { isComplete, itemPlacements, missingInfo, purchaseRanking, wardrobeCapsule } from '../src/lib.ts';
+import { isComplete, itemPlacements, itemVerdict, missingInfo, purchaseRanking, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, adviceDue, advisePrompt, applyAdvice, itemsToRate, seenRevs } from './advisor.ts';
 
@@ -1228,4 +1228,97 @@ test('round 5: a dropped shop variant never comes back; open proposals stay unti
   db = store.read();
   assert.equal(adviceDue(db), false);
   assert.equal(adviceDue(db, Date.now() + 25 * 60 * 60 * 1000), true);
+});
+
+test('round 6: a found replacement is not proposed again; stale replacements go; a new piece\'s proposal comes first; outfits are checked; look edits re-rate; «Ні» survives a merge', async () => {
+  const { store, call } = setup();
+  const item = (id: string, category: 'tees' | 'shoes' | 'accessories' | 'shirts' | 'outerwear', title: string, origin: 'candidate' | 'manual' = 'candidate') =>
+    ({ id, rev: 1, category, title, status: 'confirmed' as const, photoIds: [], origin, history: [], createdAt: at, updatedAt: at });
+  await store.mutate((d) => {
+    d.items.push(item('W-S', 'shoes', 'Sneakers'), item('W-A', 'tees', 'Logo tee A'), item('W-NEW', 'tees', 'Plain tee'), item('W-J', 'outerwear', 'Jacket'), item('W-G', 'accessories', 'Окуляри'));
+  });
+  const advise = { id: 'J-adv', kind: 'advise' as const, lookVersion: 0, snapshot: { lookName: 'Порадник', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+  const empty = { status: 'done', reason: '', items: [], looks: [], newLooks: [], newCapsules: [], newNeeds: [] };
+  const logoA = { id: 'W-A', score: 3, note: 'Логотип.', replace: 'великий логотип', replaceWith: 'Однотонна футболка' };
+  await store.mutate((d) => void applyAdvice(d, advise, { ...empty, items: [logoA] }));
+  const needA = store.read().needs.find((n) => n.replaces === 'W-A')!;
+  // «Вже маю» without retiring the old piece: the next run does not make the same purchase again; undo leaves one open.
+  await call('POST', `/api/needs/${needA.id}/cover`, { itemId: 'W-NEW' });
+  await store.mutate((d) => void applyAdvice(d, advise, { ...empty, items: [logoA] }));
+  assert.equal(store.read().needs.filter((n) => n.replaces === 'W-A').length, 1);
+  await call('POST', `/api/needs/${needA.id}/uncover`);
+  assert.equal(store.read().needs.filter((n) => n.replaces === 'W-A' && n.status === 'open').length, 1);
+  // A piece never closes the purchase that replaces it.
+  await assert.rejects(call('POST', `/api/needs/${needA.id}/cover`, { itemId: 'W-A' }), /та сама річ/);
+  // «Ні» while its search runs: the purchase waits; the next run withdraws it and gives its look a new version.
+  await store.mutate((d) => {
+    d.jobs.push({ id: 'J-search-A', kind: 'shopsearch', needId: needA.id, lookVersion: 0, snapshot: { lookName: 'x', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running', origin: 'site', createdAt: at });
+    d.looks[0].slots.top = [{ kind: 'need', id: needA.id }];
+  });
+  await call('POST', '/api/items/W-A/keep');
+  assert.ok(store.read().needs.some((n) => n.id === needA.id), 'kept while its search runs');
+  await store.mutate((d) => void (d.jobs.find((j) => j.id === 'J-search-A')!.state = 'done'));
+  const before = store.read().looks[0].version;
+  await store.mutate((d) => void applyAdvice(d, advise, empty));
+  let db = store.read();
+  assert.ok(!db.needs.some((n) => n.id === needA.id), 'withdrawn on the next run');
+  assert.equal(db.looks[0].version, before + 1, 'the look that used it gets a new version');
+  assert.deepEqual(db.looks[0].slots.top, []);
+  // A proposal for a piece with no look comes before the older ones (Home shows two); bad outfits are rejected, glasses dropped.
+  await store.mutate((d) => {
+    d.items.push(item('W-FRESH', 'shirts', 'Linen shirt', 'manual'));
+    d.suggestions = [{ id: 'A-1', kind: 'look', status: 'open', name: 'Старий', why: '', capsuleId: 'C-1', looks: [{ name: 'Старий', why: '', slots: { ...emptySlots(), top: [{ kind: 'item', id: 'W-A' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] } }], jobId: 'J-0', createdAt: at }];
+  });
+  await store.mutate((d) => void applyAdvice(d, advise, { ...empty, newLooks: [
+    { name: 'З новою', capsuleId: 'C-1', top: ['W-FRESH'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: ['W-G'], why: '' },
+    { name: 'Куртка внизу', capsuleId: 'C-1', top: ['W-NEW'], layer: [], bottom: ['W-J'], shoes: ['W-S'], accessories: [], why: '' },
+    { name: 'Зникла річ', capsuleId: 'C-1', top: ['W-GONE'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
+  ] }));
+  db = store.read();
+  assert.deepEqual(db.suggestions!.filter((s) => s.status === 'open').map((s) => s.name), ['З новою', 'Старий']);
+  assert.deepEqual(db.suggestions![0].looks[0].slots.accessories, [], 'glasses are left out, the outfit stays');
+  // Changing a look's pieces queues the advisor; a score for the version it saw is not current.
+  await store.mutate((d) => void (d.jobs = d.jobs.filter((j) => j.kind !== 'advise')));
+  const seen = seenRevs(store.read());
+  const look = store.read().looks[0];
+  await call('PATCH', '/api/looks/L-1', { rev: look.rev, slots: { top: [{ kind: 'item', id: 'W-NEW' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] } });
+  assert.equal(store.read().jobs.filter((j) => j.kind === 'advise').length, 1);
+  await store.mutate((d) => void applyAdvice(d, advise, { ...empty, looks: [{ id: 'L-1', score: 9.2, weakItem: '', swapTo: '', why: 'x' }] }, seen));
+  db = store.read();
+  assert.notEqual(db.looks[0].advice!.version, db.looks[0].version, 'a look edited during the run is scored again');
+  // «Так» on the advisor's swap queues it too.
+  await store.mutate((d) => {
+    d.jobs = d.jobs.filter((j) => j.kind !== 'advise');
+    const l = d.looks[0];
+    l.advice = { score: 8, why: 'x', version: l.version, swap: { from: 'W-1', to: 'W-2' } };
+  });
+  await call('POST', '/api/looks/L-1/advice', { accept: true });
+  assert.equal(store.read().jobs.filter((j) => j.kind === 'advise').length, 1);
+  // «Ні» on «варто замінити» survives a merge; glasses never go into «Ще образ».
+  const merged = await call('POST', '/api/items/merge', { ids: ['W-A', 'W-NEW'] });
+  assert.equal(store.read().items.find((i) => i.id === merged.id)!.rating!.kept, true);
+  await assert.rejects(call('POST', '/api/analyze', { itemIds: ['W-G'] }), /Окуляри/);
+  // The item line: no verdict for glasses; the reason reads as part of the sentence.
+  await store.mutate((d) => {
+    d.items.find((i) => i.id === 'W-G')!.rating = { score: 9, note: 'x', rev: 1, at };
+    d.items.find((i) => i.id === 'W-J')!.rating = { score: 4, note: 'x', replace: 'Великий логотип на спині.', replaceWith: 'Однотонна куртка', rev: 1, at };
+  });
+  db = store.read();
+  assert.equal(itemVerdict(db, db.items.find((i) => i.id === 'W-G')!), null);
+  assert.equal(itemVerdict(db, db.items.find((i) => i.id === 'W-J')!)!.line, '4/10 · варто замінити: великий логотип на спині');
+  assert.equal(validateDb(db), null);
+});
+
+test('round 6: a dropped product stays dropped under another link or with tracking parameters', async () => {
+  const { store, call } = setup();
+  const product = await call('POST', '/api/products', { needId: 'N-1', store: 'Zara', model: 'Milk tee', url: 'https://example.com/tee?utm_source=x' });
+  await call('DELETE', `/api/products/${product.id}`);
+  const search = { id: 'J-s', kind: 'shopsearch' as const, needId: 'N-1', lookVersion: 0, snapshot: { lookName: 'x', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+  const found = (store: string, model: string, url: string) => ({ store, brand: '', model, sku: '', url, imageUrl: '', price: '', currency: 'EUR', inTower: false, size: '', matchScore: 8, matchNote: 'x' });
+  await store.mutate((d) => void applyShopSearch(d, search, { status: 'done', reason: '', products: [
+    found('Zara', 'Milk tee', 'https://www.example.com/tee/?color=2'),
+    found('Zara', 'Milk tee', 'https://zara.com/milk-tee-123'),
+    found('Mango', 'Ecru tee', 'https://mango.com/ecru'),
+  ] } as never));
+  assert.deepEqual(store.read().products.map((p) => p.model), ['Ecru tee']);
 });

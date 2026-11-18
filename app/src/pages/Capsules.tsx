@@ -6,7 +6,7 @@ import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
 import { SEASON_LABEL, autoCapsules, bestCapsule, capsuleLooks, distinctLooks, isBestLook, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
-import { CapsuleTile } from './Home.tsx';
+import { CapsuleTile, tileCovers } from './Home.tsx';
 
 
 export function CapsulesPage() {
@@ -20,6 +20,7 @@ export function CapsulesPage() {
   const capsules = [...autoCapsules(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const list = tab === 'capsules' ? capsules : selections;
+  const covers = tileCovers(db, list);
   // Each capsule's lead look first, then the rest of the catalogue.
   const orderedLooks = capsuleLooks(db, [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]);
   const allLooks = distinctLooks(db, orderedLooks);
@@ -52,7 +53,7 @@ export function CapsulesPage() {
       ) : tab === 'looks' ? <LookGrid looks={filteredLooks} heading={false} /> : list.length === 0 ? (
         tab === 'selections' ? <Empty icon={<Sparkles />} title="Підбірок ще немає" /> : <Empty icon={<Sparkles />} title="Капсул ще немає" />
       ) : (
-        <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
+        <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
       )}
     </div>
   );
@@ -63,10 +64,13 @@ function ReadyFilter({ active, href }: { active: boolean; href: string }) {
 }
 
 /** Looks already reduced to one card per look (see distinctLooks). */
-function LookGrid({ looks, heading = true, filter }: { looks: Look[]; heading?: boolean; filter?: React.ReactNode }) {
+function LookGrid({ looks, heading = true, filter, mark = true }: { looks: Look[]; heading?: boolean; filter?: React.ReactNode; mark?: boolean }) {
+  const db = useDb();
+  // «Найкращий» only where it tells something; when some cards carry it, the others keep its line so names line up.
+  const marked = mark && looks.some((l) => isBestLook(db, l.id));
   return <>
     {heading && <div className="section-head"><h2 className="h2">Образи <span className="count">{looks.length}</span></h2>{filter}</div>}
-    {looks.length ? <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} />)}</div> : <Empty icon={<ImageOff />} title="Образів ще немає" />}
+    {looks.length ? <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} mark={marked} />)}</div> : <Empty icon={<ImageOff />} title="Образів ще немає" />}
   </>;
 }
 
@@ -125,15 +129,16 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
   );
 }
 
-function LookCard({ look }: { look: Look }) {
+function LookCard({ look, mark = false }: { look: Look; mark?: boolean }) {
   const db = useDb();
+  const best = mark && isBestLook(db, look.id);
   return (
     <div className="look-card">
       <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${look.id}`}>
         <LookArt look={look} />
       </a>
       {/* Above the name, not on the picture: on a phone a corner label covered the face. */}
-      <a href={`/looks/${look.id}`}>{isBestLook(db, look.id) && <span className="best-mark">Найкращий</span>}<h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
+      <a href={`/looks/${look.id}`}>{mark && <span className={`eyebrow-sm best-mark${best ? '' : ' ghost'}`} aria-hidden={!best}>Найкращий</span>}<h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
       </div>
@@ -202,7 +207,7 @@ export function CapsuleDetail({ id }: { id: string }) {
     return <div className="page">
       <div className="crumb"><a href="/capsules">Капсули</a></div>
       <div className="page-head"><h1>{ready.name}</h1></div>
-      <LookGrid looks={looks} />
+      <LookGrid looks={looks} mark={id !== BEST_CAPSULE_ID} />
     </div>;
   }
   if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
@@ -234,7 +239,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           <h1>{capsule.name}</h1>
           {readyLine(db, capsule) && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
-            <Badge>{SEASON_LABEL[capsule.season]}</Badge>
+            {capsule.season !== 'all' && <Badge>{SEASON_LABEL[capsule.season]}</Badge>}
             {hidden && <Badge>приховано</Badge>}
             {capsule.situations.filter((s) => s.length <= 24).slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
           </div>

@@ -278,6 +278,10 @@ export function SpanBar({ jobs, className = '' }: { jobs: Job[]; className?: str
   const db = useDb();
   const now = useNow();
   const peak = useRef(0);
+  const ids = useRef(new Set<string>());
+  // Overlapping work never moves the bar back; the next job of a chain (photo → picture → advisor) starts it afresh.
+  if (!jobs.some((j) => ids.current.has(j.id))) peak.current = 0;
+  ids.current = new Set(jobs.map((j) => j.id));
   const starts = jobs.map((j) => new Date(j.startedAt!).getTime());
   const start = Math.min(...starts);
   const end = Math.max(...jobs.map((j, i) => starts[i] + expectedSeconds(db, j.kind) * 1000));
@@ -499,7 +503,7 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
         <div className="ward-grid">{own.map(tile)}</div>
       </>}
       {buy.length > 0 && <>
-        <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="/shopping">Список покупок</a></div>
+        <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="/shopping">Покупки</a></div>
         <div className="ward-grid">{buy.map(tile)}</div>
       </>}
     </>

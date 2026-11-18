@@ -162,6 +162,8 @@ export interface Need {
   retired?: { id: string; status: ItemStatus };
   /** Shop links the owner dropped with ×: a new search never brings them back. */
   droppedUrls?: string[];
+  /** The same dropped products by store and name (a link with other tracking or colour parameters is still the same product). */
+  droppedModels?: string[];
   createdAt: string;
   updatedAt: string;
 }

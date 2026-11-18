@@ -644,7 +644,7 @@ button.wtile { border: 0; background: none; padding: 0; font: inherit; color: in
 .look-grid > *, .sib-strip > *, .look-card > a { min-width: 0; }
 .miss { display: flex; gap: 4px; }
 .miss-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.miss-n { flex: none; }
+.miss-n { flex: none; margin-left: auto; }
 .next-buy .miss { display: block; }
 .eyebrow-sm { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .next-buy .eyebrow { margin: 0; }
@@ -710,11 +710,22 @@ button.wtile { border: 0; background: none; padding: 0; font: inherit; color: in
 /* Round 5 (18.11). */
 .next-buy { margin-top: 24px; }
 .look-card .card-foot { margin-top: auto; }
-.look-card .best-mark { display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--ink); }
+.look-card .best-mark { display: block; margin-bottom: 4px; }
+.look-card .best-mark.ghost { visibility: hidden; }
+.seg-scroll { max-width: 100%; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .seg-scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .seg-scroll::-webkit-scrollbar { display: none; }
+  .seg-scroll button { flex: none; }
+}
 .item-verdict .verdict-no { margin-left: 8px; vertical-align: middle; }
 @media (max-width: 820px) {
   /* Fields under 16 px make iPhone Safari zoom the page. */
-  .input, .select, .textarea, .search .input, .brand-add .input, .input.sm, .select.sm { font-size: 16px; }
+  .input, .select, .textarea, .search .input, .brand-add .input, .input.sm, .select.sm, .prompt-box textarea { font-size: 16px; }
+  .search .input { height: 44px; }
+  .swap-btn { width: 44px; height: 44px; }
+  .kv .chips .badge::after { inset: -10px 0; }
+  .chip { min-width: 44px; justify-content: center; }
   .next-buy.advice-card { grid-template-columns: 120px minmax(0, 1fr); }
   .btn.sm { min-width: 44px; }
   .product-x, .chip.brand button { width: 44px; height: 44px; }

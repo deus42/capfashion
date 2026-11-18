@@ -4,7 +4,7 @@ import type { Category, Item, ItemStatus, Job } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, JobBar, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, itemPlacements, itemVerdict, usageLabel, wardrobeCapsule } from '../lib.ts';
+import { CATEGORY_LABEL, isEyewear, itemPlacements, itemVerdict, usageLabel, wardrobeCapsule } from '../lib.ts';
 
 import { InfoMark, TermInfo } from './Glossary.tsx';
 
@@ -46,10 +46,13 @@ function ItemPage({ item }: { item: Item }) {
           <h1>{item.title}<TermInfo texts={[item.title, item.fit]} /></h1>
           {verdict && (
             <p className="item-verdict">
-              {verdict.line}
-              {verdict.note && <InfoMark title={`${item.rating!.score}/10`} text={verdict.note} />}
-              {verdict.need && <> · <a href={`/shopping?need=${verdict.need.id}`}>у покупках</a></>}
-              {verdict.kind === 'replace' && <button className="btn sm verdict-no" onClick={() => void act(() => api('POST', `/api/items/${item.id}/keep`), 'Залишаю — порадник оцінить ще раз')}>Ні</button>}
+              {/* The ⓘ stays with the last word; «у покупках» and «Ні» stay together. */}
+              {verdict.line.includes(' ') ? `${verdict.line.slice(0, verdict.line.lastIndexOf(' '))} ` : ''}
+              <span className="nowrap">{verdict.line.slice(verdict.line.lastIndexOf(' ') + 1)}{verdict.note && <InfoMark title={`${item.rating!.score}/10`} text={verdict.note} />}</span>
+              {(verdict.need || (verdict.kind === 'replace' && item.status !== 'needs_confirmation')) && <span className="nowrap">
+                {verdict.need && <> · <a href={`/shopping?need=${verdict.need.id}`}>у покупках</a></>}
+                {verdict.kind === 'replace' && item.status !== 'needs_confirmation' && <button className="btn sm verdict-no" onClick={() => void act(() => api('POST', `/api/items/${item.id}/keep`), 'Залишаю — порадник оцінить ще раз')}>Ні</button>}
+              </span>}
             </p>
           )}
         </div>
@@ -87,7 +90,7 @@ function ItemPage({ item }: { item: Item }) {
 
       <div className="section-head">
         <h2 className="h2">Де використано <span className="count">{usageLabel(capsules.length, looks.length)}</span></h2>
-        {item.status !== 'inactive' && (
+        {item.status !== 'inactive' && !isEyewear(item.title) && (
           <button className="btn sm" onClick={() => void act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи — зʼявляться в «Підбірках»')}>
             <Sparkles size={13} /> Ще образ
           </button>
@@ -234,7 +237,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const cat = CATS.includes(view as Category) ? (view as Category) : null;
   // Inactive items only appear in the «Неактуальні» filter.
   const list = db.items.filter(
-    (i) => !i.mergedInto && (view !== 'new' || isNew(i)) && (!cat || i.category === cat) && (status ? i.status === status : i.status !== 'inactive') && `${i.title} ${i.id} ${i.brand ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
+    (i) => !i.mergedInto && !(mode === 'compose' && isEyewear(i.title)) && (view !== 'new' || isNew(i)) && (!cat || i.category === cat) && (status ? i.status === status : i.status !== 'inactive') && `${i.title} ${i.id} ${i.brand ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
   const visible = db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto);
   const open = openId ? db.items.find((i) => i.id === openId) : undefined;

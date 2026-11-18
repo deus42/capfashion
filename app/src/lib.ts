@@ -294,9 +294,11 @@ export function itemUsage(db: DB, itemId: string, ready = wardrobeCapsule(db)) {
 /** The item page's quiet line (owner, 18.11): «8/10 · сильна річ», «гарна, мало образів», «варто замінити: …»; the count lives in «Де використано». */
 export function itemVerdict(db: DB, item: Item): { line: string; note: string; kind: 'strong' | 'underused' | 'replace' | 'plain'; need?: Need } | null {
   const r = item.rating;
-  if (!r || item.status === 'inactive' || item.mergedInto) return null;
+  // Eyewear is never used in looks (owner, 17.11), so it gets no verdict either.
+  if (!r || item.status === 'inactive' || item.mergedInto || isEyewear(item.title)) return null;
   const n = itemUsage(db, item.id).looks;
-  if (r.replace && !r.kept) return { kind: 'replace', line: `${r.score}/10 · варто замінити: ${r.replace}`, note: r.note, need: db.needs.find((x) => x.replaces === item.id && x.status === 'open') };
+  const reason = r.replace ? `${r.replace.charAt(0).toLowerCase()}${r.replace.slice(1)}`.replace(/[.\s]+$/, '') : '';
+  if (r.replace && !r.kept) return { kind: 'replace', line: `${r.score}/10 · варто замінити: ${reason}`, note: r.note, need: db.needs.find((x) => x.replaces === item.id && x.status === 'open') };
   if (r.score >= 7 && n <= 1) return { kind: 'underused', line: `${r.score}/10 · гарна, мало образів`, note: r.note };
   if (r.score >= 7) return { kind: 'strong', line: `${r.score}/10 · сильна річ`, note: r.note };
   return { kind: 'plain', line: `${r.score}/10`, note: r.note };

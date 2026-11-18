@@ -9,7 +9,7 @@ interface Ctx {
   refresh: () => Promise<void>;
   /** Runs a mutation, refreshes state and reports errors as a toast. */
   act: <T>(fn: () => Promise<T>, okMessage?: string) => Promise<T | undefined>;
-  toast: (msg: string, bad?: boolean) => void;
+  toast: (msg: string, bad?: boolean, href?: string) => void;
 }
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -17,13 +17,13 @@ const AppCtx = createContext<Ctx | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [toastMsg, setToast] = useState<{ msg: string; bad: boolean } | null>(null);
+  const [toastMsg, setToast] = useState<{ msg: string; bad: boolean; href?: string } | null>(null);
   const timer = useRef<number | undefined>(undefined);
 
-  const toast = useCallback((msg: string, bad = false) => {
-    setToast({ msg, bad });
+  const toast = useCallback((msg: string, bad = false, href?: string) => {
+    setToast({ msg, bad, href });
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(null), bad ? 6000 : 2600);
+    timer.current = window.setTimeout(() => setToast(null), bad || href ? 6000 : 2600);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -58,18 +58,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
 
-  const busy = Boolean(state?.runner.running || state?.db.jobs.some((j) => j.state === 'running'));
+  // Queued work counts too: between two chained jobs (photo → item picture → advisor) nothing runs for a moment.
+  // Try-ons are left out: they can wait for the owner for a long time.
+  const busy = Boolean(state?.runner.running || state?.db.jobs.some((j) => j.state === 'running' || (j.state === 'queued' && j.kind !== 'tryon')));
   useEffect(() => {
     if (!busy) return;
     const id = window.setInterval(() => void refresh(), 2500);
     return () => window.clearInterval(id);
   }, [busy, refresh]);
 
+  // Where an uploaded photo went (criterion 7): said once, as a toast with a link, when its recognition finishes.
+  const uploads = useRef(new Set<string>());
+  useEffect(() => {
+    if (!state) return;
+    const notes: string[] = [];
+    let href: string | undefined;
+    let bad = false;
+    for (const j of state.db.jobs) {
+      if (j.kind !== 'intake') continue;
+      if (j.state === 'queued' || j.state === 'running') uploads.current.add(j.id);
+      else if (uploads.current.delete(j.id)) {
+        const created = (j.createdItemIds ?? []).map((id) => state.db.items.find((i) => i.id === id)?.title).filter(Boolean);
+        const rest = (j.stateNote ?? '').split(' · ').filter((x) => x && !(created.length && x.startsWith('нових речей')));
+        const parts = [...(created.length ? [`${created.length === 1 ? 'нова річ' : 'нові речі'}: ${created.map((t) => `«${t}»`).join(', ')}`] : []), ...rest];
+        if (parts.length) notes.push(parts.join(' · '));
+        href ??= [...(j.createdItemIds ?? []), ...(j.attachedItemIds ?? [])].map((id) => `/wardrobe/${id}`)[0];
+        bad ||= j.state === 'error';
+      }
+    }
+    if (notes.length) {
+      const msg = notes.join(' · ');
+      toast(`Фото: ${msg}`, bad, href);
+    }
+  }, [state, toast]);
+
   const value = useMemo(() => ({ state, error, refresh, act, toast }), [state, error, refresh, act, toast]);
   return (
     <AppCtx.Provider value={value}>
       {children}
-      {toastMsg && <div className={`toast${toastMsg.bad ? ' bad' : ''}`} role="status">{toastMsg.msg}</div>}
+      {toastMsg && (toastMsg.href
+        ? <a className={`toast${toastMsg.bad ? ' bad' : ''}`} role="status" href={toastMsg.href}>{toastMsg.msg}</a>
+        : <div className={`toast${toastMsg.bad ? ' bad' : ''}`} role="status">{toastMsg.msg}</div>)}
     </AppCtx.Provider>
   );
 }

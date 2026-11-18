@@ -3,16 +3,31 @@ import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-reac
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
-import { autoCapsules, capsuleLooks, distinctLooks, isAutoCapsule, openSuggestions, rankCapsules, readyLine } from '../lib.ts';
+import { autoCapsules, capsuleLooks, distinctLooks, isAutoCapsule, openSuggestions, rankCapsules, readyLine, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import type { DB, Look } from '../api.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
 
+/** A tile's looks: a hidden capsule still shows its looks (never empty); the automatic ones keep their own order. */
+const tileLooks = (db: DB, c: CapsuleView) => (isCapsuleHidden(db, c) || isAutoCapsule(c.id) ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds)));
+
+/** Covers for a row of tiles: a look already on an earlier tile is not repeated, unless a capsule has nothing else. */
+export function tileCovers(db: DB, list: CapsuleView[]) {
+  const used = new Set<string>();
+  return new Map(list.map((c) => {
+    const looks = tileLooks(db, c);
+    const fresh = looks.filter((l) => !used.has(l.id));
+    const cover = (fresh.length ? fresh : looks).slice(0, 4);
+    for (const l of cover) used.add(l.id);
+    return [c.id, cover] as const;
+  }));
+}
+
 /** A capsule is a set of looks: its tile shows up to four of them, each with its own try-on. */
-export function CapsuleTile({ c }: { c: CapsuleView }) {
+export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
   const db = useDb();
-  // A hidden capsule (👎 or all its looks hidden) still shows its looks, so its tile is never empty.
-  const looks = isCapsuleHidden(db, c) ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds));
-  const shownLooks = looks.slice(0, 4);
+  const looks = tileLooks(db, c);
+  const shownLooks = cover ?? looks.slice(0, 4);
   return (
     <a href={`/capsules/${c.id}`} className="capsule-card">
       <div className={`cover mosaic n${Math.max(1, shownLooks.length)}`}>
@@ -24,7 +39,7 @@ export function CapsuleTile({ c }: { c: CapsuleView }) {
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{(!isAutoCapsule(c.id) && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
+        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
       </div>
     </a>
   );
@@ -95,6 +110,7 @@ export function HomePage() {
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const capsules = [...autoCapsules(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
+  const covers = tileCovers(db, capsules);
   const analyzeJob = db.jobs.find((j) => j.kind === 'analyze' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'analyze' && j.state === 'queued');
   const analyzing = Boolean(analyzeJob);
 
@@ -139,8 +155,8 @@ export function HomePage() {
         </>
       )}
 
-      <div className="section-head"><h2 className="h2">Капсули</h2><a href="/capsules">Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
-      <div className="capsule-grid">{capsules.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
+      <div className="section-head"><h2 className="h2">Капсули</h2></div>
+      <div className="capsule-grid">{capsules.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
     </div>
   );
 }

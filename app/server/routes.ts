@@ -721,6 +721,7 @@ on('POST', '/api/products/:id/purchase', async (ctx, [id], b) => {
     const p = findOr404(db.products, id, 'Товар');
     if (p.status === 'purchased') throw new HttpError(409, 'Товар уже позначено купленим');
     const need = findOr404(db.needs, p.needId, 'Потреба');
+    if (need.status !== 'open') throw new HttpError(409, `«${need.title}» уже закрито`);
     const at = now();
     const ownPhoto = str(b.photoId);
     const photos = [p.photoId, ownPhoto].filter((x): x is string => Boolean(x) && db.photos.some((ph) => ph.id === x));
@@ -845,6 +846,20 @@ on('DELETE', '/api/photos/:id', (ctx, [id]) =>
     db.profile.basePhotoIds = db.profile.basePhotoIds.filter((x) => x !== id);
     dropJobs(db, (j) => Boolean(j.inputPhotoIds?.includes(id)) || j.photoId === id || j.snapshot.basePhotoIds.includes(id));
     db.photos = db.photos.filter((x) => x.id !== id);
+  }),
+);
+
+// «Скасувати покупку»: a wrong «Куплено» tap is undone — the variant returns, the item leaves, the looks get the purchase back.
+on('POST', '/api/products/:id/unpurchase', (ctx, [id]) =>
+  ctx.store.mutate((db) => {
+    const p = findOr404(db.products, id, 'Товар');
+    if (p.status !== 'purchased') throw new HttpError(409, 'Товар не позначено купленим');
+    const itemId = p.purchasedItemId;
+    p.status = 'option';
+    delete p.purchasedItemId;
+    bump(p, undefined);
+    if (itemId && db.items.some((i) => i.id === itemId)) deleteItem(db, itemId);
+    return p;
   }),
 );
 

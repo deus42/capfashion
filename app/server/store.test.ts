@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
 import { isComplete, missingInfo, purchaseRanking } from '../src/lib.ts';
-import { shopSearchPrompt } from './shop-search.ts';
+import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
@@ -239,6 +239,16 @@ test('purchase moves the product into the wardrobe and updates looks (A08, A09)'
   assert.equal(db.needs[0].status, 'covered');
   assert.deepEqual(db.looks[0].slots.top, [{ kind: 'item', id: item.id }]);
   assert.equal(db.products.find((p) => p.id !== p1.id)!.status, 'option', 'other alternative stays an option');
+  const other = db.products.find((p) => p.id !== p1.id)!;
+  await assert.rejects(call('POST', `/api/products/${other.id}/purchase`, {}), /уже закрито/, 'a closed purchase cannot be bought twice');
+  // «Скасувати покупку»: the variant returns, the item leaves, the look gets the purchase back.
+  await call('POST', `/api/products/${p1.id}/unpurchase`, {});
+  db = store.read();
+  assert.equal(db.products.find((p) => p.id === p1.id)!.status, 'option');
+  assert.equal(db.items.some((i) => i.id === item.id), false);
+  assert.equal(db.needs[0].status, 'open');
+  assert.deepEqual(db.looks[0].slots.top, [{ kind: 'need', id: 'N-1' }]);
+  assert.equal(validateDb(db), null);
 });
 
 test('prompt carries the frozen outfit and the image standard', () => {
@@ -975,6 +985,12 @@ test('«Знайти» searches the shops for a recommendation and saves dated v
   assert.match(prompt, /«Tower Center Rijeka»/);
   assert.match(prompt, /Owner's stores \(check these first\): Buzz Sneakers/);
   assert.match(prompt, /Levi’s, Tom Tailor/);
+  // Article numbers leave the name the owner sees and go to sku.
+  const scratch = fixture();
+  const coded = applyShopSearch(scratch, { ...job, needId: 'N-1' }, { status: 'done', reason: '', products: [{ store: 'Buzz', brand: 'Adidas', model: 'Handball Spezial Shadow Brown (JQ1740)', url: 'https://example.com/a', imageUrl: '', price: '109.99', currency: 'EUR', inTower: true, size: '', matchScore: 10, matchNote: '' }] });
+  const cp = scratch.products.find((x) => x.id === coded.created[0])!;
+  assert.equal(cp.model, 'Handball Spezial Shadow Brown');
+  assert.equal(cp.sku, 'JQ1740');
   assert.equal(job.kind, 'shopsearch');
   await assert.rejects(call('POST', '/api/needs/N-1/search', {}), /Пошук уже йде/);
   const fake = path.join(dir, 'fake-codex.sh');

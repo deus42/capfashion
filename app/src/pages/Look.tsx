@@ -28,6 +28,8 @@ const accessoryKind = (title: string) => ACCESSORY_KINDS.find(([, re]) => re.tes
  * Other accessories of the same kind the owner has, offered as one-tap swaps.
  * One different piece keeps it the same look (owner rule), so the rating stays.
  */
+const COLOURS = ['коричнев', 'чорн', 'бежев', 'сір', 'синь', 'синій', 'біл', 'зелен', 'олив', 'taupe', 'коньяч', 'кремов', 'молочн', 'бордов', 'червон', 'brown', 'black', 'tan'];
+
 function accessoryOptions(db: DB, look: Look) {
   const inLook = new Set(look.slots.accessories.map((r) => `${r.kind}:${r.id}`));
   return look.slots.accessories
@@ -39,8 +41,12 @@ function accessoryOptions(db: DB, look: Look) {
       const stems = (t: string) => new Set(t.toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length >= 5).map((w) => w.slice(0, 6)));
       const mine = stems(title);
       const close = (t: string) => [...stems(t)].filter((w) => mine.has(w)).length;
+      // A belt keeps the colour of the one it replaces (it goes with the shoes): no black belt under brown suede.
+      const colours = (t: string) => COLOURS.filter((c) => t.toLowerCase().includes(c));
+      const mineColours = colours(title);
+      const sameColour = (t: string) => kind !== 'belt' || !mineColours.length || colours(t).some((c) => mineColours.includes(c));
       const options = db.items
-        .filter((i) => i.category === 'accessories' && i.status !== 'inactive' && !i.mergedInto && !inLook.has(`item:${i.id}`) && accessoryKind(i.title) === kind)
+        .filter((i) => i.category === 'accessories' && i.status !== 'inactive' && !i.mergedInto && !inLook.has(`item:${i.id}`) && accessoryKind(i.title) === kind && sameColour(i.title))
         .sort((a, b) => close(b.title) - close(a.title) || Number(b.status === 'confirmed') - Number(a.status === 'confirmed'))
         .slice(0, 3);
       return options.length ? { current, title, options } : null;
@@ -207,8 +213,9 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
   const NATURAL: Record<string, SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
   const optionsFor = (s: SlotKey) => {
     const cats = slot ? SLOT_CATEGORIES[s] : SLOT_CATEGORIES[s].filter((c) => NATURAL[c] === s);
+    const own = current?.kind === 'item' ? db.items.find((i) => i.id === current.id)?.category : current?.kind === 'need' ? db.needs.find((n) => n.id === current.id)?.category : undefined;
     return [
-      ...db.items.filter((i) => cats.includes(i.category) && i.status !== 'inactive' && !i.mergedInto && accessoryKind(i.title) !== 'glasses').map((i) => ({ ref: { kind: 'item' as const, id: i.id }, title: i.title, photo: art(i.packshotId) ?? art(i.photoIds[0]) })),
+      ...db.items.filter((i) => cats.includes(i.category) && i.status !== 'inactive' && !i.mergedInto && accessoryKind(i.title) !== 'glasses').sort((a, b) => Number(b.category === own) - Number(a.category === own)).map((i) => ({ ref: { kind: 'item' as const, id: i.id }, title: i.title, photo: art(i.packshotId) ?? art(i.photoIds[0]) })),
       ...db.needs.filter((n) => n.status === 'open' && cats.includes(n.category)).map((n) => ({ ref: { kind: 'need' as const, id: n.id }, title: `${n.title} · докупити`, photo: art(n.conceptPhotoId) })),
     ];
   };

@@ -25,16 +25,19 @@ const TABS = [
   { key: 'preferences', label: 'Побажання', icon: <Heart size={17} /> },
 ];
 
-function Section({ title, sub, actions, children }: { title: string; sub?: string; actions?: ReactNode; children: ReactNode }) {
+function Section({ title, sub, actions, children }: { title?: string; sub?: string; actions?: ReactNode; children: ReactNode }) {
+  const head = title || sub || actions;
   return (
     <section className="card lg">
-      <div className="row" style={{ alignItems: 'flex-start', marginBottom: 22, gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <h2 className="display" style={{ fontSize: 28 }}>{title}</h2>
-          {sub && <p className="muted" style={{ marginTop: 6, maxWidth: 560 }}>{sub}</p>}
+      {head && (
+        <div className="row" style={{ alignItems: 'flex-start', marginBottom: 22, gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            {title && <h2 className="display" style={{ fontSize: 28 }}>{title}</h2>}
+            {sub && <p className="muted" style={{ marginTop: 6, maxWidth: 560 }}>{sub}</p>}
+          </div>
+          {actions && <div className="row">{actions}</div>}
         </div>
-        {actions && <div className="row">{actions}</div>}
-      </div>
+      )}
       {children}
     </section>
   );
@@ -127,7 +130,6 @@ function Measurements() {
   useEffect(() => setValues(load()), [prof.rev]);
   return (
     <Section
-      title="Мірки"
       actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, measurements: Object.fromEntries(MEASURES.map((m) => [m.key, { value: values[m.key] }])) }), 'Мірки збережено')}>Зберегти мірки</button>}
     >
       <div className="measure-grid">
@@ -161,7 +163,6 @@ function Sizes() {
   const add = () => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }]);
   return (
     <Section
-      title="Розміри брендів"
       actions={
         sizes.length > 0 || prof.knownSizes.length > 0 ? (
           <>
@@ -196,13 +197,21 @@ function Sizes() {
 }
 
 /** A short list the owner edits: × removes, typing + Enter adds. */
-function ChipsField({ label, values, placeholder, onSave }: { label: string; values: string[]; placeholder: string; onSave: (next: string[]) => void }) {
+function ChipsField({ label, values: saved, placeholder, onSave }: { label: string; values: string[]; placeholder: string; onSave: (next: string[]) => void }) {
   const [text, setText] = useState('');
+  // The list changes at once; quick taps never wait for (or fight) the server.
+  const [values, setValues] = useState(saved);
+  const savedKey = saved.join('\n');
+  useEffect(() => setValues(saved), [savedKey]);
+  const change = (next: string[]) => {
+    setValues(next);
+    onSave(next);
+  };
   const add = () => {
     const v = text.trim();
     if (!v) return;
     setText('');
-    if (!values.some((x) => x.toLowerCase() === v.toLowerCase())) onSave([...values, v]);
+    if (!values.some((x) => x.toLowerCase() === v.toLowerCase())) change([...values, v]);
   };
   return (
     <div className="field">
@@ -211,11 +220,11 @@ function ChipsField({ label, values, placeholder, onSave }: { label: string; val
         {values.map((v) => (
           <span key={v} className="chip brand">
             {v}
-            <button aria-label={`Прибрати ${v}`} onClick={() => onSave(values.filter((x) => x !== v))}><X size={12} /></button>
+            <button aria-label={`Прибрати ${v}`} onClick={() => change(values.filter((x) => x !== v))}><X size={12} /></button>
           </span>
         ))}
         <form className="brand-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
-          <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={placeholder} />
+          <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} onBlur={add} placeholder={placeholder} aria-label={placeholder} />
         </form>
       </div>
     </div>
@@ -229,16 +238,17 @@ function Shops() {
   const prof = db.profile;
   const [place, setPlace] = useState(shopLocation(db));
   useEffect(() => setPlace(shopLocation(db)), [prof.rev]);
-  const save = (patch: Record<string, unknown>) => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, ...patch }));
+  // No rev: each field saves only itself, so quick changes in a row never conflict.
+  const save = (patch: Record<string, unknown>) => void act(() => api('PATCH', '/api/profile', patch));
   return (
-    <Section title="Магазини">
+    <Section>
       <div className="stack" style={{ gap: 22 }}>
         <label className="field">
           <span>Де шукати</span>
           <input
             className="input"
             value={place}
-            placeholder="Місто або торговий центр"
+            placeholder="Лише онлайн"
             onChange={(e) => setPlace(e.target.value)}
             onBlur={() => { if (place.trim() !== shopLocation(db)) save({ location: place.trim() }); }}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
@@ -264,7 +274,7 @@ function Preferences() {
     ['branding', 'Брендування', 'Наскільки помітними можуть бути логотипи.'],
   ] as const;
   return (
-    <Section title="Побажання" actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
+    <Section actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
       <div className="grid-form">
         {fields.map(([k, label]) => (
           <label key={k} className="field">

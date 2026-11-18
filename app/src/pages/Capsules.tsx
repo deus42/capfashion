@@ -75,7 +75,7 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
       footer={
         <>
           <ConfirmButton
-            className="btn danger"
+            className="btn ghost danger"
             title="Видалити образ"
             message={<>Видалити «{look.name}»?{renders ? ` Разом з ним зникнуть ${renders} примірок цього образу.` : ''} Речі в гардеробі залишаться.</>}
             onConfirm={async () => {
@@ -86,7 +86,7 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
               if (location.pathname === `/looks/${look.id}`) go(look.capsuleId ? `/capsules/${look.capsuleId}` : '/capsules?tab=looks', true);
             }}
           >
-            <Trash2 size={15} /> Видалити
+            <Trash2 size={15} />
           </ConfirmButton>
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>Скасувати</button>

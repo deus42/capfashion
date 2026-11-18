@@ -3,6 +3,8 @@
 // 2–4 real products with a match score against the recommendation, its looks and the owner's taste.
 // Results are dated options, never availability promises; product photos are fetched by the server.
 import fs from 'node:fs';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import path from 'node:path';
 import type { DB, Job, Product } from './schema.ts';
 import { newId, now } from './store.ts';
@@ -23,8 +25,8 @@ export const SHOP_SEARCH_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['store', 'brand', 'model', 'url', 'imageUrl', 'price', 'currency', 'inTower', 'size', 'matchScore', 'matchNote'],
-        properties: { store: str, brand: str, model: str, url: str, imageUrl: str, price: str, currency: str, inTower: { type: 'boolean' }, size: str, matchScore: { type: 'number' }, matchNote: str },
+        required: ['store', 'brand', 'model', 'sku', 'url', 'imageUrl', 'price', 'currency', 'inTower', 'size', 'matchScore', 'matchNote'],
+        properties: { store: str, brand: str, model: str, sku: str, url: str, imageUrl: str, price: str, currency: str, inTower: { type: 'boolean' }, size: str, matchScore: { type: 'number' }, matchNote: str },
       },
     },
   },
@@ -33,7 +35,7 @@ export const SHOP_SEARCH_SCHEMA = {
 export interface ShopReply {
   status: string;
   reason: string;
-  products: { store: string; brand: string; model: string; url: string; imageUrl: string; price: string; currency: string; inTower: boolean; size: string; matchScore: number; matchNote: string }[];
+  products: { store: string; brand: string; model: string; sku?: string; url: string; imageUrl: string; price: string; currency: string; inTower: boolean; size: string; matchScore: number; matchNote: string }[];
 }
 
 /** The owner's brands: the saved list, or what the wardrobe shows until the owner edits it. */
@@ -43,6 +45,7 @@ export function shopSearchPrompt(db: DB, job: Job) {
   const need = db.needs.find((n) => n.id === job.needId)!;
   const prefs = db.profile.preferences;
   const location = shopLocation(db);
+  const known = db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url!);
   const sizes = db.profile.knownSizes.map((s) => `${s.brand} ${s.category}: ${s.size}`).join('; ');
   const looks = siteLooks(db)
     .filter((l) => missingNeeds(db, l).includes(need.id))
@@ -61,7 +64,8 @@ export function shopSearchPrompt(db: DB, job: Job) {
     `Owner's taste — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     sizes ? `Known sizes: ${sizes}.` : '',
     looks.length ? `Looks this piece would complete (with their other pieces):\n${looks.join('\n')}` : '',
-    'Rules: only real products listed right now, each with its direct product page URL and a direct https image URL of the product taken from that page. Never invent products, prices, URLs or images; leave out anything you could not verify. price: the number with a decimal point as text, empty if unknown; currency: ISO code. inTower: true only when the store is at the owner\'s shopping place. size: the size to try from the known sizes, else empty. matchScore 0–10: colour, cut, material and style against the recommendation, the looks and the taste. matchNote: one short Ukrainian sentence why. Best first.',
+    known.length ? `Already found (do not return these again; find different ones): ${known.join(' ')}` : '',
+    'Rules: only real products listed right now, each with its direct product page URL and a direct https image URL of the product taken from that page. Never invent products, prices, URLs or images; leave out anything you could not verify. model: the model name and colour as shown to shoppers, without article numbers or colour codes; sku: the article number if shown, else empty. price: the number with a decimal point as text, empty if unknown; currency: ISO code. inTower: true only when the store is at the owner\'s shopping place. size: the size to try from the known sizes, else empty. matchScore 0–10: colour, cut, material and style against the recommendation, the looks and the taste; use distinct scores so the best one is clear. matchNote: one short Ukrainian sentence why. Best first.',
     'Return status "error" only if web search is unavailable; if nothing suitable exists, status "done" with an empty list and the reason in Ukrainian.',
     job.instructions ? `Owner note: ${job.instructions}` : '',
   ]
@@ -89,7 +93,10 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
   for (const r of (reply.products ?? []).slice(0, 4)) {
     const url = httpsUrl(String(r.url || '').trim());
     const store = String(r.store || '').trim().slice(0, 80);
-    const model = String(r.model || '').trim().slice(0, 160);
+    // Article numbers stay out of the name the owner sees: «Spezial Brown (JQ1740)» → name + sku.
+    const code = /\s*\((?=[^)]*\d)([A-Z0-9][A-Z0-9 /.-]{3,})\)\s*$/.exec(String(r.model || ''));
+    const model = String(r.model || '').replace(code?.[0] ?? '', '').trim().slice(0, 160);
+    const sku = String(r.sku || '').trim().slice(0, 60) || code?.[1];
     if (!url || !store || !model || known.has(url.href)) continue;
     known.add(url.href);
     const price = Number(String(r.price || '').replace(',', '.'));
@@ -100,6 +107,7 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
       store,
       brand: String(r.brand || '').trim().slice(0, 80),
       model,
+      sku: sku || undefined,
       url: url.href,
       price: String(r.price || '').trim() && Number.isFinite(price) ? price : null,
       currency: String(r.currency || '').trim().slice(0, 8) || undefined,
@@ -123,17 +131,51 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
   return { created, images, note };
 }
 
-const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|0\.)|\.local$|\.internal$|\.exmachina$|\.ts\.net$/i;
+const PRIVATE_HOST = /^(localhost|0\.)|\.local$|\.internal$|\.exmachina$|\.ts\.net$/i;
+
+/** Loopback, private, link-local, carrier-grade NAT (tailnet) and unique-local addresses are never fetched. */
+function privateAddress(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+  }
+  const v = ip.toLowerCase();
+  if (v.startsWith('::ffff:')) return privateAddress(v.slice(7));
+  return v === '::' || v === '::1' || /^f[cd]/.test(v) || /^fe[89ab]/.test(v);
+}
+
+async function publicUrl(u: URL) {
+  if (u.protocol !== 'https:' || PRIVATE_HOST.test(u.hostname)) return false;
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(host)) return !privateAddress(host);
+  try {
+    const all = await dns.lookup(host, { all: true });
+    return all.length > 0 && all.every((x) => !privateAddress(x.address));
+  } catch {
+    return false;
+  }
+}
+
+const MAX_PHOTO = 8 * 1024 * 1024;
 
 /** Fetches a product photo from a public https address; returns the saved file (relative) or null. */
 export async function fetchProductImage(projectRoot: string, dataDir: string, id: string, url: string): Promise<string | null> {
-  const u = httpsUrl(url);
-  if (!u || PRIVATE_HOST.test(u.hostname)) return null;
+  let u = httpsUrl(url);
   try {
-    const res = await fetch(u, { redirect: 'follow', signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'Mozilla/5.0 (Cap Fashion product photo)' } });
-    if (!res.ok || !String(res.headers.get('content-type') ?? '').startsWith('image/')) return null;
+    let res: Response | null = null;
+    // Every redirect is checked again before it is followed (at most 3).
+    for (let hop = 0; u && hop <= 3; hop += 1) {
+      if (!(await publicUrl(u))) return null;
+      res = await fetch(u, { redirect: 'manual', signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'Mozilla/5.0 (Cap Fashion product photo)' } });
+      if (res.status < 300 || res.status >= 400) break;
+      const next = res.headers.get('location');
+      u = next ? httpsUrl(new URL(next, u).href) : null;
+      res = null;
+    }
+    if (!res || !res.ok || !String(res.headers.get('content-type') ?? '').startsWith('image/')) return null;
+    if (Number(res.headers.get('content-length') ?? 0) > MAX_PHOTO) return null;
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > 8 * 1024 * 1024) return null;
+    if (buf.length > MAX_PHOTO) return null;
     const type = detectImageType(buf);
     if (!type || type === 'heic') return null;
     const dir = path.join(dataDir, 'media', 'products');

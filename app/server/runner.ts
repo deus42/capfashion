@@ -518,7 +518,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
         // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
-        const batch = (k?: string) => (k === 'intake' || k === 'analyze' || k === 'shopsearch' ? 0 : k === 'packshot' ? 2 : 1);
+        // Shop searches take minutes: they come after uploads and «Підібрати», one at a time, so a slot stays free.
+        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'shopsearch' ? 0.5 : k === 'packshot' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
           // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.
@@ -526,8 +527,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         if (!queued.length && active.size === 0) break;
         while (active.size < limit && queued.length) {
           // Uploads are triaged one at a time so the same garment on several photos is recognised as one item.
-          const intakeActive = [...active].some((id) => db.jobs.find((x) => x.id === id)?.kind === 'intake');
-          const idx = queued.findIndex((j) => !(intakeActive && j.kind === 'intake'));
+          const activeKinds = [...active].map((id) => db.jobs.find((x) => x.id === id)?.kind);
+          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !(j.kind === 'shopsearch' && activeKinds.includes('shopsearch')));
           if (idx < 0) break;
           const next = queued.splice(idx, 1)[0];
           active.add(next.id);

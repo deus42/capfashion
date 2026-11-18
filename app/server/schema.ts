@@ -140,6 +140,8 @@ export interface Need {
   coveredLookIds?: string[];
   /** Generated concept image of the desired type. */
   conceptPhotoId?: string;
+  /** Advisor: this purchase replaces an owned item («замінить: …»). */
+  replaces?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, Pencil, Plus, Search, ShoppingBag, Store, Trash2, Undo2 } from 'lucide-react';
+import { Check, Pencil, Plus, RefreshCw, ShoppingBag, Trash2, Undo2, X } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
@@ -108,46 +108,52 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
   );
 }
 
+/** «29,99 €» — prices the way the owner reads them. */
+const money = (v: number, cur?: string) => {
+  try {
+    return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: cur || 'EUR', currencyDisplay: 'narrowSymbol' }).format(v);
+  } catch {
+    return `${v} ${cur ?? ''}`.trim();
+  }
+};
+
+/** Product names without shop codes: «Handball Spezial Shadow Brown (JQ1740)» → «Handball Spezial Shadow Brown». */
+const cleanName = (s: string) => s.replace(/\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9 /.-]{3,}\)\s*$/, '').trim();
+
+/** A found product (owner, 18.11): the name opens the shop page; one «Куплено»; × removes the variant. */
 function ProductCard({ p, need, best = false, fits = 0 }: { p: Product; need: Need; best?: boolean; fits?: number }) {
   const db = useDb();
-  const [edit, setEdit] = useState(false);
+  const { act } = useApp();
   const [buy, setBuy] = useState(false);
   const photo = p.photoId ? db.photos.find((x) => x.id === p.photoId) : undefined;
+  const concept = need.conceptPhotoId ? db.photos.find((x) => x.id === need.conceptPhotoId) : undefined;
   const stale = p.checkedAt && Date.now() - new Date(p.checkedAt).getTime() > STALE_DAYS * 864e5;
+  const place = p.towerAvailability === 'confirmed' && shopLocation(db) ? shopLocation(db).split(',')[0] : '';
+  const name = cleanName(`${p.brand} ${p.model}`.trim());
+  const open = need.status === 'open' && p.status !== 'purchased';
   return (
-    <div className={`product${p.status === 'chosen' ? ' chosen' : ''}`}>
-      <div className="row" style={{ alignItems: 'flex-start' }}>
-        <div style={{ width: 54, height: 66, borderRadius: 8, overflow: 'hidden', background: '#f0f0ee', flex: 'none' }}>
-          {photo ? <Img path={photo.path} w={160} /> : null}
-        </div>
-        <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
-          <b>{p.brand} {p.model}</b>
-          <span className="small muted"><Store size={11} /> {p.store}{p.towerAvailability === 'confirmed' && shopLocation(db) ? ` · ${shopLocation(db).split(',')[0]}` : ''}</span>
-          {p.matchNote && <span className="miss" title={p.matchNote}><span className="miss-t">{p.matchNote}</span></span>}
-          <span className="small">{p.price != null ? `${p.price} ${p.currency ?? ''}` : 'Ціна невідома'}</span>
-          {p.matchScore != null && <span className="miss">{best ? 'найкраще пасує · ' : ''}{p.matchScore}/10{fits ? ` · підходить до ${fits} ${fits === 1 ? 'образу' : 'образів'}` : ''}</span>}
-        </div>
-        {p.status === 'chosen' && <Badge tone="dark">вибрано</Badge>}
+    <div className={`product${p.status === 'purchased' ? ' bought' : ''}`}>
+      <div className="product-img">
+        {photo ? <Img path={photo.path} w={200} /> : concept ? <Img path={concept.path} w={200} /> : <CategoryIcon category={need.category} size={22} />}
+      </div>
+      <div className="product-txt">
+        {p.url ? <a className="product-name" href={p.url} target="_blank" rel="noreferrer">{name}</a> : <b className="product-name">{name}</b>}
+        <span className="small muted">{[p.store, place, p.price != null ? money(p.price, p.currency) : '', p.recommendedSize ? `розмір ${p.recommendedSize}` : ''].filter(Boolean).join(' · ')}</span>
+        {p.matchScore != null && <span className="small">{p.matchScore}/10{best ? ' · найкраще пасує' : ''}{best && fits ? ` · ${fits} ${fits === 1 ? 'образ' : fits < 5 ? 'образи' : 'образів'}` : ''}</span>}
+        {p.matchNote && <span className="small muted">{p.matchNote}</span>}
+        {stale && <span className="small" style={{ color: 'var(--warn)' }}>Ціну перевірено {fmtDay(p.checkedAt!)}</span>}
         {p.status === 'purchased' && <Badge tone="ok">куплено</Badge>}
-      </div>
-      {p.recommendedSize && <span className="small">Розмір <b>{p.recommendedSize}</b></span>}
-      {stale && <span className="small" style={{ color: 'var(--warn)' }}>Ціну перевірено {fmtDay(p.checkedAt!)}</span>}
-      <div className="row wrap" style={{ marginTop: 4 }}>
-        {p.url && (
-          <a className="btn sm ghost" href={p.url} target="_blank" rel="noreferrer">
-            <ExternalLink size={12} /> Сайт
-          </a>
-        )}
-        {p.status !== 'purchased' && (
-          <>
-            <button className="icon-btn" aria-label="Редагувати товар" onClick={() => setEdit(true)}><Pencil size={13} /></button>
-            <button className="btn sm primary" onClick={() => setBuy(true)}>
-              <Check size={12} /> Куплено
-            </button>
-          </>
+        {open && (
+          <button className="btn sm product-buy" onClick={() => setBuy(true)}>
+            <Check size={12} /> Куплено
+          </button>
         )}
       </div>
-      {edit && <ProductEditor need={need} product={p} onClose={() => setEdit(false)} />}
+      {open && (
+        <button className="product-x" aria-label={`Прибрати варіант ${name}`} onClick={() => void act(() => api('DELETE', `/api/products/${p.id}`))}>
+          <X size={13} />
+        </button>
+      )}
       {buy && <PurchaseModal product={p} onClose={() => setBuy(false)} />}
     </div>
   );
@@ -220,16 +226,29 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const [owning, setOwning] = useState(false);
   // Found variants, best match first.
   const products = db.products.filter((p) => p.needId === need.id).sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
-  const searching = db.jobs.some((j) => j.kind === 'shopsearch' && j.needId === need.id && (j.state === 'queued' || j.state === 'running'));
-  const search = () => act(() => api('POST', `/api/needs/${need.id}/search`), 'Шукаю варіанти');
+  const searches = db.jobs.filter((j) => j.kind === 'shopsearch' && j.needId === need.id);
+  const running = searches.some((j) => j.state === 'running');
+  const waiting = running || searches.some((j) => j.state === 'queued');
+  // The last search that added nothing or failed says so in one grey line.
+  const last = [...searches].filter((j) => j.state === 'done' || j.state === 'error').sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0];
+  const lastNote = !waiting && last && (last.state === 'error' || !/^Знайдено/.test(last.stateNote ?? '')) ? last.stateNote : '';
+  const search = () => act(() => api('POST', `/api/needs/${need.id}/search`));
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
-  const bought = products.some((p) => p.status === 'purchased');
+  const bought = products.find((p) => p.status === 'purchased');
+  const replaces = need.replaces ? db.items.find((i) => i.id === need.replaces) : undefined;
   const replacedIn = need.coveredLookIds?.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is NonNullable<typeof l> => Boolean(l)) ?? [];
   const using = looksUsing(db, 'need', need.id);
   const looks = need.status === 'covered' ? distinctLooks(db, replacedIn) : siteLooks(db).filter((l) => using.some((x) => x.id === l.id));
+  // «Найкраще пасує» only when one variant is clearly ahead of the next.
+  const bestId = products.length && (products[0].matchScore ?? 0) > (products[1]?.matchScore ?? -1) ? products[0].id : '';
   const uncover = async () => {
     const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/uncover`));
-    if (r) toast(coverToast('Повернуто в покупки', r));
+    if (r) { toast(coverToast('Повернуто в покупки', r)); setEditing(false); }
+  };
+  const unbuy = async () => {
+    if (!bought) return;
+    const ok = await act(() => api('POST', `/api/products/${bought.id}/unpurchase`), 'Покупку скасовано');
+    if (ok !== undefined) setEditing(false);
   };
   return (
     <div id={`need-${need.id}`} className="card need-card">
@@ -247,32 +266,32 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
         <div className="grow stack" style={{ gap: 4 }}>
           {top && <span className="eyebrow-sm">Наступна покупка</span>}
           <div className="row wrap">
-            <h3>{need.title}<TermInfo texts={[need.title, need.description]} /></h3>
+            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} /></span></h3>
             {need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}
           </div>
         </div>
         {need.status === 'open' && (
-          <>
-            <button className="btn sm" onClick={() => setOwning(true)}>
-              <Check size={13} /> Вже маю
-            </button>
-            <button className="btn sm" disabled={searching} onClick={() => void search()}>
-              <Search size={13} /> {searching ? 'Шукаю…' : products.length ? 'Ще' : 'Знайти'}
-            </button>
-          </>
-        )}
-        {need.status === 'covered' && covered && !bought && (
-          <button className="btn sm" onClick={() => void uncover()}>
-            <Undo2 size={13} /> Повернути в покупки
+          <button className="icon-btn" disabled={waiting} onClick={() => void search()} aria-label={products.length ? 'Оновити пошук' : 'Знайти варіанти'} title={products.length ? 'Оновити пошук' : 'Знайти варіанти'}>
+            <RefreshCw size={14} className={running ? 'spin' : ''} />
           </button>
         )}
         <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
       </div>
       <div className="kv">
+        {replaces && (
+          <>
+            <dt>Замінить</dt>
+            <dd><a href={`/wardrobe/${replaces.id}`} style={{ textDecoration: 'underline' }}>{replaces.title}</a></dd>
+          </>
+        )}
         <dt>Навіщо</dt>
         <dd>{need.why || '—'}</dd>
-        <dt>Що перевірити</dt>
-        <dd>{need.fitCheck || '—'}</dd>
+        {need.fitCheck && need.status === 'open' && (
+          <>
+            <dt>Що перевірити</dt>
+            <dd>{need.fitCheck}</dd>
+          </>
+        )}
         <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>
         <dd>
           <div className="chips">
@@ -289,10 +308,11 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
           </>
         )}
       </div>
-      {searching && <div className="search-run"><span className="busy-bar" role="progressbar" aria-label="Пошук" /></div>}
+      {running && <div className="search-run"><span className="busy-bar" role="progressbar" aria-label="Пошук" /></div>}
+      {lastNote && <span className="small muted">{lastNote}</span>}
       {products.length > 0 && (
         <div className="product-grid">
-          {products.map((p, i) => <ProductCard key={p.id} p={p} need={need} best={i === 0 && (p.matchScore ?? 0) > 0} fits={looks.length} />)}
+          {products.map((p) => <ProductCard key={p.id} p={p} need={need} best={p.id === bestId} fits={looks.length} />)}
         </div>
       )}
       </div>
@@ -303,11 +323,16 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
           onClose={() => setEditing(false)}
           footer={
             <>
-              <ConfirmButton className="btn ghost danger" title="Видалити покупку" message={<>Видалити «{need.title}»?{using.length ? ` Вона зникне з ${using.length} образів.` : ''}</>} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/needs/${need.id}`), 'Видалено'); if (ok !== undefined) setEditing(false); }}>
-                <Trash2 size={14} />
-              </ConfirmButton>
+              {!bought && (
+                <ConfirmButton className="btn ghost danger" title="Видалити покупку" message={<>Видалити «{need.title}»?{using.length ? ` Вона зникне з ${using.length} образів.` : ''}</>} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/needs/${need.id}`), 'Видалено'); if (ok !== undefined) setEditing(false); }}>
+                  <Trash2 size={14} />
+                </ConfirmButton>
+              )}
               <span style={{ flex: 1 }} />
-              {need.status === 'open' && <button className="btn primary" onClick={() => { setEditing(false); setAdding(true); }}><Plus size={14} /> Товар у магазині</button>}
+              {need.status === 'open' && <button className="btn" onClick={() => { setEditing(false); setAdding(true); }}><Plus size={14} /> Товар у магазині</button>}
+              {need.status === 'open' && <button className="btn primary" onClick={() => { setEditing(false); setOwning(true); }}><Check size={14} /> Вже маю</button>}
+              {need.status === 'covered' && covered && !bought && <button className="btn" onClick={() => void uncover()}><Undo2 size={14} /> Повернути в покупки</button>}
+              {bought && <ConfirmButton className="btn" title="Скасувати покупку" message={<>Скасувати покупку «{cleanName(`${bought.brand} ${bought.model}`)}»? Річ зникне з гардероба, покупка повернеться.</>} onConfirm={() => void unbuy()}><Undo2 size={14} /> Скасувати покупку</ConfirmButton>}
             </>
           }
         >

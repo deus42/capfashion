@@ -49,6 +49,7 @@ function ItemPage({ item }: { item: Item }) {
               {verdict.line}
               {verdict.note && <InfoMark title={`${item.rating!.score}/10`} text={verdict.note} />}
               {verdict.need && <> · <a href={`/shopping?need=${verdict.need.id}`}>у покупках</a></>}
+              {verdict.kind === 'replace' && <button className="btn sm verdict-no" onClick={() => void act(() => api('POST', `/api/items/${item.id}/keep`), 'Залишаю — порадник оцінить ще раз')}>Ні</button>}
             </p>
           )}
         </div>

@@ -45,7 +45,8 @@ export function shopSearchPrompt(db: DB, job: Job) {
   const need = db.needs.find((n) => n.id === job.needId)!;
   const prefs = db.profile.preferences;
   const location = shopLocation(db);
-  const known = db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url!);
+  // Links the owner dropped with × count as found: a new search never brings them back.
+  const known = [...db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url!), ...(need.droppedUrls ?? [])];
   const sizes = db.profile.knownSizes.map((s) => `${s.brand} ${s.category}: ${s.size}`).join('; ');
   const looks = siteLooks(db)
     .filter((l) => missingNeeds(db, l).includes(need.id))
@@ -89,7 +90,7 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
   const created: string[] = [];
   const images: { productId: string; url: string }[] = [];
   if (!need) return { created, images, note: 'Покупку не знайдено' };
-  const known = new Set(db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url));
+  const known = new Set([...db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url), ...(need.droppedUrls ?? [])]);
   for (const r of (reply.products ?? []).slice(0, 4)) {
     const url = httpsUrl(String(r.url || '').trim());
     const store = String(r.store || '').trim().slice(0, 80);

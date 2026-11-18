@@ -58,6 +58,15 @@ const advisable = (db: DB) => ownedItems(db).filter((i) => !isEyewear(i.title));
 
 /** Open «замінить» purchases at a time: the rest stay as a line on the item page (no flood in «Покупки»). */
 export const MAX_OPEN_REPLACEMENTS = 3;
+/** Open proposals kept at a time (Home shows two); unanswered ones stay until the owner answers or they go stale. */
+export const MAX_OPEN_PROPOSALS = 3;
+
+/** Pieces the owner chose himself (added by hand or bought): never «варто замінити» (owner, 18.11). */
+export const ownerChosen = (i: Item) => i.origin === 'manual' || i.origin === 'purchase' || Boolean(i.purchasedFromProduct);
+
+const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+/** Titles already planned or declined by the owner: a new advisor purchase never repeats them. */
+const plannedTitles = (db: DB) => new Set([...db.needs.filter((n) => n.status === 'open').map((n) => norm(n.title)), ...(db.declinedNeeds ?? []).map(norm)]);
 
 /** One advise job at a time in the queue; several changes in a row share it. */
 export function queueAdvice(db: DB, reason: string): Job | null {
@@ -68,12 +77,13 @@ export function queueAdvice(db: DB, reason: string): Job | null {
   return j;
 }
 
-const WEEK = 7 * 24 * 60 * 60 * 1000;
-/** The weekly review: due when no advice finished in the last 7 days and none is waiting. */
+const DAY = 24 * 60 * 60 * 1000;
+const WEEK = 7 * DAY;
+/** The weekly review: due when no advice finished in the last 7 days and none is waiting; after a failed run it waits a day. */
 export function adviceDue(db: DB, at = Date.now()) {
   if (db.jobs.some((j) => j.kind === 'advise' && (j.state === 'queued' || j.state === 'running'))) return false;
-  const last = Math.max(0, ...db.jobs.filter((j) => j.kind === 'advise' && j.state === 'done').map((j) => new Date(j.finishedAt ?? 0).getTime()));
-  return at - last >= WEEK && ownedItems(db).length > 0;
+  const last = (ok: boolean) => Math.max(0, ...db.jobs.filter((j) => j.kind === 'advise' && (ok ? j.state === 'done' : j.state === 'error')).map((j) => new Date(j.finishedAt ?? 0).getTime()));
+  return at - last(true) >= WEEK && at - last(false) >= DAY && ownedItems(db).length > 0;
 }
 
 const piecesLine = (db: DB, slots: Slots) =>
@@ -88,20 +98,24 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
   const rejected = (db.suggestions ?? []).filter((s) => s.status === 'rejected').flatMap((s) => s.looks);
   const disliked = db.looks.filter((l) => hidden.has(l.id));
   const kept = items.filter((i) => i.rating?.kept).map((i) => i.id);
+  const chosen = items.filter((i) => ownerChosen(i) && !i.rating?.kept).map((i) => i.id);
   const toRate = itemsToRate(db).map((i) => i.id);
   const openNeeds = db.needs.filter((n) => n.status === 'open').map((n) => `${n.title} (${n.category})`);
+  const declined = db.declinedNeeds ?? [];
+  const unused = items.filter((i) => itemUsage(db, i.id).looks === 0).map((i) => i.id);
   return [
     'You are the Cap Fashion wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in Ukrainian, short.',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
     `Profile — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     job.instructions ? `What changed: ${job.instructions}` : '',
     '',
-    `1. items — rate ONLY these ids now: ${toRate.join(', ') || 'none'}. score 0–10: style, how well it combines with the rest of the wardrobe, fit to the preferences and to the seasons of the capsules. note: one sentence why. replace: a reason ONLY when it is visible on the photo or clearly conflicts with the preferences (e.g. a large logo, does not fit any capsule style, visible wear); never invent condition, material or fit; otherwise empty. replaceWith: when replace is set, a short title of what to buy instead (e.g. «Темно-синє трикотажне поло»), else empty.`,
-    attached.length ? `Photos of the items to rate are attached, named by item id (${attached.length} files).` : '',
-    kept.length ? `The owner keeps these items — never suggest replacing them: ${kept.join(', ')}.` : '',
-    '2. looks — for every look listed below: score 0–10 (harmony of colours, silhouette, formality, season). weakItem: an item id in that look that clearly weakens it, and swapTo: an owned item id for the same slot that is clearly better and not already in the look; both empty if nothing is clearly better. why: one sentence.',
-    '3. newLooks — up to 3 new outfits from owned item ids only. Prefer items rated 7+ that have 0–1 shown looks (good piece, too few looks). Every outfit requires the id of a listed capsule whose style and season fits. If none fits, propose a new capsule in newCapsules. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.',
-    `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short Ukrainian name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases listed below. Usually empty.`,
+    `1. items — rate ONLY these ids now: ${toRate.join(', ') || 'none'}. score 0–10: style, how well it combines with the rest of the wardrobe, fit to the preferences and to the seasons of the capsules. note: one sentence why. replace: a reason ONLY for a concrete conflict — a large logo or print against the minimal-branding preference, no capsule style it can fit, or wear/damage that the item's own notes state; colour or pattern alone is NEVER a reason (the owner chose them); never invent condition, material or fit; otherwise empty. replaceWith: when replace is set, a short title of what to buy instead (e.g. «Темно-синє трикотажне поло»), else empty.`,
+    attached.length ? `Pictures of the items to rate are attached, named by item id (${attached.length} files). They are generated catalogue reconstructions, NOT photos of the real garment: use them for colour and shape only; never read wear, stains, fading, material or condition from them.` : '',
+    kept.length ? `The owner keeps and likes these items — never suggest replacing them, and do not score them down for taste: ${kept.join(', ')}.` : '',
+    chosen.length ? `The owner chose these pieces himself (added by hand or bought) — never suggest replacing them: ${chosen.join(', ')}.` : '',
+    '2. looks — for every look listed below: score 0–10 with ONE decimal (harmony of colours, silhouette, formality, season). Use the full range so the strongest few stand out: an exceptional look 9.5+, a strong one about 9, a good one about 8. weakItem: an item id in that look that clearly weakens it, and swapTo: an owned item id for the same slot that is clearly better and not already in the look; both empty if nothing is clearly better. why: one sentence.',
+    `3. newLooks — up to 3 new outfits from owned item ids only. First, every item with no shown look yet (${unused.join(', ') || 'none'}) that fits a listed capsule gets one outfit; then items rated 7+ with 0–1 shown looks. Every outfit requires the id of a listed capsule whose style and season fits. If none fits, propose a new capsule in newCapsules. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.`,
+    `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short Ukrainian name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases or the declined purchases listed below. Usually empty.`,
     '4. newCapsules — at most 1, only when 3 or more strong outfits of one style and season are not covered by any listed capsule: a name, season (all | warm | transitional | cold), why and 3–5 looks (same rules). Usually empty.',
     'Never use eyewear (glasses, sunglasses, frames) anywhere — the owner wears none in looks.',
     'Same-look rule (the owner\'s): two outfits are the SAME look when identical or different by only one piece. Every new outfit must be a different look from each other, from every listed look and from every rejected outfit.',
@@ -116,13 +130,15 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     rejected.length ? `\nOutfits the owner rejected as suggestions (never again, nothing within one piece):\n${rejected.map((o) => `- ${piecesLine(db, o.slots)}`).join('\n')}` : '',
     '',
     openNeeds.length ? `Open purchases (already planned, do not repeat): ${openNeeds.join('; ')}` : '',
+    declined.length ? `Purchases the owner declined (never propose again): ${declined.join('; ')}` : '',
     '',
-    'Wardrobe (id | category | title | details | usage):',
+    'Wardrobe (id | category | title | details | notes | usage):',
     items
       .map((i) => {
         const u = itemUsage(db, i.id);
         const facts = [i.color, i.brand, i.fit, i.size].filter(Boolean).join(', ');
-        return `${i.id} | ${CATEGORY_UK[i.category]} | ${i.title}${facts ? ` | ${facts}` : ''} | looks ${u.looks}, complete ${u.complete}, liked ${u.liked}, capsules ${u.capsules}${i.rating && i.rating.rev === i.rev ? ` | rated ${i.rating.score}` : ''}`;
+        const notes = [i.observation, i.confirmedFact].filter(Boolean).join(' ').replace(/\s+/g, ' ').slice(0, 240);
+        return `${i.id} | ${CATEGORY_UK[i.category]} | ${i.title}${facts ? ` | ${facts}` : ''}${notes ? ` | notes: ${notes}` : ''} | looks ${u.looks}, complete ${u.complete}, liked ${u.liked}, capsules ${u.capsules}${i.rating && i.rating.rev === i.rev ? ` | rated ${i.rating.score}` : ''}`;
       })
       .join('\n'),
   ]
@@ -131,6 +147,11 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
 }
 
 const clampScore = (n: unknown) => Math.max(0, Math.min(10, Math.round(Number(n) || 0)));
+/** Look scores keep one decimal, so the strongest few can stand out («Найкращі», owner 18.11). */
+const lookScore = (n: unknown) => Math.max(0, Math.min(10, Math.round((Number(n) || 0) * 10) / 10));
+
+/** The item revisions the advisor sees when its prompt is built: ratings are stamped with these, so a change made meanwhile is rated again. */
+export const seenRevs = (db: DB) => new Map(itemsToRate(db).map((i) => [i.id, i.rev] as const));
 const text = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
 
 function slotsFrom(o: Outfit, owned: Set<string>): Slots | null {
@@ -139,24 +160,32 @@ function slotsFrom(o: Outfit, owned: Set<string>): Slots | null {
   return slots.bottom.length && slots.shoes.length ? slots : null;
 }
 
-/** Saves the advisor's answer: ratings, look advice, new proposals (older open ones are replaced), replacement purchases. */
-export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
+/** Saves the advisor's answer: ratings, look advice, new proposals (valid open ones stay), replacement purchases. */
+export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<string, number>) {
   const at = now();
   const owned = new Map(advisable(db).map((i) => [i.id, i] as const));
   let rated = 0;
   let replaced = 0;
-  // Lowest scores first, so the clearest replacements take the few open purchase places.
-  for (const r of [...(reply.items ?? [])].sort((a, b) => (Number(a.score) || 0) - (Number(b.score) || 0))) {
+  for (const r of reply.items ?? []) {
     const item = owned.get(r.id);
     if (!item) continue;
-    const replace = item.rating?.kept ? '' : text(r.replace, 200);
-    item.rating = { score: clampScore(r.score), note: text(r.note, 200), replace: replace || undefined, replaceWith: replace ? text(r.replaceWith, 80) || undefined : undefined, rev: item.rev, at, kept: item.rating?.kept };
+    const replace = item.rating?.kept || ownerChosen(item) ? '' : text(r.replace, 200);
+    item.rating = { score: clampScore(r.score), note: text(r.note, 200), replace: replace || undefined, replaceWith: replace ? text(r.replaceWith, 80) || undefined : undefined, rev: seen?.get(item.id) ?? item.rev, at, kept: item.rating?.kept };
     rated += 1;
-    const openReplacements = db.needs.filter((n) => n.replaces && n.status === 'open').length;
-    if (replace && item.rating.replaceWith && openReplacements < MAX_OPEN_REPLACEMENTS && !db.needs.some((n) => n.replaces === item.id && n.status === 'open')) {
-      replaced += 1;
-      db.needs.push(replacementNeed(item, replace, item.rating.replaceWith, at));
-    }
+    // The advisor withdraws its own replacement purchase when the new rating no longer asks for it.
+    if (!replace) withdrawReplacement(db, item.id);
+  }
+  // Free places go to every rated item still worth replacing, lowest score first — not only the ones rated now.
+  const planned = plannedTitles(db);
+  const candidates = [...owned.values()]
+    .filter((i) => i.rating?.replace && i.rating.replaceWith && !i.rating.kept && !ownerChosen(i) && !db.needs.some((n) => n.replaces === i.id && n.status === 'open'))
+    .sort((a, b) => a.rating!.score - b.rating!.score);
+  for (const item of candidates) {
+    if (db.needs.filter((n) => n.replaces && n.status === 'open').length >= MAX_OPEN_REPLACEMENTS) break;
+    if (planned.has(norm(item.rating!.replaceWith!))) continue;
+    planned.add(norm(item.rating!.replaceWith!));
+    replaced += 1;
+    db.needs.push(replacementNeed(item, item.rating!.replace!, item.rating!.replaceWith!, at));
   }
   const shown = new Map(siteLooks(db).map((l) => [l.id, l] as const));
   for (const r of reply.looks ?? []) {
@@ -166,12 +195,16 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
     const slot = SLOT_KEYS.find((k) => look.slots[k].some((x) => x.kind === 'item' && x.id === r.weakItem));
     const inLook = Object.values(look.slots).flat().some((x) => x.kind === 'item' && x.id === r.swapTo);
     const swap = slot && owned.has(r.swapTo) && !inLook && !rejected.includes(`${r.weakItem}>${r.swapTo}`) ? { from: r.weakItem, to: r.swapTo } : undefined;
-    look.advice = { score: clampScore(r.score), why: text(r.why, 200), version: look.version, swap, rejected: rejected.length ? rejected : undefined };
+    look.advice = { score: lookScore(r.score), why: text(r.why, 200), version: look.version, swap, rejected: rejected.length ? rejected : undefined };
   }
-  // New proposals replace the previous open ones; accepted and rejected ones stay as the owner's record.
-  const keep = (db.suggestions ?? []).filter((s) => s.status !== 'open');
-  const taken = [...db.looks.map(lookKeys), ...keep.flatMap((s) => s.looks.map(lookKeys))].filter((s) => s.size >= 2);
+  // Unanswered proposals stay while all their pieces are still owned and their capsule is shown; new ones fill up to the cap.
   const ownedIds = new Set(owned.keys());
+  const valid = (s: Suggestion) =>
+    s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind === 'item' && ownedIds.has(r.id))) &&
+    (s.kind === 'capsule' || Boolean(db.capsules.find((c) => c.id === s.capsuleId && !isCapsuleHidden(db, c))));
+  const keep = (db.suggestions ?? []).filter((s) => s.status !== 'open' || valid(s));
+  const taken = [...db.looks.map(lookKeys), ...keep.flatMap((s) => s.looks.map(lookKeys))].filter((s) => s.size >= 2);
+  const room = Math.max(0, MAX_OPEN_PROPOSALS - keep.filter((s) => s.status === 'open').length);
   const fresh: Suggestion[] = [];
   const take = (o: Outfit) => {
     const slots = slotsFrom(o, ownedIds);
@@ -194,22 +227,71 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply) {
     const season = ((SEASONS as readonly string[]).includes(c.season) ? c.season : 'all') as Season;
     fresh.push({ id: newId('A'), kind: 'capsule', status: 'open', name: text(c.name, 80) || 'Нова капсула', why: text(c.why, 240), season, looks, jobId: job.id, createdAt: at });
   }
-  db.suggestions = [...keep, ...fresh];
-  // What a capsule lacks becomes a purchase «Для капсули: …» — at most three such open at a time, never a repeat.
+  // A piece with no look yet (e.g. just added) goes first: its proposal takes the place of the oldest unanswered one.
+  const unused = new Set([...owned.keys()].filter((id) => itemUsage(db, id).looks === 0));
+  const forUnused = (s: Suggestion) => s.looks.some((l) => Object.values(l.slots).flat().some((r) => unused.has(r.id)));
+  const ordered = [...fresh.filter(forUnused), ...fresh.filter((s) => !forUnused(s))];
+  let space = room;
+  if (!space && ordered.length && forUnused(ordered[0])) {
+    const oldest = keep.filter((s) => s.status === 'open').sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    if (oldest) {
+      keep.splice(keep.indexOf(oldest), 1);
+      space = 1;
+    }
+  }
+  const added = Math.min(ordered.length, space);
+  db.suggestions = [...keep, ...ordered.slice(0, space)];
+  // What a capsule lacks becomes a purchase «Для капсули: …» — at most three such open at a time, never a repeat or a declined one.
   let gaps = 0;
-  const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   for (const g of (reply.newNeeds ?? []).slice(0, 2)) {
     const capsule = db.capsules.find((c) => c.id === g.capsuleId);
     const category = (CATEGORIES as readonly string[]).includes(g.category) ? (g.category as Need['category']) : null;
     const title = text(g.title, 80);
     if (!capsule || isCapsuleHidden(db, capsule) || !category || !title) continue;
     if (db.needs.filter((n) => n.status === 'open' && n.forCapsule).length >= 3) break;
-    if (db.needs.some((n) => n.status === 'open' && norm(n.title) === norm(title))) continue;
+    if (planned.has(norm(title))) continue;
+    planned.add(norm(title));
     db.needs.push({ id: newId('N'), rev: 1, title, category, priority: 'optional', description: '', why: text(g.why, 240), fitCheck: '', status: 'open', origin: 'agent', forCapsule: capsule.id, sourceNote: `Порадник ${at.slice(0, 10)}: бракує в капсулі «${capsule.name}»`, createdAt: at, updatedAt: at });
     gaps += 1;
   }
-  const parts = [`Оцінено речей: ${rated}`, fresh.length ? `пропозицій: ${fresh.length}` : '', replaced ? `замінити: ${replaced}` : '', gaps ? `для капсул: ${gaps}` : ''].filter(Boolean);
+  const parts = [`Оцінено речей: ${rated}`, added ? `пропозицій: ${added}` : '', replaced ? `замінити: ${replaced}` : '', gaps ? `для капсул: ${gaps}` : ''].filter(Boolean);
   return parts.join(' · ');
+}
+
+/** Removes the advisor's own open replacement purchase for an item (nothing bought from it yet). */
+function withdrawReplacement(db: DB, itemId: string) {
+  // A purchase with a search still running stays until the next run (its job must not lose its purchase).
+  const gone = db.needs
+    .filter((n) => n.replaces === itemId && n.status === 'open' && n.origin === 'agent' && !db.products.some((p) => p.needId === n.id && p.status === 'purchased') && !db.jobs.some((j) => j.needId === n.id && j.state === 'running'))
+    .map((n) => n.id);
+  if (!gone.length) return;
+  for (const l of db.looks) for (const k of SLOT_KEYS) l.slots[k] = l.slots[k].filter((r) => !(r.kind === 'need' && gone.includes(r.id)) && !(r.kind === 'product' && db.products.some((p) => p.id === r.id && gone.includes(p.needId))));
+  db.products = db.products.filter((p) => !gone.includes(p.needId));
+  // Its searches and pictures go with it, finished ones included, like a purchase the owner deletes.
+  const jobs = new Set(db.jobs.filter((j) => j.needId && gone.includes(j.needId)).map((j) => j.id));
+  db.jobs = db.jobs.filter((j) => !jobs.has(j.id));
+  for (const j of db.jobs) if (j.retryOf && jobs.has(j.retryOf)) delete j.retryOf;
+  db.needs = db.needs.filter((n) => !gone.includes(n.id));
+}
+
+/** «Ні» on «варто замінити» (owner, 18.11): the item stays, its open replacement purchase goes, and it is rated again knowing the owner likes it. */
+export function keepItem(db: DB, item: Item) {
+  if (item.rating) {
+    item.rating.kept = true;
+    item.rating.rev = -1;
+  }
+  withdrawReplacement(db, item.id);
+}
+
+/** An item that left the wardrobe («Це моя річ? — Ні» or deleted) frees the replacement purchase made for it. */
+export function dropReplacementsFor(db: DB, itemId: string) {
+  withdrawReplacement(db, itemId);
+}
+
+/** A deleted advisor purchase is remembered, so the advisor never proposes the same piece again. */
+export function rememberDeclined(db: DB, need: Need) {
+  if (need.origin !== 'agent' || !(need.replaces || need.forCapsule)) return;
+  db.declinedNeeds = [...new Set([...(db.declinedNeeds ?? []), need.title])].slice(-40);
 }
 
 function replacementNeed(item: Item, why: string, title: string, at: string): Need {

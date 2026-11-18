@@ -158,6 +158,10 @@ export interface Need {
   replaces?: string;
   /** Advisor: what this capsule lacks for its style and season («Для капсули: …»). */
   forCapsule?: string;
+  /** The old item this purchase took out of the wardrobe («Прибрати стару річ»); undo brings it back. */
+  retired?: { id: string; status: ItemStatus };
+  /** Shop links the owner dropped with ×: a new search never brings them back. */
+  droppedUrls?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -400,6 +404,8 @@ export interface DB {
   settings: Settings;
   /** Advisor proposals (optional: older databases have none). */
   suggestions?: Suggestion[];
+  /** Titles of advisor purchases the owner deleted: never proposed again. */
+  declinedNeeds?: string[];
 }
 
 export function emptySlots(): Slots {

@@ -134,10 +134,10 @@ const money = (v: number, cur?: string) => {
 };
 
 /** Product names without shop codes: «Handball Spezial Shadow Brown (JQ1740)» → «Handball Spezial Shadow Brown». */
-const cleanName = (s: string) => s.replace(/\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9 /.-]{3,}\)\s*$/, '').trim();
+const cleanName = (s: string) => s.replace(/\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9 /.-]{3,}\)\s*$/, '').replace(/\s+\d{6,}(?=\s|$)/g, '').trim();
 
 /** A found product (owner, 18.11): the name opens the shop page; one «Куплено»; × removes the variant. */
-function ProductCard({ p, need, best = false, fits = 0 }: { p: Product; need: Need; best?: boolean; fits?: number }) {
+function ProductCard({ p, need, best = false }: { p: Product; need: Need; best?: boolean }) {
   const db = useDb();
   const { act } = useApp();
   const [buy, setBuy] = useState(false);
@@ -155,7 +155,7 @@ function ProductCard({ p, need, best = false, fits = 0 }: { p: Product; need: Ne
       <div className="product-txt">
         {p.url ? <a className="product-name" href={p.url} target="_blank" rel="noreferrer">{name}</a> : <b className="product-name">{name}</b>}
         <span className="small muted">{[p.store, place, p.price != null ? money(p.price, p.currency) : '', p.recommendedSize ? `розмір ${p.recommendedSize}` : ''].filter(Boolean).join(' · ')}</span>
-        {p.matchScore != null && <span className="small">{p.matchScore}/10{best ? ' · найкраще пасує' : ''}{best && fits ? ` · ${fits} ${fits === 1 ? 'образ' : fits < 5 ? 'образи' : 'образів'}` : ''}</span>}
+        {p.matchScore != null && <span className="small">{p.matchScore}/10{best ? ' · найкраще пасує' : ''}</span>}
         {p.matchNote && <span className="small muted">{p.matchNote}</span>}
         {stale && <span className="small" style={{ color: 'var(--warn)' }}>Ціну перевірено {fmtDay(p.checkedAt!)}</span>}
         {p.status === 'purchased' && <Badge tone="ok">куплено</Badge>}
@@ -246,7 +246,6 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const products = db.products.filter((p) => p.needId === need.id).sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
   const searches = db.jobs.filter((j) => j.kind === 'shopsearch' && j.needId === need.id);
   const waitJob = searches.find((j) => j.state === 'running') ?? searches.find((j) => j.state === 'queued');
-  const running = waitJob?.state === 'running';
   const waiting = Boolean(waitJob);
   // The last search that added nothing or failed says so in one grey line.
   const last = [...searches].filter((j) => j.state === 'done' || j.state === 'error').sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0];
@@ -286,13 +285,13 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
         <div className="grow stack" style={{ gap: 4 }}>
           {top && <span className="eyebrow-sm">Наступна покупка</span>}
           <div className="row wrap">
-            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} /></span></h3>
+            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} notes={[{ title: 'Навіщо', text: need.why }, ...(need.status === 'open' ? [{ title: 'Що перевірити', text: need.fitCheck }] : [])]} /></span></h3>
             {need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}
           </div>
         </div>
         {need.status === 'open' && (
           <button className="icon-btn" disabled={waiting} onClick={() => void search()} aria-label={products.length ? 'Оновити пошук' : 'Знайти варіанти'} title={products.length ? 'Оновити пошук' : 'Знайти варіанти'}>
-            <RefreshCw size={14} className={running ? 'spin' : ''} />
+            <RefreshCw size={14} />
           </button>
         )}
         <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
@@ -308,14 +307,6 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
           <>
             <dt>Замінить</dt>
             <dd><a href={`/wardrobe/${replaces.id}`} style={{ textDecoration: 'underline' }}>{replaces.title}</a></dd>
-          </>
-        )}
-        <dt>Навіщо</dt>
-        <dd>{need.why || '—'}</dd>
-        {need.fitCheck && need.status === 'open' && (
-          <>
-            <dt>Що перевірити</dt>
-            <dd>{need.fitCheck}</dd>
           </>
         )}
         {(looks.length > 0 || (!forCapsule && !replaces)) && <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>}
@@ -338,7 +329,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
       {lastNote && <span className="small muted">{lastNote}</span>}
       {products.length > 0 && (
         <div className="product-grid">
-          {products.map((p) => <ProductCard key={p.id} p={p} need={need} best={p.id === bestId} fits={looks.length} />)}
+          {products.map((p) => <ProductCard key={p.id} p={p} need={need} best={p.id === bestId} />)}
         </div>
       )}
       </div>

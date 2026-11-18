@@ -108,11 +108,14 @@ function InfoPop({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Info mark for fashion terms in a piece's name: the five-part legend. */
-export function TermInfo({ texts }: { texts: (string | undefined)[] }) {
+export function TermInfo({ texts, notes = [] }: { texts: (string | undefined)[]; notes?: { title: string; text?: string }[] }) {
   const found = termsIn(...texts);
-  if (!found.length) return null;
+  // Short notes (e.g. a purchase's «Навіщо») share the one mark instead of filling the card.
+  const shown = notes.filter((n) => n.text);
+  if (!found.length && !shown.length) return null;
   return (
-    <InfoPop label={`Що таке ${found.map((t) => t.name).join(', ')}`}>
+    <InfoPop label={found.length ? `Що таке ${found.map((t) => t.name).join(', ')}` : shown[0].title}>
+      {shown.map((n) => <span key={n.title} className="term-card"><b>{n.title}</b><span>{n.text}</span></span>)}
       {found.map((t) => (
         <span key={t.id} className="term-card">
           <b>{t.name}</b>

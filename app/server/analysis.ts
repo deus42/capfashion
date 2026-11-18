@@ -5,6 +5,7 @@ import type { Category, DB, Item, Job, Look, Season, SlotKey } from './schema.ts
 import { CATEGORIES, SEASONS, SLOT_KEYS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
 import { hiddenLookIds, lookKeys, sameLookKeys } from '../src/rating.ts';
+import { isEyewear } from '../src/lib.ts';
 
 export const CATEGORY_UK: Record<Category, string> = {
   outerwear: 'верхній одяг', knitwear: 'худі й трикотаж', shirts: 'сорочки й поло', tees: 'футболки',
@@ -131,8 +132,11 @@ const lookItems = (l: Look) => new Set(SLOT_KEYS.flatMap((k) => l.slots[k].filte
 
 const outfitLine = (l: Look) => `- ${[...lookItems(l)].join(', ')}`;
 
+/** Owned pieces the analyzer may put into looks: eyewear never (owner rule: no glasses in looks). */
+export const lookPieces = (db: DB) => ownedItems(db).filter((i) => !isEyewear(i.title));
+
 export function analyzePrompt(db: DB, job: Job, attached: string[]) {
-  const items = ownedItems(db);
+  const items = lookPieces(db);
   // Every regeneration is checked against what the owner already approved or removed.
   const hidden = hiddenLookIds(db);
   const usable = db.looks.filter((l) => lookItems(l).size >= 2);
@@ -310,7 +314,7 @@ interface AnalyzeReply {
 
 /** Turns an analyzer reply into a selection of owned-only looks; returns the capsule id. */
 export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | null {
-  const owned = new Set(ownedItems(db).map((i) => i.id));
+  const owned = new Set(lookPieces(db).map((i) => i.id));
   const at = now();
   const capsuleId = newId('C');
   const looks: Look[] = [];

@@ -116,14 +116,19 @@ export function expectedSeconds(db: DB, kind: Job['kind']) {
   return recent.length >= 3 ? recent[Math.floor(recent.length / 2)] : FALLBACK_SECONDS[k] ?? 120;
 }
 
+/** Up to the usual end a bar fills to 90 %; a slower run keeps creeping towards 96 % instead of standing still. */
+export const progressShare = (elapsed: number, total: number) =>
+  elapsed <= total ? (0.9 * elapsed) / total : 0.9 + 0.06 * (1 - Math.exp(-(elapsed - total) / total));
+
 /** Real progress of one job: share of its usual time (never 100% before it ends) and what is left. */
 export function jobProgress(db: DB, job: Job, now = Date.now()) {
   if (job.state !== 'running' || !job.startedAt) return { pct: 0, label: 'у черзі' };
   const total = expectedSeconds(db, job.kind);
   const elapsed = Math.max(0, (now - new Date(job.startedAt).getTime()) / 1000);
   const left = total - elapsed;
-  const label = left <= 5 ? 'майже готово' : left < 60 ? 'ще < 1 хв' : `ще ≈ ${Math.ceil(left / 60)} хв`;
-  return { pct: Math.min(0.96, elapsed / total), label };
+  const pct = progressShare(elapsed, total);
+  const label = left >= 60 ? `ще ≈ ${Math.ceil(left / 60)} хв` : left > 5 ? 'ще < 1 хв' : left > -15 ? 'майже готово' : 'ще трохи';
+  return { pct, label };
 }
 
 /** Looks (visible on the site) that use this piece. */
@@ -198,8 +203,44 @@ export const WARDROBE_CAPSULE_NAME = 'З моїх речей';
 export function wardrobeCapsule(db: DB) {
   const active = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
   const looks = distinctLooks(db, db.looks.filter((l) => l.capsuleId && active.has(l.capsuleId) && isComplete(db, l)));
-  return { id: WARDROBE_CAPSULE_ID, name: WARDROBE_CAPSULE_NAME, lookIds: looks.map((l) => l.id), favorite: false };
+  // One look of each capsule in turn, so the tile does not repeat one capsule's cover.
+  const byCapsule = new Map<string, Look[]>();
+  for (const l of looks) byCapsule.set(l.capsuleId!, [...(byCapsule.get(l.capsuleId!) ?? []), l]);
+  const order: Look[] = [];
+  for (let i = 0; order.length < looks.length; i += 1) for (const ls of byCapsule.values()) if (ls[i]) order.push(ls[i]);
+  return { id: WARDROBE_CAPSULE_ID, name: WARDROBE_CAPSULE_NAME, lookIds: order.map((l) => l.id), favorite: false };
 }
+
+export const BEST_CAPSULE_ID = 'best';
+export const BEST_CAPSULE_NAME = 'Найкращі';
+const BEST_COUNT = 10;
+const bestCache = new WeakMap<DB, Look[]>();
+/**
+ * «Найкращі» (owner, 18.11): up to ten looks — liked first, then the advisor's highest current scores.
+ * The «Найкращий» label on cards and the automatic capsule use this one list.
+ */
+export function bestLooks(db: DB): Look[] {
+  const hit = bestCache.get(db);
+  if (hit) return hit;
+  const score = (l: Look) => (l.advice && l.advice.version === l.version ? l.advice.score : 0);
+  const out = siteLooks(db)
+    .filter((l) => hasPieces(l) && (l.favorite || score(l) >= 8))
+    .map((l, i) => ({ l, i }))
+    .sort((a, b) => Number(b.l.favorite) - Number(a.l.favorite) || score(b.l) - score(a.l) || Number(isComplete(db, b.l)) - Number(isComplete(db, a.l)) || a.i - b.i)
+    .slice(0, BEST_COUNT)
+    .map((e) => e.l);
+  bestCache.set(db, out);
+  return out;
+}
+export const isBestLook = (db: DB, id: string) => bestLooks(db).some((l) => l.id === id);
+export const bestCapsule = (db: DB) => ({ id: BEST_CAPSULE_ID, name: BEST_CAPSULE_NAME, lookIds: bestLooks(db).map((l) => l.id), favorite: false });
+/** The site's own capsules (no data of their own): «Найкращі» and «З моїх речей». */
+export const isAutoCapsule = (id: string) => id === BEST_CAPSULE_ID || id === WARDROBE_CAPSULE_ID;
+/** The automatic capsules shown first on Home and «Капсули»; «Найкращі» only once it has looks. */
+export const autoCapsules = (db: DB) => {
+  const best = bestCapsule(db);
+  return [...(best.lookIds.length ? [best] : []), wardrobeCapsule(db)];
+};
 
 /** Count where an item is used, including when it appears only in a saved variant. */
 export function itemPlacements(db: DB, itemId: string, ready = wardrobeCapsule(db)) {
@@ -218,6 +259,7 @@ export function itemPlacements(db: DB, itemId: string, ready = wardrobeCapsule(d
 
 const ukrainianPlural = new Intl.PluralRules('uk');
 export function usageLabel(capsules: number, looks: number) {
+  if (!capsules && !looks) return 'без образів';
   const ending = ukrainianPlural.select(capsules);
   const lookEnding = ukrainianPlural.select(looks);
   return `${capsules ? `у ${capsules} ${ending === 'one' ? 'капсулі' : 'капсулах'}` : '0 капсул'} · ${looks} ${lookEnding === 'one' ? 'образ' : lookEnding === 'few' ? 'образи' : 'образів'}`;
@@ -243,22 +285,21 @@ export function capsuleReady(db: DB, c: Pick<Capsule, 'lookIds'>) {
 }
 
 /** Advisor counts for an item: shown looks with it, how many are complete or liked, capsules it is in. */
-export function itemUsage(db: DB, itemId: string) {
-  const looks = siteLooks(db).filter((l) => Object.values(l.slots).flat().some((r) => r.kind === 'item' && r.id === itemId));
-  const capsules = new Set(looks.map((l) => l.capsuleId).filter(Boolean));
-  return { looks: looks.length, complete: looks.filter((l) => isComplete(db, l)).length, liked: looks.filter((l) => l.favorite).length, capsules: capsules.size };
+export function itemUsage(db: DB, itemId: string, ready = wardrobeCapsule(db)) {
+  // The same looks «Де використано» lists, so the verdict and the page never disagree.
+  const { looks, capsules } = itemPlacements(db, itemId, ready);
+  return { looks: looks.length, complete: looks.filter((l) => isComplete(db, l)).length, liked: looks.filter((l) => l.favorite).length, capsules: capsules.filter((c) => c.id !== WARDROBE_CAPSULE_ID).length };
 }
 
-/** The item page's quiet line (owner, 18.11): «8/10 · сильна річ · у 5 образах», «гарна, мало образів», «варто замінити: …». */
+/** The item page's quiet line (owner, 18.11): «8/10 · сильна річ», «гарна, мало образів», «варто замінити: …»; the count lives in «Де використано». */
 export function itemVerdict(db: DB, item: Item): { line: string; note: string; kind: 'strong' | 'underused' | 'replace' | 'plain'; need?: Need } | null {
   const r = item.rating;
   if (!r || item.status === 'inactive' || item.mergedInto) return null;
   const n = itemUsage(db, item.id).looks;
-  const inLooks = n ? `у ${n} ${n === 1 ? 'образі' : 'образах'}` : 'ще без образів';
   if (r.replace && !r.kept) return { kind: 'replace', line: `${r.score}/10 · варто замінити: ${r.replace}`, note: r.note, need: db.needs.find((x) => x.replaces === item.id && x.status === 'open') };
   if (r.score >= 7 && n <= 1) return { kind: 'underused', line: `${r.score}/10 · гарна, мало образів`, note: r.note };
-  if (r.score >= 7) return { kind: 'strong', line: `${r.score}/10 · сильна річ · ${inLooks}`, note: r.note };
-  return { kind: 'plain', line: `${r.score}/10 · ${inLooks}`, note: r.note };
+  if (r.score >= 7) return { kind: 'strong', line: `${r.score}/10 · сильна річ`, note: r.note };
+  return { kind: 'plain', line: `${r.score}/10`, note: r.note };
 }
 
 /** Glasses never go into the owner's looks (owner rule: no eyewear of any kind). */

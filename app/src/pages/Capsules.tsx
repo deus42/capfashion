@@ -4,7 +4,7 @@ import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, capsuleLooks, distinctLooks, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
+import { SEASON_LABEL, autoCapsules, bestCapsule, capsuleLooks, distinctLooks, isBestLook, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile } from './Home.tsx';
 
@@ -17,7 +17,7 @@ export function CapsulesPage() {
   const setTab = (t: typeof tab) => go(t === 'capsules' ? '/capsules' : `/capsules?tab=${t}`);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const ready = wardrobeCapsule(db);
-  const capsules = [ready, ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
+  const capsules = [...autoCapsules(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const list = tab === 'capsules' ? capsules : selections;
   // Each capsule's lead look first, then the rest of the catalogue.
@@ -37,11 +37,11 @@ export function CapsulesPage() {
         <div className="actions">
           <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
             <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
-            <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>Підбірки <span className="faint">{selections.length}</span></button>
+            {(selections.length > 0 || tab === 'selections') && <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>Підбірки <span className="faint">{selections.length}</span></button>}
             <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{allLooks.length}</span></button>
             {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> Приховані <span className="faint">{hiddenCount}</span></button>}
           </div>
-          {(tab === 'capsules' || tab === 'looks') && <ReadyFilter active={readyOnly} href={readyOnly ? '/capsules?tab=looks' : '/capsules?tab=looks&owned=1'} />}
+          {tab === 'looks' && <ReadyFilter active={readyOnly} href={readyOnly ? '/capsules?tab=looks' : '/capsules?tab=looks&owned=1'} />}
         </div>
       </div>
       {tab === 'hidden' ? (
@@ -126,13 +126,14 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
 }
 
 function LookCard({ look }: { look: Look }) {
-
+  const db = useDb();
   return (
     <div className="look-card">
       <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${look.id}`}>
         <LookArt look={look} />
       </a>
-      <a href={`/looks/${look.id}`}><h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
+      {/* Above the name, not on the picture: on a phone a corner label covered the face. */}
+      <a href={`/looks/${look.id}`}>{isBestLook(db, look.id) && <span className="best-mark">Найкращий</span>}<h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
       </div>
@@ -195,8 +196,8 @@ export function CapsuleDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const capsule = db.capsules.find((c) => c.id === id);
   const allLooks = useMemo(() => capsuleLooks(db, capsule?.lookIds ?? []), [capsule, db]);
-  if (id === WARDROBE_CAPSULE_ID) {
-    const ready = wardrobeCapsule(db);
+  if (id === WARDROBE_CAPSULE_ID || id === BEST_CAPSULE_ID) {
+    const ready = id === BEST_CAPSULE_ID ? bestCapsule(db) : wardrobeCapsule(db);
     const looks = capsuleLooks(db, ready.lookIds);
     return <div className="page">
       <div className="crumb"><a href="/capsules">Капсули</a></div>

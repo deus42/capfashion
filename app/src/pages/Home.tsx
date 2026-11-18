@@ -3,7 +3,7 @@ import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-reac
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
-import { capsuleLooks, distinctLooks, openSuggestions, rankCapsules, readyLine, wardrobeCapsule, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { autoCapsules, capsuleLooks, distinctLooks, isAutoCapsule, openSuggestions, rankCapsules, readyLine } from '../lib.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
 
@@ -24,7 +24,7 @@ export function CapsuleTile({ c }: { c: CapsuleView }) {
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
+        <div className="meta">{(!isAutoCapsule(c.id) && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
       </div>
     </a>
   );
@@ -94,7 +94,7 @@ export function HomePage() {
   const [text, setText] = useState('');
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
-  const capsules = [wardrobeCapsule(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
+  const capsules = [...autoCapsules(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
   const analyzeJob = db.jobs.find((j) => j.kind === 'analyze' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'analyze' && j.state === 'queued');
   const analyzing = Boolean(analyzeJob);
 

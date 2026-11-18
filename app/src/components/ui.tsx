@@ -7,7 +7,7 @@ import { useApp, useDb } from '../store.tsx';
 import { api } from '../api.ts';
 import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
-import { REF_KIND_LABEL, coverForLook, jobProgress, lookJob, missingInfo, piecesOf } from '../lib.ts';
+import { REF_KIND_LABEL, coverForLook, expectedSeconds, jobProgress, lookJob, missingInfo, piecesOf, progressShare } from '../lib.ts';
 import { TermInfo } from '../pages/Glossary.tsx';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
@@ -273,6 +273,22 @@ export function JobBar({ job, label = false, className = '' }: { job: Job; label
   );
 }
 
+/** The top bar: one span over all running work — earliest start to the latest usual end — that never moves backwards. */
+export function SpanBar({ jobs, className = '' }: { jobs: Job[]; className?: string }) {
+  const db = useDb();
+  const now = useNow();
+  const peak = useRef(0);
+  const starts = jobs.map((j) => new Date(j.startedAt!).getTime());
+  const start = Math.min(...starts);
+  const end = Math.max(...jobs.map((j, i) => starts[i] + expectedSeconds(db, j.kind) * 1000));
+  peak.current = Math.max(peak.current, progressShare(Math.max(0, now - start) / 1000, Math.max(1, end - start) / 1000));
+  return (
+    <span className={`busy-bar det ${className}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(peak.current * 100)}>
+      <i style={{ width: `${peak.current * 100}%` }} />
+    </span>
+  );
+}
+
 /** Just the words: «ще ≈ 2 хв», «майже готово», «у черзі» — ticking on its own. */
 export function JobEta({ job }: { job: Job }) {
   const db = useDb();
@@ -415,14 +431,16 @@ export function ConfirmButton({
 export function RenderPlaceholder({ lookIds }: { lookIds: string[] }) {
   const db = useDb();
   const jobs = db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId && lookIds.includes(j.lookId));
-  const running = jobs.some((j) => j.state === 'running');
+  const running = jobs.find((j) => j.state === 'running');
   const queued = jobs.some((j) => j.state === 'queued');
   const waiting = jobs.find((j) => j.state === 'needs_data');
   const noBase = db.profile.basePhotoIds.length === 0;
+  // Work in progress is only the thin bar (owner rule); words stay for what the owner can act on.
   return (
     <div className="render-ph" title={!running && !queued ? waiting?.stateNote : undefined}>
-      {running || queued ? <Loader2 size={22} className={running ? 'spin' : ''} /> : <PersonStanding size={24} />}
-      <span>{running ? 'Генерую примірку…' : queued ? 'Примірка в черзі' : waiting ? 'Примірка чекає' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>
+      {running && <JobBar job={running} />}
+      <PersonStanding size={24} />
+      {!running && !queued && <span>{waiting ? 'Примірка чекає' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>}
     </div>
   );
 }

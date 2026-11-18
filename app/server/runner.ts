@@ -6,10 +6,10 @@ import type { DB, Job, SnapshotSlot } from './schema.ts';
 import type { Store } from './store.ts';
 import { newId, now } from './store.ts';
 import { detectImageType, prewarm, resolveAllowed, thumbnail } from './media.ts';
-import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
+import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, lookPieces } from './analysis.ts';
 import { coverNeed, queueMissingItemPackshots, queueMissingRenders } from './routes.ts';
 import { SHOP_SEARCH_SCHEMA, applyShopSearch, fetchProductImage, shopSearchPrompt } from './shop-search.ts';
-import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice } from './advisor.ts';
+import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice, seenRevs } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -183,6 +183,8 @@ function parseReply(text: string): { status?: string; notes?: string; reason?: s
  */
 export function createRunner(store: Store, projectRoot: string, codexBin = findCodex()) {
   const active = new Set<string>();
+  // Item revisions each advise run saw when its prompt was built (see seenRevs).
+  const adviseRevs = new Map<string, Map<string, number>>();
   const state: RunnerState = { running: false, currentJobId: null, activeJobIds: [], lastError: null, codexBin };
   const sync = () => {
     state.activeJobIds = [...active];
@@ -253,11 +255,12 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         }
       }
       prompt = advisePrompt(db0, job, images);
+      adviseRevs.set(jobId, seenRevs(db0));
       fs.writeFileSync(schemaFile, JSON.stringify(ADVISE_SCHEMA));
     } else {
       const dir = path.join(jobDir, 'items');
       fs.mkdirSync(dir, { recursive: true });
-      for (const it of ownedItems(db0)) {
+      for (const it of lookPieces(db0)) {
         const p = it.packshotId ? db0.photos.find((x) => x.id === it.packshotId) : undefined;
         if (!p) continue;
         try {
@@ -311,7 +314,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       }
       if (j.kind === 'advise') {
         j.state = 'done';
-        j.stateNote = applyAdvice(db, j, reply as never);
+        j.stateNote = applyAdvice(db, j, reply as never, adviseRevs.get(jobId));
+        adviseRevs.delete(jobId);
         return;
       }
       if (j.kind === 'shopsearch') {
@@ -554,7 +558,9 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         while (active.size < limit && queued.length) {
           // Uploads are triaged one at a time so the same garment on several photos is recognised as one item.
           const activeKinds = [...active].map((id) => db.jobs.find((x) => x.id === id)?.kind);
-          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !(j.kind === 'shopsearch' && activeKinds.includes('shopsearch')) && !(j.kind === 'advise' && activeKinds.includes('advise')));
+          // The advisor rates items with their catalogue pictures, so it waits for uploads and pictures still being made.
+          const photosPending = db.jobs.some((x) => (x.kind === 'packshot' || x.kind === 'intake') && (x.state === 'queued' || x.state === 'running'));
+          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !(j.kind === 'shopsearch' && activeKinds.includes('shopsearch')) && !(j.kind === 'advise' && (activeKinds.includes('advise') || photosPending)));
           if (idx < 0) break;
           const next = queued.splice(idx, 1)[0];
           active.add(next.id);

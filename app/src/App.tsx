@@ -4,8 +4,7 @@ import {
   Camera, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
-import { Img, JobBar } from './components/ui.tsx';
-import { expectedSeconds } from './lib.ts';
+import { Img, SpanBar } from './components/ui.tsx';
 import { HomePage, useIntake } from './pages/Home.tsx';
 import { CapsuleDetail, CapsulesPage } from './pages/Capsules.tsx';
 import { LookPage } from './pages/Look.tsx';
@@ -54,10 +53,8 @@ export default function App() {
 
   const { db } = state;
   // The thin bar means work is happening now; queued work waiting for its turn shows nothing.
-  // The top bar follows the running work that will finish last, so it fills once from start to end.
-  const lastToFinish = db.jobs
-    .filter((j) => j.state === 'running' && j.startedAt)
-    .sort((a, b) => new Date(b.startedAt!).getTime() + expectedSeconds(db, b.kind) * 1000 - (new Date(a.startedAt!).getTime() + expectedSeconds(db, a.kind) * 1000))[0];
+  // One span over everything running: it fills once from the first start to the last usual end and never jumps back.
+  const running = db.jobs.filter((j) => j.state === 'running' && j.startedAt);
   const avatar = db.profile.identity?.approvedPortrait ? db.profile.identity.face : db.profile.basePhotoIds.map((id) => db.photos.find((p) => p.id === id)).find(Boolean);
   const ic = 20;
 
@@ -91,7 +88,7 @@ export default function App() {
         </a>
       </nav>
       <div className="frame">
-        {lastToFinish && <JobBar job={lastToFinish} className="app-progress" />}
+        {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
           <a href="/home" className="wordmark m-only">Cap Fashion</a>
           <div className="grow" />

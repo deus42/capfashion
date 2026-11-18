@@ -150,7 +150,7 @@ export function LookPage({ id }: { id: string }) {
             </a>
             {!paused && (
               <button className="refresh-btn" disabled={busy} onClick={() => void update()} aria-label="Оновити картинку" title="Оновити картинку">
-                <RefreshCw size={15} className={busy ? 'spin' : ''} />
+                <RefreshCw size={15} />
               </button>
             )}
           </div>

@@ -161,8 +161,8 @@ export function GalleryPage() {
             <div className="gallery">
               {es.map((e) =>
                 e.kind === 'tryon' ? (
-                  <button key={e.r.id} className="gtile" onClick={() => setOpen(e)}>
-                    <img src={thumb(e.r.imagePath, 520)} alt="" loading="lazy" style={{ objectPosition: 'top' }} />
+                  <button key={e.r.id} className="gtile tryon" onClick={() => setOpen(e)}>
+                    <img src={thumb(e.r.imagePath, 520)} alt="" loading="lazy" />
                     {db.looks.find((l) => l.id === e.r.lookId)?.favorite && <span className="tr liked-mark" aria-label="Подобається"><ThumbsUp size={12} fill="currentColor" /></span>}
                     <span className="cap">{db.looks.find((l) => l.id === e.r.lookId)?.name}</span>
                   </button>

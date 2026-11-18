@@ -201,6 +201,8 @@ export interface Look {
   /** Owner disliked it: hidden from the site, kept as a finished look and as a "never again" reference. */
   disliked?: boolean;
   ratedAt?: string;
+  /** «Речі змінено → Ні»: the owner keeps the picture for this version, so the question does not return. */
+  keptVersion?: number;
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   createdAt: string;
@@ -330,6 +332,10 @@ export interface Profile {
   knownSizes: KnownSize[];
   /** «Мої бренди»: brands the owner wears; shop search looks there first. */
   brands?: string[];
+  /** «Де шукати»: the owner's shopping place (city or mall); «Знайти» checks its stores first. Empty = online only. */
+  location?: string;
+  /** «Мої магазини»: shops the owner likes; checked first, at the place and online. */
+  stores?: string[];
   preferences: { comfort: string; materials: string; fit: string; branding: string };
 }
 

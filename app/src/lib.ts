@@ -182,6 +182,10 @@ export function capsuleReady(db: DB, c: Capsule) {
   return { done: looks.filter((l) => isComplete(db, l)).length, total: looks.length };
 }
 
+/** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */
+export const DEFAULT_LOCATION = 'Tower Center Rijeka, Rijeka, Croatia';
+export const shopLocation = (db: DB) => db.profile.location ?? DEFAULT_LOCATION;
+
 /** «4 з 6 готові» / «усі готові» — the quiet capsule line. */
 export function readyLine(db: DB, c: Capsule) {
   const { done, total } = capsuleReady(db, c);

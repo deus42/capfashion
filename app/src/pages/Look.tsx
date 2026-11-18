@@ -79,8 +79,7 @@ export function LookPage({ id }: { id: string }) {
   // The owner asked for a new picture: the slider runs until it arrives (queued or being made).
   const busy = db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === look.id && (j.state === 'queued' || j.state === 'running'));
   const paused = rendersPaused(db);
-  const keepKey = `cf-keep-${look.id}`;
-  const kept = (() => { try { return localStorage.getItem(keepKey) === String(look.version); } catch { return false; } })();
+  const kept = look.keptVersion === look.version;
   // After pieces change, ask once whether to update the picture (owner, 17.11): never automatic.
   const askUpdate = Boolean(stale) && !busy && !paused && !kept && keptNow !== `${look.id}:${look.version}`;
   const options = accessoryOptions(db, look);
@@ -92,8 +91,8 @@ export function LookPage({ id }: { id: string }) {
     else if (job) setAsked(job.id);
   };
   const keep = () => {
-    try { localStorage.setItem(keepKey, String(look.version)); } catch { /* the hint simply returns next time */ }
     setKeptNow(`${look.id}:${look.version}`);
+    void act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, keptVersion: look.version }));
   };
   const swapAccessory = (current: SlotRef, id: string) =>
     act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, slots: { ...look.slots, accessories: look.slots.accessories.map((r) => (same(r, current) ? { kind: 'item', id } : r)) } }));

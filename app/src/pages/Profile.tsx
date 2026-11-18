@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Camera, Check, CircleCheck, Heart, Loader2, Plus, Ruler, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Camera, Check, CircleCheck, Heart, Loader2, Plus, Ruler, Store, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
 import type { Category, KnownSize, MeasureKey } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
 import { useIntake } from './Home.tsx';
 import { InfoMark } from './Glossary.tsx';
-import { CATEGORY_LABEL, MEASURES, fmtDay } from '../lib.ts';
+import { CATEGORY_LABEL, MEASURES, fmtDay, shopLocation, wardrobeBrands } from '../lib.ts';
 
 const STANDARD = [
   '2–3 фото на повний зріст спереду',
@@ -21,6 +21,7 @@ const TABS = [
   { key: 'base', label: 'Базові фото', icon: <Camera size={17} /> },
   { key: 'measurements', label: 'Мірки', icon: <Ruler size={17} /> },
   { key: 'sizes', label: 'Розміри брендів', icon: <Tag size={17} /> },
+  { key: 'shops', label: 'Магазини', icon: <Store size={17} /> },
   { key: 'preferences', label: 'Побажання', icon: <Heart size={17} /> },
 ];
 
@@ -157,22 +158,24 @@ function Sizes() {
   const [sizes, setSizes] = useState<KnownSize[]>(prof.knownSizes);
   useEffect(() => setSizes(prof.knownSizes), [prof.rev]);
   const upd = (i: number, patch: Partial<KnownSize>) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const add = () => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }]);
   return (
     <Section
       title="Розміри брендів"
       actions={
-        <>
-          <button className="btn" onClick={() => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }])}><Plus size={15} /> Додати</button>
-          <button className="btn primary" disabled={sizes.some((s) => !s.brand.trim() || !s.size.trim())} onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, knownSizes: sizes }), 'Розміри збережено')}>Зберегти</button>
-        </>
+        sizes.length > 0 || prof.knownSizes.length > 0 ? (
+          <>
+            <button className="btn" onClick={add}><Plus size={15} /> Додати</button>
+            <button className="btn primary" disabled={sizes.some((s) => !s.brand.trim() || !s.size.trim())} onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, knownSizes: sizes }), 'Розміри збережено')}>Зберегти</button>
+          </>
+        ) : undefined
       }
     >
       {sizes.length === 0 ? (
-        <div className="dropzone" style={{ padding: 26 }}>
-          <Tag size={20} style={{ margin: '0 auto' }} />
-          <b>Ще немає жодного розміру</b>
-          Додай, наприклад, «Levi's · Штани · W32 L32» або «Adidas · Взуття · EU 43».
-        </div>
+        <button className="dropzone" style={{ padding: 26, width: '100%' }} onClick={add}>
+          <Plus size={20} style={{ margin: '0 auto' }} />
+          <b>Додати розмір</b>
+        </button>
       ) : (
         <div className="stack" style={{ gap: 12 }}>
           {sizes.map((s, i) => (
@@ -188,6 +191,62 @@ function Sizes() {
           ))}
         </div>
       )}
+    </Section>
+  );
+}
+
+/** A short list the owner edits: × removes, typing + Enter adds. */
+function ChipsField({ label, values, placeholder, onSave }: { label: string; values: string[]; placeholder: string; onSave: (next: string[]) => void }) {
+  const [text, setText] = useState('');
+  const add = () => {
+    const v = text.trim();
+    if (!v) return;
+    setText('');
+    if (!values.some((x) => x.toLowerCase() === v.toLowerCase())) onSave([...values, v]);
+  };
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <div className="chips">
+        {values.map((v) => (
+          <b key={v} className="chip brand">
+            {v}
+            <button aria-label={`Прибрати ${v}`} onClick={() => onSave(values.filter((x) => x !== v))}><X size={12} /></button>
+          </b>
+        ))}
+        <form className="brand-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
+          <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={placeholder} />
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** «Магазини» (owner, 18.11): where «Знайти» searches — the place, my stores, my brands. */
+function Shops() {
+  const db = useDb();
+  const { act } = useApp();
+  const prof = db.profile;
+  const [place, setPlace] = useState(shopLocation(db));
+  useEffect(() => setPlace(shopLocation(db)), [prof.rev]);
+  const save = (patch: Record<string, unknown>) => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, ...patch }));
+  return (
+    <Section title="Магазини">
+      <div className="stack" style={{ gap: 22 }}>
+        <label className="field">
+          <span>Де шукати</span>
+          <input
+            className="input"
+            value={place}
+            placeholder="Місто або торговий центр"
+            onChange={(e) => setPlace(e.target.value)}
+            onBlur={() => { if (place.trim() !== shopLocation(db)) save({ location: place.trim() }); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          />
+        </label>
+        <ChipsField label="Мої магазини" values={prof.stores ?? []} placeholder="+ магазин" onSave={(stores) => save({ stores })} />
+        <ChipsField label="Мої бренди" values={prof.brands ?? wardrobeBrands(db)} placeholder="+ бренд" onSave={(brands) => save({ brands })} />
+      </div>
     </Section>
   );
 }
@@ -229,6 +288,7 @@ export function ProfilePage({ tab }: { tab?: string }) {
           {current === 'base' && <BasePhotos />}
           {current === 'measurements' && <Measurements />}
           {current === 'sizes' && <Sizes />}
+          {current === 'shops' && <Shops />}
           {current === 'preferences' && <Preferences />}
         </div>
       </div>

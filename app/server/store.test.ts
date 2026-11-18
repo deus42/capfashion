@@ -918,6 +918,15 @@ test('changing a look\'s pieces does not re-render by itself; «Оновити»
   assert.ok(drained() > 0);
   await call('PATCH', '/api/looks/L-1', { rev: db.looks[0].rev, name: 'Renamed' });
   assert.equal(store.read().jobs.filter((j) => j.lookId === 'L-1').length, 1, 'renaming does not re-render');
+  // «Речі змінено → Ні» is kept on the look for its current version only; a later change asks again.
+  look = store.read().looks[0];
+  await call('PATCH', '/api/looks/L-1', { rev: look.rev, keptVersion: look.version });
+  look = store.read().looks[0];
+  assert.equal(look.keptVersion, 3);
+  assert.equal(look.version, 3, 'keeping the picture is not a new version');
+  await call('PATCH', '/api/looks/L-1', { rev: look.rev, slots: { ...look.slots, top: [{ kind: 'item', id: 'W-T' }] } });
+  look = store.read().looks[0];
+  assert.notEqual(look.keptVersion, look.version, 'new pieces bring the question back');
 });
 test('complete looks, the quiet missing line and the next-purchase rating follow the wardrobe', async () => {
   const { store, call } = setup();

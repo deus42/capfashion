@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, ExternalLink, Pencil, Plus, Search, ShoppingBag, Store, Trash2, Undo2, X } from 'lucide-react';
+import { Check, ExternalLink, Pencil, Plus, Search, ShoppingBag, Store, Trash2, Undo2 } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, siteLooks, wardrobeBrands } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, shopLocation, siteLooks } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -60,7 +60,7 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
       }
     >
       <div className="grid-form">
-        {field('store', 'Магазин у Tower Center Rijeka', 'напр. Massimo Dutti')}
+        {field('store', 'Магазин', 'напр. Massimo Dutti')}
         {field('brand', 'Бренд')}
         {field('model', 'Модель', 'назва моделі')}
         {field('url', 'URL', 'https://…', true)}
@@ -95,9 +95,7 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
       }
     >
       <div className="stack" style={{ gap: 12 }}>
-        <p>
-          <b>{product.brand} {product.model}</b> перейде в гардероб як твоя річ. Образи з цією потребою отримають нову версію з цією річчю.
-        </p>
+        <p><b>{product.brand} {product.model}</b></p>
         <label className="field">
           <span>Мій розмір (у системі бренду)</span>
           <input className="input" value={size} onChange={(e) => setSize(e.target.value)} placeholder="напр. M або W32 L32" />
@@ -124,7 +122,7 @@ function ProductCard({ p, need, best = false, fits = 0 }: { p: Product; need: Ne
         </div>
         <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
           <b>{p.brand} {p.model}</b>
-          <span className="small muted"><Store size={11} /> {p.store}{p.towerAvailability === 'confirmed' ? ' · Tower Rijeka' : ''}</span>
+          <span className="small muted"><Store size={11} /> {p.store}{p.towerAvailability === 'confirmed' && shopLocation(db) ? ` · ${shopLocation(db).split(',')[0]}` : ''}</span>
           {p.matchNote && <span className="miss" title={p.matchNote}><span className="miss-t">{p.matchNote}</span></span>}
           <span className="small">{p.price != null ? `${p.price} ${p.currency ?? ''}` : 'Ціна невідома'}</span>
           {p.matchScore != null && <span className="miss">{best ? 'найкраще пасує · ' : ''}{p.matchScore}/10{fits ? ` · підходить до ${fits} ${fits === 1 ? 'образу' : 'образів'}` : ''}</span>}
@@ -321,37 +319,6 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   );
 }
 
-/** «Мої бренди» (owner, 17.11): where «Знайти» looks first, after the stores in Tower Center Rijeka. */
-function MyBrands() {
-  const db = useDb();
-  const { act } = useApp();
-  const [text, setText] = useState('');
-  const brands = db.profile.brands ?? wardrobeBrands(db);
-  const save = (next: string[]) => act(() => api('PATCH', '/api/profile', { rev: db.profile.rev, brands: next }));
-  const add = () => {
-    const b = text.trim();
-    if (!b) return;
-    setText('');
-    if (!brands.some((x) => x.toLowerCase() === b.toLowerCase())) void save([...brands, b]);
-  };
-  return (
-    <section className="my-brands">
-      <span className="eyebrow-sm">Мої бренди</span>
-      <div className="chips">
-        {brands.map((b) => (
-          <span key={b} className="chip brand">
-            {b}
-            <button aria-label={`Прибрати ${b}`} onClick={() => void save(brands.filter((x) => x !== b))}><X size={12} /></button>
-          </span>
-        ))}
-        <form className="brand-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
-          <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} placeholder="+ бренд" aria-label="Додати бренд" />
-        </form>
-      </div>
-    </section>
-  );
-}
-
 export function ShoppingPage({ focus }: { focus?: string }) {
   const db = useDb();
   const [show, setShow] = useState<'open' | 'all'>('open');
@@ -375,12 +342,8 @@ export function ShoppingPage({ focus }: { focus?: string }) {
         <div className="actions chips">
           <button className={`chip${show === 'open' ? ' active' : ''}`} onClick={() => setShow('open')}>Відкриті</button>
           <button className={`chip${show === 'all' ? ' active' : ''}`} onClick={() => setShow('all')}>Усі</button>
-          <a className="btn sm ghost" href="https://tower-center-rijeka.hr/trgovine" target="_blank" rel="noreferrer">
-            <ExternalLink size={12} /> Магазини Tower
-          </a>
         </div>
       </div>
-      <MyBrands />
       {needs.length === 0 ? (
         <Empty icon={<ShoppingBag />} title="Відкритих покупок немає" />
       ) : (

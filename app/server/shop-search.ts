@@ -1,5 +1,5 @@
-// Shop search (owner, 17.11): for one shopping recommendation, Codex searches the web — stores in
-// Tower Center Rijeka first, then the owner's brands' own stores shipping to Croatia — and returns
+// Shop search (owner, 17.11): for one shopping recommendation, Codex searches the web — the stores at
+// the owner's place (Profile → Магазини) and the owner's stores first, then the brands' own stores — and returns
 // 2–4 real products with a match score against the recommendation, its looks and the owner's taste.
 // Results are dated options, never availability promises; product photos are fetched by the server.
 import fs from 'node:fs';
@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { DB, Job, Product } from './schema.ts';
 import { newId, now } from './store.ts';
 import { detectImageType } from './media.ts';
-import { siteLooks, wardrobeBrands, missingNeeds, resolveRef } from '../src/lib.ts';
+import { siteLooks, wardrobeBrands, missingNeeds, resolveRef, shopLocation } from '../src/lib.ts';
 
 const str = { type: 'string' } as const;
 
@@ -42,6 +42,7 @@ export const ownerBrands = (db: DB) => db.profile.brands ?? wardrobeBrands(db);
 export function shopSearchPrompt(db: DB, job: Job) {
   const need = db.needs.find((n) => n.id === job.needId)!;
   const prefs = db.profile.preferences;
+  const location = shopLocation(db);
   const sizes = db.profile.knownSizes.map((s) => `${s.brand} ${s.category}: ${s.size}`).join('; ');
   const looks = siteLooks(db)
     .filter((l) => missingNeeds(db, l).includes(need.id))
@@ -53,11 +54,14 @@ export function shopSearchPrompt(db: DB, job: Job) {
     need.why ? `Why it is recommended: ${need.why}` : '',
     need.fitCheck ? `Fit to check: ${need.fitCheck}` : '',
     `Owner's brands (search these first): ${ownerBrands(db).join(', ') || '—'}.`,
-    'Where: first the stores in Tower Center Rijeka (Rijeka, Croatia) — check which stores are there and whether they sell such a piece; then the official online stores of the owner\'s brands that ship to Croatia. Other shops only if nothing suitable is found there.',
+    db.profile.stores?.length ? `Owner's stores (check these first): ${db.profile.stores.join(', ')}.` : '',
+    location
+      ? `Where: first the stores at the owner's shopping place «${location}» — check which stores are there (the owner's stores first) and whether they sell such a piece; then the official online stores of the owner's stores and brands that ship to Croatia. Other shops only if nothing suitable is found there.`
+      : 'Where: the official online stores of the owner\'s stores and brands that ship to Croatia. Other shops only if nothing suitable is found there.',
     `Owner's taste — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     sizes ? `Known sizes: ${sizes}.` : '',
     looks.length ? `Looks this piece would complete (with their other pieces):\n${looks.join('\n')}` : '',
-    'Rules: only real products listed right now, each with its direct product page URL and a direct https image URL of the product taken from that page. Never invent products, prices, URLs or images; leave out anything you could not verify. price: the number with a decimal point as text, empty if unknown; currency: ISO code. inTower: true only when the store is in Tower Center Rijeka. size: the size to try from the known sizes, else empty. matchScore 0–10: colour, cut, material and style against the recommendation, the looks and the taste. matchNote: one short Ukrainian sentence why. Best first.',
+    'Rules: only real products listed right now, each with its direct product page URL and a direct https image URL of the product taken from that page. Never invent products, prices, URLs or images; leave out anything you could not verify. price: the number with a decimal point as text, empty if unknown; currency: ISO code. inTower: true only when the store is at the owner\'s shopping place. size: the size to try from the known sizes, else empty. matchScore 0–10: colour, cut, material and style against the recommendation, the looks and the taste. matchNote: one short Ukrainian sentence why. Best first.',
     'Return status "error" only if web search is unavailable; if nothing suitable exists, status "done" with an empty list and the reason in Ukrainian.',
     job.instructions ? `Owner note: ${job.instructions}` : '',
   ]

@@ -483,6 +483,7 @@ on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
     const look = findOr404(db.looks, id, 'Образ');
     bump(look, b.rev);
     pick(look, b, ['name', 'note']);
+    if (b.keptVersion === look.version) look.keptVersion = look.version;
     if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
     if (b.slots) setLookSlots(look, cleanSlots(b.slots), str(b.versionNote));
     if (!look.name) throw new HttpError(400, 'Назва не може бути порожньою');

@@ -118,6 +118,19 @@ export function packshotJob(db: DB, target: { itemId?: string; needId?: string }
   return job;
 }
 
+/** New garment evidence can fill a missing cover; existing covers stay in place. */
+export function queueMissingItemPackshots(db: DB, itemIds: string[]): number {
+  const activeIds = new Set(db.jobs.filter((job) => job.kind === 'packshot' && (job.state === 'queued' || job.state === 'running')).map((job) => job.itemId));
+  let queued = 0;
+  for (const id of new Set(itemIds)) {
+    const item = db.items.find((candidate) => candidate.id === id);
+    if (!item || item.status === 'inactive' || item.mergedInto || item.packshotId || !item.photoIds.length || activeIds.has(id)) continue;
+    packshotJob(db, { itemId: id });
+    queued += 1;
+  }
+  return queued;
+}
+
 function replaceRefs(db: DB, match: (r: SlotRef) => boolean, replacement: SlotRef, note: string, onlyLooks?: Set<string>) {
   const changedLooks: string[] = [];
   for (const look of db.looks) {
@@ -217,6 +230,7 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
   prewarm(ctx.projectRoot, ctx.store.dataDir, [saved.path]);
   const itemId = query.get('item');
   const productId = query.get('product');
+  let queuedPackshot = false;
   return ctx.store.mutate((db) => {
     const photo: Photo = { id, kind, path: saved.path, originalPath: saved.originalPath, originalName: path.basename(filename || 'upload').slice(0, 200), source: 'upload', preserveAsReference: true, meetsStandard: kind === 'base' ? null : undefined, createdAt: now() };
     db.photos.push(photo);
@@ -229,6 +243,7 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
       item.photoIds.push(id);
       bump(item, undefined);
       history(item, 'photo_added', `${kind}: ${photo.originalName}`);
+      if (!intake && kind === 'item') queuedPackshot = queueMissingItemPackshots(db, [itemId]) > 0;
     }
     if (productId) {
       const p = findOr404(db.products, productId, 'Товар');
@@ -240,7 +255,7 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
     }
     return photo;
   }).then((photo) => {
-    if (intake && query.get('run') !== '0') ctx.drain();
+    if ((intake || queuedPackshot) && query.get('run') !== '0') ctx.drain();
     return photo;
   });
 }
@@ -640,7 +655,7 @@ on('PATCH', '/api/needs/:id', (ctx, [id], b) =>
   }),
 );
 
-// «Знайти»: search the shops (Tower Center Rijeka, then the owner's brands) for this recommendation.
+// «Знайти»: search the shops (the owner's place and stores, then the owner's brands) for this recommendation.
 on('POST', '/api/needs/:id/search', async (ctx, [id], b) => {
   const job = await ctx.store.mutate((db) => {
     const need = findOr404(db.needs, id, 'Потреба');
@@ -766,8 +781,11 @@ on('PATCH', '/api/profile', (ctx, _p, b) =>
         .filter((s) => str(s.brand) && str(s.size) && CATEGORIES.includes(s.category as never))
         .map((s) => ({ id: str(s.id) || newId('K'), brand: str(s.brand, 80)!, category: s.category as Item['category'], size: str(s.size, 40)!, note: str(s.note) }));
     }
-    // «Мої бренди»: a short, de-duplicated list the owner edits.
-    if (Array.isArray(b.brands)) prof.brands = [...new Set((b.brands as unknown[]).map((x) => str(x, 60)).filter((x): x is string => Boolean(x)))].slice(0, 30);
+    // «Магазини» (Profile): the place to search, my stores and my brands — short, de-duplicated lists.
+    const list = (v: unknown[]) => [...new Set(v.map((x) => str(x, 60)).filter((x): x is string => Boolean(x)))].slice(0, 30);
+    if (Array.isArray(b.brands)) prof.brands = list(b.brands);
+    if (Array.isArray(b.stores)) prof.stores = list(b.stores);
+    if (typeof b.location === 'string') prof.location = str(b.location, 120) ?? '';
     if (b.preferences && typeof b.preferences === 'object') {
       const pr = b.preferences as Record<string, unknown>;
       for (const k of ['comfort', 'materials', 'fit', 'branding'] as const) if (typeof pr[k] === 'string') prof.preferences[k] = str(pr[k])!;

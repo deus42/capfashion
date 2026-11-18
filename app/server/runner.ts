@@ -5,9 +5,9 @@ import { spawn } from 'node:child_process';
 import type { DB, Job, SnapshotSlot } from './schema.ts';
 import type { Store } from './store.ts';
 import { newId, now } from './store.ts';
-import { prewarm, resolveAllowed, thumbnail } from './media.ts';
+import { detectImageType, prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, ownedItems } from './analysis.ts';
-import { coverNeed, packshotJob, queueMissingRenders } from './routes.ts';
+import { coverNeed, queueMissingItemPackshots, queueMissingRenders } from './routes.ts';
 import { SHOP_SEARCH_SCHEMA, applyShopSearch, fetchProductImage, shopSearchPrompt } from './shop-search.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 
@@ -50,6 +50,7 @@ const REPLY_RULES = [
 export interface ImageRefs {
   identity: string[];
   garments: string[];
+  packshotStyle?: string;
 }
 
 function refInstruction(refs: string[]) {
@@ -112,20 +113,32 @@ export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
     .join('\n');
 }
 
+const PACKSHOT_SHAPE: Record<SnapshotSlot['slot'], string> = {
+  top: 'Dress an invisible torso. Show rounded shoulders, a naturally filled chest, hollow sleeve openings where visible and a shaped neckline or collar with depth. Smooth storage creases while keeping the original cut and ordinary worn drape.',
+  layer: 'Dress an invisible torso. Show the true depth of shoulders and body, natural sleeves and a shaped opening, collar or hood as appropriate. Preserve the real cut, length and closure.',
+  bottom: 'Dress an invisible lower body. Show a shaped waistband and hips, separate legs with round volume, and natural drape. Preserve the real rise, width and length.',
+  shoes: 'Show the original pair at a slight three-quarter angle so the toe, side panels and sole thickness are clear. Keep the original shape and details.',
+  accessories: 'Show the original accessory in a natural display position with enough angle and light to show its shape, thickness and hardware.',
+};
+
 export function buildPackshotPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
   const s = job.snapshot.slots[0];
   const fromPhotos = s.photoPaths.length > 0;
+  const references = [...(refs?.garments ?? []), ...(refs?.packshotStyle ? [refs.packshotStyle] : [])];
   return [
     'You are the Cap Fashion catalogue worker running unattended. Do exactly one task and finish.',
     `Task: create ONE photorealistic e-commerce packshot with your built-in image generation tool and save it as a PNG file at this exact path: ${resultFile}`,
-    refs?.garments.length ? refInstruction(refs.garments) : '',
+    references.length ? refInstruction(references) : '',
     '',
     `Garment: ${s.title}.${s.description ? ` Notes: ${s.description}.` : ''}`,
     fromPhotos
-      ? `Reference photos attached (${s.photoPaths.map((p) => path.basename(p)).join(', ')}). They are personal snapshots: find this garment as worn or held by the man who appears in them (the owner). Ignore other people, their clothes, the phone, mirror and background. Copy the garment's colour, material look, construction details and any visible logo placement faithfully; reconstruct hidden parts plausibly and conservatively. Do not invent brand names or text that are not visible.`
+      ? `The first ${refs?.garments.length ?? s.photoPaths.length} images are the item sources, whether worn, held, hung or laid flat. Find the named item and isolate it from the person, other clothing, phone, hanger and background. Preserve its colour, cut, fabric texture, seams, closures and visible logo placement. Reconstruct hidden parts conservatively and do not invent branding.`
       : 'No photo exists: render a plain, unbranded, high-quality example of this garment type exactly as described.',
-    'Image standard: only the garment (or the pair of shoes / single accessory); centred front view; ghost-mannequin style for tops, outerwear and trousers, neatly presented for shoes and accessories; pure white (#FFFFFF) seamless background; soft even studio light; subtle natural shadow; no person, no hanger, no text, no watermark; square composition with generous margin.',
+    refs?.packshotStyle ? 'The LAST image is a studio style reference only. Follow its three-dimensional presentation, framing and lighting. Do not copy any part of its garment, including colour, collar, closure, logo or cut.' : '',
     job.instructions ? `Owner instructions: ${job.instructions}` : '',
+    `Required shape: ${PACKSHOT_SHAPE[s.slot]}`,
+    'Image standard: one complete item (or one pair of shoes), centred in a square frame with generous margin, on pure white (#FFFFFF) with soft studio light and a subtle natural shadow. No people, visible mannequin, hanger, overlay text or watermark. A flattened garment, limp source-photo silhouette or simple background removal is unacceptable.',
+    'Review the returned image for actual volume, item fidelity and clean presentation before saving. If it misses the standard, correct it once. If the result still misses it, report an error. Report done only after saving the final PNG to the exact requested path.',
     '',
     ...REPLY_RULES,
   ]
@@ -289,7 +302,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         j.createdItemIds = outcome.created;
         // A label photo joins its item too, so the upload card links to it.
         j.attachedItemIds = [...new Set([...outcome.attachedTo, ...(outcome.labelFor ? [outcome.labelFor] : [])])];
-        for (const id of outcome.created) packshotJob(db, { itemId: id });
+        queueMissingItemPackshots(db, [...outcome.created, ...outcome.attachedTo]);
         // An upload that is an open recommendation leaves the shopping list and replaces the stand-in in looks and renders.
         const covered: string[] = [];
         for (const c of outcome.covers) {
@@ -346,10 +359,15 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const resolve = (p: string) => resolveAllowed(projectRoot, store.dataDir, p);
     verifyReferenceFiles(job, resolve);
     const refs = pickRefs(job, isPackshot, resolve);
-    const uniqueImages = [...refs.identity, ...refs.garments];
+    const slot = job.snapshot.slots[0]?.slot;
+    const upperStyle = path.join(store.dataDir, 'media', 'packshot-style', 'upper.png');
+    if (isPackshot && refs.garments.length && (slot === 'top' || slot === 'layer') && fs.existsSync(upperStyle)) {
+      refs.packshotStyle = upperStyle;
+    }
+    const uniqueImages = [...refs.identity, ...refs.garments, ...(refs.packshotStyle ? [refs.packshotStyle] : [])];
     if (!isPackshot && !refs.identity.length) throw Error('Немає оригінального фото зовнішності — генерацію зупинено');
     const prompt = buildPrompt(job, resultFile, refs);
-    fs.writeFileSync(path.join(jobDir, 'references.json'), JSON.stringify({ identity: refs.identity, garments: refs.garments, contract: job.snapshot.identity }, null, 2));
+    fs.writeFileSync(path.join(jobDir, 'references.json'), JSON.stringify({ ...refs, contract: job.snapshot.identity }, null, 2));
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
     const settings = db0.settings;
     const args = [
@@ -383,13 +401,16 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     let image = fs.existsSync(resultFile) ? resultFile : null;
     let note = reply.notes;
     // The global fallback is unsafe with parallel jobs, so only use it when this job ran alone.
-    if (!image && !job.snapshot.identity && reply.status !== 'error' && active.size <= 1) {
+    if (!isPackshot && !image && !job.snapshot.identity && reply.status !== 'error' && active.size <= 1) {
       const fallback = newestGeneratedSince(started);
       if (fallback) {
         fs.copyFileSync(fallback, resultFile);
         image = resultFile;
         note = `${note ?? ''} (зображення знайдено в ~/.codex/generated_images)`.trim();
       }
+    }
+    if (isPackshot && (reply.status !== 'done' || exit.code !== 0 || (image && detectImageType(fs.readFileSync(image)) !== 'png'))) {
+      image = null;
     }
 
     await store.mutate((db: DB) => {
@@ -401,7 +422,9 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         j.stateNote =
           reply.reason ||
           exit.err ||
-          (exit.code === 0 ? 'Codex завершив роботу, але не зберіг зображення' : `Codex завершився з кодом ${String(exit.code)} — див. журнал`);
+          (exit.code === 0
+            ? isPackshot ? 'Не отримано готового PNG для обкладинки' : 'Codex завершив роботу, але не зберіг зображення'
+            : `Codex завершився з кодом ${String(exit.code)} — див. журнал`);
         return;
       }
       if (isPackshot) {

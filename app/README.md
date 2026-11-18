@@ -34,7 +34,7 @@ The site runs as the user LaunchAgent `ai.deus.capfashion` (`~/Library/LaunchAge
   - a single person full length or face becomes a base photo, with the agent's standard check;
   - garments become candidates marked «нова», or extra evidence on an existing unconfirmed candidate (model match or the same title);
   - a label close-up fills only empty brand/size/composition.
-  Identity is never inferred by comparing faces, and confirmed items are never changed. A packshot is queued for each new item.
+  Identity is never inferred by comparing faces, and confirmed items are never changed by recognition. A packshot is queued for each new item, or for a photographed item that lacks a cover.
 - **Підібрати образи** (`POST /api/analyze {prompt}`) asks Codex to build 4–6 outfits from existing items only. The result is saved as a capsule of kind `selection` («Підбірки»); ids outside the wardrobe are dropped.
 - Interactive jobs (intake, analyzer, try-on) run before batch packshots.
 - Every look should show the owner: new selections queue a try-on per look, and `POST /api/renders/missing` queues one for every look without a render (needs base photos). Covers show the render or an explicit generating/queued state; capsule pages list their items separately.
@@ -75,7 +75,7 @@ API responses and static assets are gzip-compressed (state ≈ 28 KB on the wire
 
 ## Packshots and concept images
 
-Wardrobe items get a clean catalogue image generated from their original photos (`POST /api/packshots`, `{all:true}` or `itemIds`). Desired item types (needs) get a concept image (`{allNeeds:true}`). Both are labelled as generative reconstructions and stored apart from the originals in `media/packshots/`. Capsule and look covers use these as a flat-lay until a try-on exists. Jobs share the queue; `settings.concurrency` (default 2) controls how many Codex runs execute at once.
+New wardrobe uploads automatically get a three-dimensional catalogue image on white. Tops and bottoms use an invisible mannequin. Footwear and accessories keep their natural shape and visible depth. Upper garments can use the private file `media/packshot-style/upper.png` under the data directory as a lighting and volume example. Original item photos supply the garment itself. Existing covers can be regenerated with «Нове фото» or `POST /api/packshots` (`{all:true}` or `itemIds`). Desired item types get a concept image (`{allNeeds:true}`). Only a successful PNG from the job's own output path can replace a cover. Both generated image types are stored apart from originals in `media/packshots/`. Capsule and look covers use them in a collage until a try-on exists. Jobs share the queue, with two concurrent workers by default.
 
 ## iPhone access (Tailscale)
 

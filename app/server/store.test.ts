@@ -7,7 +7,7 @@ import type { DB } from './schema.ts';
 import { SCHEMA_VERSION, emptySlots, validateDb } from './schema.ts';
 import { createStore } from './store.ts';
 import { stateView } from './state-view.ts';
-import { createJob, dispatch, queueMissingRenders, snapshotSlots } from './routes.ts';
+import { createJob, dispatch, queueMissingRenders, snapshotSlots, upload } from './routes.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
 import { analyzePrompt, applyAnalyze, applyIntake, intakePrompt } from './analysis.ts';
@@ -17,8 +17,10 @@ import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
 import { isComplete, missingInfo, purchaseRanking } from '../src/lib.ts';
+import { shopSearchPrompt } from './shop-search.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
+const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
 
 test('hidden personal attempts stay in history but never reach site covers, gallery or result links', () => {
   const db = fixture();
@@ -252,9 +254,10 @@ test('prompt carries the frozen outfit and the image standard', () => {
 test('runner processes packshot and try-on jobs in parallel without chat (A13)', async () => {
   const { dir, store, call } = setup();
   const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(path.join(dir, 'fixture.png'), SAMPLE_PNG);
   fs.writeFileSync(
     fake,
-    '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\nsleep 0.3\nprintf "PNG" > "$d/result.png"\necho \'{"status":"done","notes":"fake"}\' > "$o"\n',
+    '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\nsleep 0.3\ncp "$d/../../fixture.png" "$d/result.png"\necho \'{"status":"done","notes":"fake"}\' > "$o"\n',
     { mode: 0o755 },
   );
   const runner = createRunner(store, dir, fake);
@@ -292,9 +295,13 @@ test('failed Codex run becomes an explained error and retry links (A13, A06)', a
 test('intake recognises garments into candidates and queues their packshots', async () => {
   const { dir, store } = setup();
   const fake = path.join(dir, 'fake-codex.sh');
+  const style = path.join(dir, 'media', 'packshot-style', 'upper.png');
+  fs.mkdirSync(path.dirname(style), { recursive: true });
+  fs.writeFileSync(style, SAMPLE_PNG);
+  fs.writeFileSync(path.join(dir, 'fixture.png'), SAMPLE_PNG);
   fs.writeFileSync(
     fake,
-    '#!/bin/sh\nschema=""\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; --output-schema) schema="$2"; shift;; esac; shift; done\ncat >/dev/null\nif [ -n "$schema" ]; then echo \'{"status":"done","reason":"","garments":[{"title":"Біла оксфорд-сорочка","category":"shirts","color":"білий","notes":"комір на ґудзиках","duplicateOf":""},{"title":"Темно-сині чіноси","category":"trousers","color":"темно-синій","notes":"","duplicateOf":"W-1"}]}\' > "$o"; else printf PNG > "$d/result.png"; echo \'{"status":"done"}\' > "$o"; fi\n',
+    '#!/bin/sh\nschema=""\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; --output-schema) schema="$2"; shift;; esac; shift; done\ncat >/dev/null\nif [ -n "$schema" ]; then echo \'{"status":"done","reason":"","garments":[{"title":"Біла оксфорд-сорочка","category":"shirts","color":"білий","notes":"комір на ґудзиках","duplicateOf":""},{"title":"Темно-сині чіноси","category":"trousers","color":"темно-синій","notes":"","duplicateOf":"W-1"}]}\' > "$o"; else cp "$d/../../fixture.png" "$d/result.png"; echo \'{"status":"done"}\' > "$o"; fi\n',
     { mode: 0o755 },
   );
   await store.mutate((db) => {
@@ -312,6 +319,43 @@ test('intake recognises garments into candidates and queues their packshots', as
   assert.ok(db.items.find((i) => i.id === 'W-1')!.status !== 'confirmed', 'no automatic confirmation');
   assert.match(job.stateNote ?? '', /нових речей: 1/);
   assert.ok(job.createdItemIds!.every((id) => db.items.find((i) => i.id === id)!.packshotId), 'packshots generated for new items');
+  const shirtJob = db.jobs.find((j) => j.itemId === shirt.id)!;
+  const shirtPrompt = fs.readFileSync(path.join(dir, 'jobs', shirtJob.id, 'prompt.txt'), 'utf8');
+  assert.ok(shirtPrompt.includes(JSON.stringify([path.join(dir, 'assets/photos/a.jpeg'), style])));
+  assert.match(shirtPrompt, /LAST image is a studio style reference only/);
+  assert.match(shirtPrompt, /rounded shoulders/);
+  const chinosJob = db.jobs.find((j) => j.itemId === 'W-1')!;
+  assert.equal(chinosJob.state, 'done', 'a matching upload fills a missing cover');
+  assert.match(fs.readFileSync(path.join(dir, 'jobs', chinosJob.id, 'prompt.txt'), 'utf8'), /shaped waistband/);
+});
+
+test('item photo uploads fill a missing cover once and rejected outputs preserve the current cover', async () => {
+  const { dir, store, call } = setup();
+  const ctx = { store, projectRoot: dir, drain: () => {} };
+  const params = new URLSearchParams({ kind: 'item', item: 'W-2' });
+  await upload(ctx, params, SAMPLE_PNG, 'first.png');
+  await upload(ctx, params, SAMPLE_PNG, 'second.png');
+  assert.equal(store.read().jobs.filter((j) => j.itemId === 'W-2').length, 1);
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(path.join(dir, 'fixture.png'), SAMPLE_PNG);
+  const script = (reply: string, save: string) => `#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in -C) d="$2"; shift;; -o) o="$2"; shift;; esac; shift; done\ncat >/dev/null\n${save}\nprintf '%s' '${reply}' > "$o"\n`;
+  const copyPng = 'cp "$d/../../fixture.png" "$d/result.png"';
+  fs.writeFileSync(fake, script('{"status":"done"}', copyPng), { mode: 0o755 });
+  const runner = createRunner(store, dir, fake);
+  await runner.drain();
+  const packshotId = store.read().items.find((i) => i.id === 'W-2')!.packshotId;
+  assert.ok(packshotId);
+  await upload(ctx, params, SAMPLE_PNG, 'third.png');
+  assert.equal(store.read().jobs.filter((j) => j.itemId === 'W-2').length, 1, 'evidence does not replace an existing cover');
+
+  for (const [reply, save] of [['{"status":"error","reason":"Still flat"}', copyPng], ['{"status":"done"}', 'printf "not an image" > "$d/result.png"']]) {
+    fs.writeFileSync(fake, script(reply, save));
+    const retry = await call('POST', '/api/packshots', { itemIds: ['W-2'] });
+    await runner.drain();
+    const db = store.read();
+    assert.equal(db.jobs.find((j) => j.id === retry.jobIds[0])!.state, 'error');
+    assert.equal(db.items.find((i) => i.id === 'W-2')!.packshotId, packshotId);
+  }
 });
 
 test('analyzer keeps only owned items and complete looks (selection)', async () => {
@@ -914,7 +958,14 @@ test('«Знайти» searches the shops for a recommendation and saves dated v
   const { dir, store, call } = setup();
   const prof = await call('PATCH', '/api/profile', { rev: store.read().profile.rev, brands: ['Levi’s', ' Tom Tailor ', 'Levi’s', ''] });
   assert.deepEqual(prof.brands, ['Levi’s', 'Tom Tailor']);
+  const shops = await call('PATCH', '/api/profile', { rev: prof.rev, location: ' Tower Center Rijeka ', stores: ['Buzz Sneakers', ' Buzz Sneakers ', ''] });
+  assert.equal(shops.location, 'Tower Center Rijeka');
+  assert.deepEqual(shops.stores, ['Buzz Sneakers']);
   const job = await call('POST', '/api/needs/N-1/search', {});
+  const prompt = shopSearchPrompt(store.read(), job);
+  assert.match(prompt, /«Tower Center Rijeka»/);
+  assert.match(prompt, /Owner's stores \(check these first\): Buzz Sneakers/);
+  assert.match(prompt, /Levi’s, Tom Tailor/);
   assert.equal(job.kind, 'shopsearch');
   await assert.rejects(call('POST', '/api/needs/N-1/search', {}), /Пошук уже йде/);
   const fake = path.join(dir, 'fake-codex.sh');

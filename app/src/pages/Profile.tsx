@@ -209,10 +209,10 @@ function ChipsField({ label, values, placeholder, onSave }: { label: string; val
       <span>{label}</span>
       <div className="chips">
         {values.map((v) => (
-          <b key={v} className="chip brand">
+          <span key={v} className="chip brand">
             {v}
             <button aria-label={`Прибрати ${v}`} onClick={() => onSave(values.filter((x) => x !== v))}><X size={12} /></button>
-          </b>
+          </span>
         ))}
         <form className="brand-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
           <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={placeholder} />

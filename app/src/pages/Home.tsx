@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Check, Loader2, Sparkles, ThumbsDown, ThumbsUp, Wand2 } from 'lucide-react';
-import type { Capsule, DB, Job } from '../api.ts';
-import { api, thumb, uploadFile } from '../api.ts';
+import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import type { Capsule } from '../api.ts';
+import { api, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
-import { Badge, LookArt, RenderPlaceholder } from '../components/ui.tsx';
+import { LookArt, RenderPlaceholder } from '../components/ui.tsx';
 import { capsuleLooks, distinctLooks, rankCapsules, readyLine } from '../lib.ts';
 import { isCapsuleHidden } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
@@ -50,7 +50,7 @@ export function useIntake() {
         setBusy(true);
         await act(async () => {
           for (const f of files) await uploadFile(f, { kind: 'intake' });
-        }, files.length > 1 ? `${files.length} фото в обробці — сайт сам розбереться` : 'Фото в обробці — сайт сам розбереться');
+        }, files.length > 1 ? `Додано фото: ${files.length}` : 'Фото додано');
         setBusy(false);
         if (input.current) input.current.value = '';
       }}
@@ -59,45 +59,10 @@ export function useIntake() {
   return { pick, busy, field };
 }
 
-function processing(db: DB) {
-  const recent = Date.now() - 15 * 60 * 1000;
-  return db.jobs
-    .filter(
-      (j) =>
-        (j.kind === 'intake' || j.kind === 'analyze') &&
-        // Failures are not the owner's job to manage (owner, 17.11): only work in progress and fresh upload results show.
-        (j.state === 'queued' || j.state === 'running' || (j.kind === 'intake' && j.state === 'done' && new Date(j.finishedAt ?? 0).getTime() > recent)),
-    )
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 6);
-}
-
-function ProcCard({ j }: { j: Job }) {
-  const db = useDb();
-  const photo = j.inputPhotoIds?.[0] ? db.photos.find((p) => p.id === j.inputPhotoIds![0]) : undefined;
-  const done = j.state === 'done';
-  const href = j.kind === 'analyze' ? (j.capsuleId ? `/capsules/${j.capsuleId}` : '/capsules?tab=selections') : photo?.kind === 'base' ? '/profile/base' : (j.createdItemIds?.[0] ?? j.attachedItemIds?.[0]) ? `/wardrobe/${j.createdItemIds?.[0] ?? j.attachedItemIds![0]}` : '/wardrobe';
-  return (
-    <a className="proc-card" href={href}>
-      <div className="img">
-        {photo ? <img src={thumb(photo.path, 300)} alt="" /> : <Wand2 size={26} />}
-        <span className="st">
-          <Badge tone={done ? 'ok glass' : 'glass'}>
-            {done ? <Check size={11} /> : <Loader2 size={11} className="spin" />}
-            {done ? 'готово' : 'розбираю'}
-          </Badge>
-        </span>
-      </div>
-      <span className="t">{done ? (j.stateNote || 'Готово') : j.kind === 'analyze' ? 'Складаю образи…' : 'Розбираю фото…'}</span>
-    </a>
-  );
-}
-
 export function HomePage() {
   const db = useDb();
   const { act } = useApp();
   const [text, setText] = useState('');
-  const procs = processing(db);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const capsules = rankCapsules(db, shown.filter((c) => c.kind !== 'selection'));
@@ -135,13 +100,6 @@ export function HomePage() {
       </section>
 
       <NextPurchase />
-
-      {procs.length > 0 && (
-        <>
-          <div className="section-head"><h2 className="h2">В обробці</h2></div>
-          <div className="proc">{procs.map((j) => <ProcCard key={j.id} j={j} />)}</div>
-        </>
-      )}
 
       {selections.length > 0 && (
         <>

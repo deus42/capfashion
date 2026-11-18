@@ -138,7 +138,7 @@ export function LookPage({ id }: { id: string }) {
         </div>
         <div className="actions">
           <RateButtons kind="look" target={look} />
-          <button className="icon-btn" aria-label="Перейменувати образ" onClick={() => setEditing(true)}><Pencil size={14} /></button>
+          <button className="icon-btn" aria-label="Редагувати образ" onClick={() => setEditing(true)}><Pencil size={14} /></button>
         </div>
       </div>
 

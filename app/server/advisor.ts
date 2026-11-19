@@ -76,6 +76,13 @@ export const MAX_OPEN_PROPOSALS = 3;
 export const ownerChosen = (i: Item) => i.origin === 'manual' || i.origin === 'purchase' || Boolean(i.purchasedFromProduct);
 
 const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+/** Two names for the same piece: «Пряме вовняне пальто кольору кемел» ≈ «Вовняне пальто кольору кемел» (most words shared). */
+export function sameTitle(a: string, b: string) {
+  const wa = new Set(norm(a).split(' ').filter((w) => w.length > 2));
+  const wb = new Set(norm(b).split(' ').filter((w) => w.length > 2));
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  return norm(a) === norm(b) || (shared >= 2 && shared / Math.min(wa.size, wb.size) >= 0.75);
+}
 /** Titles already planned, bought, found or declined by the owner: a new advisor purchase never repeats them. */
 const plannedTitles = (db: DB) => new Set([...db.needs.filter((n) => n.status === 'open' || n.status === 'covered').map((n) => norm(n.title)), ...(db.declinedNeeds ?? []).map(norm)]);
 
@@ -358,7 +365,7 @@ export function acceptSuggestion(db: DB, s: Suggestion) {
     // Pieces to buy (search, owner 19.11) become purchases only now; an open purchase of the same name is reused.
     const slots = JSON.parse(JSON.stringify(l.slots)) as Slots;
     for (const b of l.buy ?? []) {
-      let need = db.needs.find((n) => n.status === 'open' && norm(n.title) === norm(b.title));
+      let need = db.needs.find((n) => n.status === 'open' && n.category === b.category && sameTitle(n.title, b.title));
       if (!need) {
         need = { id: newId('N'), rev: 1, title: b.title, category: b.category, priority: 'optional', description: '', why: `Для образу «${l.name}»`, fitCheck: '', status: 'open', origin: 'agent', sourceNote: `Пошук нових образів, додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
         db.needs.push(need);

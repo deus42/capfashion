@@ -91,6 +91,7 @@ export function discoverPrompt(db: DB, job: Job) {
     required.length ? `Every look MUST contain these owned pieces: ${required.join(', ')}.` : '',
     `Return up to ${MAX_SEARCH_RESULTS} looks. Each: capsuleId (one of the capsules below), a short elegant Ukrainian name, why (one Ukrainian sentence: the idea of the look), owned item ids per slot (top, layer, bottom, shoes, accessories — at most 1 per slot, 2 accessories), and buy: at most 2 pieces the owner does not have that make the look work (slot, a short Ukrainian name with colour and material, category). Prefer owned pieces; a look needs a top or an outer layer, a bottom and shoes (owned or to buy).`,
     refused.length ? `Pieces the owner keeps refusing — never use them: ${refused.join(', ')}.` : '',
+    `Pieces already planned to buy — when a look needs one of them, use its exact name in buy: ${db.needs.filter((n) => n.status === 'open').map((n) => n.title).join('; ') || '—'}.`,
     '',
     'Capsules (id | name | periods | brief):',
     caps.map((c) => `${c.id} | ${c.name} | ${(c.periods ?? []).map((p) => PERIOD_LABEL[p]).join(', ') || '—'} | ${c.description.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n'),

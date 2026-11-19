@@ -18,7 +18,7 @@ import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts'
 import { looksNeedingRender } from '../src/render-need.ts';
 import { coverForLook, currentCover, currentPeriod, indoorOnly, purchasePlan, todayLooks, openSuggestions, storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, applyStoreFind, shopSearchPrompt, storeFindPrompt, storesToFind } from './shop-search.ts';
-import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
+import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, sameTitle, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
 import { applyDiscover, discoverPrompt } from './discover.ts';
 
@@ -1567,4 +1567,10 @@ test('«Нові»: a search gives cards in a capsule\'s style, may add up to tw
   assert.equal(db.needs.length, before + 1);
   assert.deepEqual(look.slots.layer, [{ kind: 'need', id: need.id }]);
   assert.equal(validateDb(db), null);
+});
+
+test('a piece to buy reuses an open purchase with nearly the same name', () => {
+  assert.equal(sameTitle('Пряме вовняне пальто кольору кемел', 'Вовняне пальто кольору кемел'), true);
+  assert.equal(sameTitle('Темно-коричневі челсі із зернистої шкіри', 'Шкіряні черевики челсі'), false);
+  assert.equal(sameTitle('Прямі лляні штани кольору екрю', 'Бежеві / пісочні чіноси'), false);
 });

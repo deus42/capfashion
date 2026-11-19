@@ -408,10 +408,12 @@ function Stores() {
   const here = shopLocation(db);
   const rows = shopStores(db)
     .map((s) => {
-      const name = s.name.replace(/\s+(croatia|hrvatska|hr)$/i, '');
+      const name = s.name.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '');
       const map = (q: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
       if (s.atPlace && here) return { s, name, line: here.split(',')[0], href: map(`${name} ${here}`), rank: 0 };
-      if (s.place && !s.place.online) return { s, name, line: `${s.place.place}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`), rank: 1 + (s.place.km ?? 999) / 1000 };
+      // A store at the owner's own shopping place comes with the others there, distance or not.
+      const atHere = Boolean(here) && s.place?.place.toLowerCase().includes(here.split(',')[0].toLowerCase().replace(/\s+rijeka$/, ''));
+      if (s.place && !s.place.online) return { s, name, line: `${s.place.place}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`), rank: atHere ? 0.5 : 1 + (s.place.km ?? 999) / 1000 };
       if (s.place?.online) return { s, name, line: 'лише онлайн', href: s.place.url ?? (s.host ? `https://${s.host}` : undefined), rank: 3 };
       return { s, name, line: '', href: undefined, rank: 4 };
     })

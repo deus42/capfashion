@@ -363,7 +363,7 @@ export const shopLocation = (db: DB) => db.profile.location ?? DEFAULT_LOCATION;
 
 // «Магазини» (owner, 19.11): the shops of the found products and where their nearest store is.
 /** One key per shop: «Levi’s Croatia» and «Levi’s Hrvatska» are the same shop. */
-export const storeKey = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\b(croatia|hrvatska|hr|online|shop|store|eu)\b/g, ' ').replace(/\s+/g, ' ').trim();
+export const storeKey = (name: string) => name.replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\b(croatia|hrvatska|hr|online|shop|store|eu)\b/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** Shops of the found products, once each, with their known place (a shop at the owner's place counts as known). */
 export function shopStores(db: DB) {

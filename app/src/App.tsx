@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Camera, House, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
+  House, ImagePlus, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
 import { Img, SpanBar } from './components/ui.tsx';
@@ -80,6 +80,10 @@ export default function App() {
         <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
         <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
         <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
+        <button type="button" className="rail-item rail-upload" aria-label="Додати фото" title="Додати фото" onClick={intake.pick} disabled={intake.busy}>
+          {intake.busy ? <Loader2 size={ic} className="spin" /> : <ImagePlus size={ic} />}
+          <span>Додати фото</span>
+        </button>
         <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
         <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} />
         <div className="rail-spacer" />
@@ -87,15 +91,12 @@ export default function App() {
           {avatar ? <Img path={avatar.path} w={120} /> : <User size={18} />}
         </a>
       </nav>
+      {intake.field}
       <div className="frame">
         {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
           <a href="/home" className="wordmark m-only">Cap Fashion</a>
           <div className="grow" />
-          <button className="btn primary sm" onClick={intake.pick} disabled={intake.busy}>
-            {intake.busy ? <Loader2 size={14} className="spin" /> : <Camera size={14} />} Додати фото
-          </button>
-          {intake.field}
           <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}
           </a>

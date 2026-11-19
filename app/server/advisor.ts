@@ -6,7 +6,7 @@ import type { DB, Item, Job, Need, Season, SlotRef, Slots, Suggestion } from './
 import { CATEGORIES, SEASONS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
-import { SCORE_SCALE, SLOT_CATEGORIES, hasPieces, isComplete, isEyewear, itemUsage, openSuggestions, siteLooks, weakPiece } from '../src/lib.ts';
+import { SCORE_SCALE, SLOT_CATEGORIES, currentPeriod, hasPieces, isComplete, isEyewear, itemUsage, openSuggestions, siteLooks, weakPiece } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../src/rating.ts';
 import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 import { alreadySeen, refusedPieces } from '../src/look-memory.ts';
@@ -136,8 +136,10 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     'Same-look rule (the owner\'s): two outfits are the SAME look when identical or different by only one piece. Every new outfit must be a different look from each other, from every listed look and from every rejected outfit.',
     'Return status "error" only if the wardrobe cannot be read.',
     '',
-    'Capsules (id | name | season | kind):',
-    capsules.map((c) => `${c.id} | ${c.name} | ${c.season} | ${c.kind ?? 'capsule'}`).join('\n'),
+    `Today: ${new Date().toISOString().slice(0, 10)}, current weather period: ${currentPeriod()}.`,
+    'Capsules are distinct FASHION capsules (owner, 19.11): every new outfit must fit its capsule\'s aesthetic, palette and weather periods in the brief.',
+    'Capsules (id | name | season | periods | kind | brief):',
+    capsules.map((c) => `${c.id} | ${c.name} | ${c.season} | ${(c.periods ?? []).join('+') || '—'} | ${c.kind ?? 'capsule'} | ${c.description.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n'),
     '',
     'Looks shown on the site (id | capsule | name | pieces):',
     looks.map((l) => `${l.id} | ${l.capsuleId ?? '—'} | ${l.name}${l.favorite ? ' | LIKED' : ''}${currentLookScore(l) !== null ? ` | score ${currentLookScore(l)}` : ''} | ${piecesLine(db, l.slots)}`).join('\n'),

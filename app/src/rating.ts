@@ -26,7 +26,7 @@ export const sameLookKeys = (a: Set<string>, b: Set<string>) => pieceDifference(
 export const sameLook = (a: Pick<Look, 'slots'>, b: Pick<Look, 'slots'>) => sameLookKeys(lookKeys(a), lookKeys(b));
 
 type RatedDb = Pick<DB, 'looks' | 'capsules'>;
-export type CapsuleView = Pick<Capsule, 'id' | 'name' | 'lookIds' | 'favorite' | 'disliked' | 'redirectCapsuleIds'>;
+export type CapsuleView = Pick<Capsule, 'id' | 'name' | 'lookIds' | 'favorite' | 'disliked' | 'redirectCapsuleIds' | 'periods'>;
 export const isCapsuleArchived = (capsule: CapsuleView) => capsule.redirectCapsuleIds !== undefined;
 const hiddenCache = new WeakMap<object, Set<string>>();
 

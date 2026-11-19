@@ -17,6 +17,9 @@ export type SlotKey = (typeof SLOT_KEYS)[number];
 
 export const SEASONS = ['all', 'warm', 'transitional', 'cold'] as const;
 export type Season = (typeof SEASONS)[number];
+/** The five weather periods (owner, 19.11; seasonal spec): a fashion capsule belongs to one or more. */
+export const PERIODS = ['spring', 'summer', 'early-autumn', 'late-autumn', 'winter'] as const;
+export type Period = (typeof PERIODS)[number];
 
 export const JOB_STATES = ['queued', 'running', 'done', 'needs_data', 'error'] as const;
 export type JobState = (typeof JOB_STATES)[number];
@@ -257,6 +260,8 @@ export interface Capsule {
   kind?: 'capsule' | 'selection';
   name: string;
   season: Season;
+  /** Weather periods the capsule is for (owner, 19.11); shown as a quiet line above its name. */
+  periods?: Period[];
   description: string;
   situations: string[];
   favorite: boolean;

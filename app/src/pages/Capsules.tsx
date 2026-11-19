@@ -4,7 +4,7 @@ import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, autoCapsules, bestCapsule, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
+import { SEASON_LABEL, periodLine, autoCapsules, bestCapsule, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile, tileCovers } from './Home.tsx';
 
@@ -238,10 +238,11 @@ export function CapsuleDetail({ id }: { id: string }) {
       <div className="crumb"><a href={isSelection ? '/capsules?tab=selections' : '/capsules'}>{isSelection ? 'Підбірки' : 'Капсули'}</a></div>
       <div className="page-head">
         <div>
+          {capsule.periods?.length ? <span className="eyebrow-sm">{periodLine(capsule, true)}</span> : null}
           <h1>{capsule.name}</h1>
           {(readyLine(db, capsule) || capsuleRating(db, capsule) !== null) && <p className="miss" style={{ marginTop: 6 }}>{[readyLine(db, capsule), capsuleRating(db, capsule) !== null ? scoreLabel(capsuleRating(db, capsule)!) : ''].filter(Boolean).join(' · ')}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
-            {capsule.season !== 'all' && <Badge>{SEASON_LABEL[capsule.season]}</Badge>}
+            {capsule.season !== 'all' && !capsule.periods?.length && <Badge>{SEASON_LABEL[capsule.season]}</Badge>}
             {hidden && <Badge>приховано</Badge>}
             {capsule.situations.filter((s) => s.length <= 24).slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
           </div>

@@ -1,4 +1,4 @@
-import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Result, Season, SlotKey, SlotRef } from './api.ts';
+import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Period, Result, Season, SlotKey, SlotRef } from './api.ts';
 import { hiddenLookIds, isCapsuleHidden } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
 import { tooClose } from './look-memory.ts';
@@ -15,6 +15,16 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 };
 
 export const SEASON_LABEL: Record<Season, string> = { all: 'Усі сезони', warm: 'Тепло', transitional: 'Міжсезоння', cold: 'Холод' };
+
+/** The five weather periods (owner, 19.11), with Rijeka's months: Mar–May spring, Jun–Aug summer, Sep–Oct early autumn, Nov late autumn, Dec–Feb winter. */
+export const PERIOD_LABEL: Record<Period, string> = { spring: 'Весна', summer: 'Літо', 'early-autumn': 'Рання осінь', 'late-autumn': 'Пізня осінь', winter: 'Зима' };
+export const PERIOD_TEMP: Record<Period, string> = { spring: '10–20 °C', summer: 'від 20 °C', 'early-autumn': '12–20 °C', 'late-autumn': '5–12 °C', winter: '0–10 °C, дощ' };
+export function currentPeriod(date = new Date()): Period {
+  const m = date.getMonth() + 1;
+  return m >= 3 && m <= 5 ? 'spring' : m <= 8 && m >= 6 ? 'summer' : m === 9 || m === 10 ? 'early-autumn' : m === 11 ? 'late-autumn' : 'winter';
+}
+/** «Пізня осінь · Зима» on a tile; with temperatures on the capsule page. */
+export const periodLine = (c: { periods?: Period[] }, temps = false) => (c.periods ?? []).map((p) => (temps ? `${PERIOD_LABEL[p]} ${PERIOD_TEMP[p]}` : PERIOD_LABEL[p])).join(' · ');
 
 export const SLOT_LABEL: Record<SlotKey, string> = { top: 'Верх', layer: 'Шар', bottom: 'Низ', shoes: 'Взуття', accessories: 'Аксесуари' };
 
@@ -375,9 +385,10 @@ export const rankCapsules = (db: DB, caps: Capsule[]) =>
   caps
     .map((c, i) => {
       const { done, total } = capsuleReady(db, c);
-      return { c, i, full: total > 0 && done === total, share: total ? done / total : 0 };
+      return { c, i, full: total > 0 && done === total, share: total ? done / total : 0, now: Boolean(c.periods?.includes(currentPeriod())) };
     })
-    .sort((a, b) => Number(b.c.favorite) - Number(a.c.favorite) || Number(b.full) - Number(a.full) || b.share - a.share || a.i - b.i)
+    // Capsules for the current weather period first (owner, 19.11), then liked, ready, …
+    .sort((a, b) => Number(b.now) - Number(a.now) || Number(b.c.favorite) - Number(a.c.favorite) || Number(b.full) - Number(a.full) || b.share - a.share || a.i - b.i)
     .map((e) => e.c);
 
 /**

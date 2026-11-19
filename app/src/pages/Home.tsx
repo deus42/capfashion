@@ -3,7 +3,7 @@ import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-reac
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
-import { autoCapsules, capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, openSuggestions, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { autoCapsules, capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, openSuggestions, periodLine, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
 import type { DB, Look } from '../api.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
@@ -39,6 +39,7 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
         {c.disliked && <span className="corner-r liked-mark" aria-label="Не подобається"><ThumbsDown size={14} fill="currentColor" /></span>}
       </div>
       <div>
+        {c.periods?.length ? <span className="eyebrow-sm tile-period">{periodLine(c)}</span> : null}
         <h3>{c.name}</h3>
         <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}{score !== null && ` · ${scoreLabel(score)}`}</div>
       </div>

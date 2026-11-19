@@ -16,7 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { capsuleCount, isComplete, itemPlacements, itemVerdict, missingInfo, purchaseRanking, usageLabel, wardrobeCapsule } from '../src/lib.ts';
+import { capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, adviceDue, advisePrompt, applyAdvice, itemsToRate, seenRevs } from './advisor.ts';
 
@@ -1334,4 +1334,30 @@ test('an item counts only in real capsules, not in «З моїх речей» or
   assert.deepEqual(capsules.map((c) => c.id).sort(), ['C-1', 'my-wardrobe'], 'the ready look also shows under «З моїх речей»');
   assert.equal(capsuleCount(capsules), 1);
   assert.equal(usageLabel(capsuleCount(capsules), looks.length), 'у 1 капсулі · 1 образ');
+});
+
+test('scores on cards: a look\'s only while current, a capsule\'s is the mean of its looks, written «8,6/10»', async () => {
+  const { store } = setup();
+  await store.mutate((d) => {
+    d.items.push({ id: 'W-T', rev: 1, category: 'tees', title: 'White tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at, rating: { score: 8, note: 'x', rev: 1, at } });
+    d.items.push({ id: 'W-G', rev: 1, category: 'accessories', title: 'Окуляри', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at, rating: { score: 9, note: 'x', rev: 1, at } });
+    const l = d.looks[0];
+    l.slots.top = [{ kind: 'item', id: 'W-T' }];
+    l.advice = { score: 8.6, why: 'x', version: l.version };
+  });
+  let db = store.read();
+  assert.equal(lookRating(db.looks[0]), 8.6);
+  assert.equal(capsuleRating(db, db.capsules[0]), 8.6);
+  assert.equal(scoreLabel(8.6), '8,6/10');
+  assert.equal(scoreLabel(9), '9/10');
+  assert.equal(itemRating(db.items.find((i) => i.id === 'W-T')!), 8);
+  assert.equal(itemRating(db.items.find((i) => i.id === 'W-G')!), null, 'glasses get no score');
+  await store.mutate((d) => {
+    const l = d.looks[0];
+    l.version += 1;
+    l.versions.push({ version: l.version, slots: l.slots, at });
+  });
+  db = store.read();
+  assert.equal(lookRating(db.looks[0]), null, 'a stale score is not shown');
+  assert.equal(capsuleRating(db, db.capsules[0]), null);
 });

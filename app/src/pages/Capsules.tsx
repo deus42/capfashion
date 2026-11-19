@@ -4,7 +4,7 @@ import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, autoCapsules, bestCapsule, capsuleLooks, distinctLooks, isBestLook, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
+import { SEASON_LABEL, autoCapsules, bestCapsule, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile, tileCovers } from './Home.tsx';
 
@@ -141,6 +141,7 @@ function LookCard({ look, mark = false }: { look: Look; mark?: boolean }) {
       <a href={`/looks/${look.id}`}>{mark && <span className={`eyebrow-sm best-mark${best ? '' : ' ghost'}`} aria-hidden={!best}>Найкращий</span>}<h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
+        {lookRating(look) !== null && <span className="score">{scoreLabel(lookRating(look)!)}</span>}
       </div>
     </div>
   );
@@ -206,7 +207,7 @@ export function CapsuleDetail({ id }: { id: string }) {
     const looks = capsuleLooks(db, ready.lookIds);
     return <div className="page">
       <div className="crumb"><a href="/capsules">Капсули</a></div>
-      <div className="page-head"><h1>{ready.name}</h1></div>
+      <div className="page-head"><div><h1>{ready.name}</h1>{capsuleRating(db, ready) !== null && <p className="miss" style={{ marginTop: 6 }}>{scoreLabel(capsuleRating(db, ready)!)}</p>}</div></div>
       <LookGrid looks={looks} mark={id !== BEST_CAPSULE_ID} />
     </div>;
   }
@@ -237,7 +238,7 @@ export function CapsuleDetail({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{capsule.name}</h1>
-          {readyLine(db, capsule) && <p className="miss" style={{ marginTop: 6 }}>{readyLine(db, capsule)}</p>}
+          {(readyLine(db, capsule) || capsuleRating(db, capsule) !== null) && <p className="miss" style={{ marginTop: 6 }}>{[readyLine(db, capsule), capsuleRating(db, capsule) !== null ? scoreLabel(capsuleRating(db, capsule)!) : ''].filter(Boolean).join(' · ')}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
             {capsule.season !== 'all' && <Badge>{SEASON_LABEL[capsule.season]}</Badge>}
             {hidden && <Badge>приховано</Badge>}

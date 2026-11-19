@@ -3,7 +3,7 @@ import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-reac
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
-import { autoCapsules, capsuleLooks, distinctLooks, isAutoCapsule, openSuggestions, rankCapsules, readyLine, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { autoCapsules, capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, openSuggestions, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
 import type { DB, Look } from '../api.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
@@ -28,6 +28,7 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
   const db = useDb();
   const looks = tileLooks(db, c);
   const shownLooks = cover ?? looks.slice(0, 4);
+  const score = capsuleRating(db, c);
   return (
     <a href={`/capsules/${c.id}`} className="capsule-card">
       <div className={`cover mosaic n${Math.max(1, shownLooks.length)}`}>
@@ -39,7 +40,7 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
       </div>
       <div>
         <h3>{c.name}</h3>
-        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}</div>
+        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}{score !== null && ` · ${scoreLabel(score)}`}</div>
       </div>
     </a>
   );

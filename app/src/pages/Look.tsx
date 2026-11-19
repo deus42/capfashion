@@ -5,11 +5,11 @@ import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, LookArt, Missing, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, resolveRef } from '../lib.ts';
+import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookRating, resolveRef, scoreLabel } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
-import { TermInfo } from './Glossary.tsx';
+import { InfoMark, TermInfo } from './Glossary.tsx';
 
 const SLOTS: SlotKey[] = ['layer', 'top', 'bottom', 'shoes', 'accessories'];
 const same = (a: SlotRef, b: SlotRef) => a.kind === b.kind && a.id === b.id;
@@ -134,6 +134,7 @@ export function LookPage({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{look.name}</h1>
+          {lookRating(look) !== null && <p className="item-verdict">{scoreLabel(lookRating(look)!)}{look.advice!.why && <InfoMark title={scoreLabel(lookRating(look)!)} text={look.advice!.why} />}</p>}
           {hidden && <div className="row wrap" style={{ marginTop: 12 }}><Badge>{look.disliked ? 'приховано' : capsule?.disliked ? 'капсулу приховано' : 'схожий на прихований'}</Badge></div>}
         </div>
         <div className="actions">

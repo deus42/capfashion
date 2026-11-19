@@ -104,7 +104,7 @@
 - ALWAYS minimal design: the fewest elements that do the job; no explanatory text, duplicate buttons/selectors, history, IDs or debug data on owner screens; editing and secondary actions behind one pencil modal. Before shipping a screen, remove everything that does not block the main task.
 - NEVER a panel that slides out from the side on click (drawer, slide-over, side sheet) for details or forms; open details as their own page (the wardrobe item is a page). The established layout stays: the left navigation rail (bottom bar on phones), filter columns and the gallery are not side panels. Global source: `/Users/deus/Projects/Vault-Tec/34 Preferences/Interface and frontend preferences.md`.
 - Change only what the owner asked; never redesign the layout or other screens on your own. When the request is unclear, ask the owner (in Ukrainian) before changing anything.
-- Everything visible: no accordions, collapsible sections or show-more toggles. Help is inline (info mark next to a term, hover or tap), never a separate page.
+- Keep content visible. The owner requested one accordion on Home for the advisor’s «Нові образи» (19 November 2026). Elsewhere avoid accordions, collapsible sections and show-more toggles. Help is inline (info mark next to a term, hover or tap), never a separate page.
 - Minimal screens: one look screen (best picture or the look's pieces, «Це я?», swap pieces, accessory options); no queue or background-processing controls — show a thin progress bar while work runs.
 - For UI work apply the shared `frontend-skill`; the rules above override any skill or template suggesting drawers or sidebars.
 

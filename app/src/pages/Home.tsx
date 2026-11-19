@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { ArrowRight, ChevronDown, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { JobEta, LookArt, LookCollage, Missing, RenderPlaceholder } from '../components/ui.tsx';
@@ -79,12 +79,16 @@ function Advice() {
     if (r?.href) go(r.href);
   };
   return (
-    <>
+    <details className="advice-group">
+      <summary>
+        <span className="h2">Нові образи <span className="count">{list.length}</span></span>
+        <ChevronDown size={18} aria-hidden="true" />
+      </summary>
       {list.map((s) => (
         <div key={s.id} className="next-buy advice-card">
           <span className="img"><LookCollage slots={s.looks[0].slots} max={4} /></span>
           <span className="txt">
-            <span className="eyebrow">{s.kind === 'capsule' ? `Нова капсула · ${s.looks.length} ${s.looks.length < 5 ? 'образи' : 'образів'}` : 'Новий образ'}</span>
+            {s.kind === 'capsule' && <span className="eyebrow">Нова капсула · {s.looks.length} {s.looks.length === 1 ? 'образ' : s.looks.length < 5 ? 'образи' : 'образів'}</span>}
             <span className="t">{s.name}</span>
             {s.why && <span className="miss">{s.why}</span>}
             <span className="row" style={{ gap: 8 }}>
@@ -94,7 +98,7 @@ function Advice() {
           </span>
         </div>
       ))}
-    </>
+    </details>
   );
 }
 

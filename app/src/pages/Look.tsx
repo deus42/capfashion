@@ -5,7 +5,7 @@ import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, LookArt, Missing, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookRating, resolveRef, scoreLabel } from '../lib.ts';
+import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookRating, lookVariants, resolveRef, scoreLabel } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
@@ -82,7 +82,8 @@ export function LookPage({ id }: { id: string }) {
   const cover = coverForLook(db, look);
   const stale = cover && cover.lookVersion !== look.version;
   const hidden = hiddenLookIds(db).has(look.id);
-  const siblings = capsule ? distinctLooks(db, capsuleLooks(db, capsule.lookIds)).filter((l) => l.id !== look.id) : [];
+  const variants = lookVariants(db, look);
+  const siblings = capsule ? distinctLooks(db, capsuleLooks(db, capsule.lookIds)).filter((l) => l.id !== look.id && !variants.some((v) => v.id === l.id)) : [];
   // The owner asked for a new picture: the slider runs until it arrives (queued or being made).
   const lookJobs = db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === look.id);
   const busy = lookJobs.some((j) => j.state === 'queued' || j.state === 'running');
@@ -207,6 +208,14 @@ export function LookPage({ id }: { id: string }) {
         </div>
       </div>
 
+      {variants.length > 0 && (
+        <>
+          <div className="section-head"><h2 className="h2">Варіанти <span className="count">{variants.length}</span></h2></div>
+          <div className="sib-strip">
+            {variants.map((l) => <SiblingCard key={l.id} look={l} />)}
+          </div>
+        </>
+      )}
       {siblings.length > 0 && (
         <>
           <div className="section-head"><h2 className="h2">{isSelection ? 'Ще в підбірці' : 'Ще в капсулі'} <span className="count">{siblings.length}</span></h2>{capsule && <a href={`/capsules/${capsule.id}`}>{isSelection ? 'Уся підбірка' : 'Уся капсула'}</a>}</div>

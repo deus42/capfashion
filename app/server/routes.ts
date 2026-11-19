@@ -754,7 +754,10 @@ on('POST', '/api/needs', (ctx, _p, b) =>
     const category = str(b.category) as Item['category'];
     if (!CATEGORIES.includes(category)) throw new HttpError(400, 'Вибери категорію');
     const at = now();
-    const need = { id: newId('N'), rev: 1, title: str(b.title, 200) || 'Нова потреба', category, priority: b.priority === 'core' ? ('core' as const) : ('optional' as const), description: str(b.description) ?? '', why: str(b.why) ?? '', fitCheck: str(b.fitCheck) ?? '', status: 'open' as const, origin: 'owner' as const, createdAt: at, updatedAt: at };
+    const need: Need = { id: newId('N'), rev: 1, title: str(b.title, 200) || 'Нова потреба', category, priority: b.priority === 'core' ? ('core' as const) : ('optional' as const), description: str(b.description) ?? '', why: str(b.why) ?? '', fitCheck: str(b.fitCheck) ?? '', status: 'open' as const, origin: 'owner' as const, createdAt: at, updatedAt: at };
+    // A purchase can be for a capsule («Для капсули: …», owner 19.11).
+    const forCapsule = str(b.forCapsule);
+    if (forCapsule) need.forCapsule = requireParentCapsule(db, forCapsule).id;
     db.needs.push(need);
     return need;
   }),

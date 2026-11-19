@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
 import { storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
-import { applyShopSearch, applyStoreFind, shopSearchPrompt, storesToFind } from './shop-search.ts';
+import { applyShopSearch, applyStoreFind, shopSearchPrompt, storeFindPrompt, storesToFind } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
 
@@ -1460,6 +1460,7 @@ test('«Магазини»: one row per shop, a shop at the owner\'s place is kn
   let db = store.read();
   assert.equal(storeKey('Levi’s Croatia'), storeKey('Levi’s Hrvatska'));
   assert.deepEqual(storesToFind(db).map((s) => s.key), [storeKey('Levi’s Croatia')], 'Zara is at the owner\'s place');
+  assert.match(storeFindPrompt(db), /Use live web search/, 'the worker may search the web');
   assert.deepEqual(await call('POST', '/api/stores/find'), { queued: true });
   assert.deepEqual(await call('POST', '/api/stores/find'), { queued: false }, 'one search at a time');
   await store.mutate((d) => void applyStoreFind(d, { status: 'done', reason: '', stores: [{ key: storeKey('Levi’s Croatia'), place: 'Arena Centar, Zagreb', km: 163.4, online: false, url: 'https://www.levi.com/HR/stores' }] }));

@@ -9,7 +9,8 @@ import { acceptSuggestion, dropReplacementsFor, keepItem, queueAdvice, rememberD
 import { looksNeedingRender } from '../src/render-need.ts';
 import { isEyewear } from '../src/lib.ts';
 import { productKey, queueStoreFind } from './shop-search.ts';
-import { tooClose } from '../src/look-memory.ts';
+import { tooClose, withBuys } from '../src/look-memory.ts';
+import { queueDiscover } from './discover.ts';
 import { sameIdentity } from './identity.ts';
 import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 
@@ -537,7 +538,7 @@ on('POST', '/api/suggestions/:id/accept', async (ctx, [id]) => {
     const s = findOr404(db.suggestions ?? [], id, 'Пропозиція');
     if (s.status !== 'open') throw new HttpError(409, 'Пропозицію вже розглянуто');
     // A look made meanwhile may already be this one (look memory, owner 19.11).
-    if (s.looks.some((l) => db.looks.some((x) => tooClose(db, l.slots, x.slots)))) throw new HttpError(409, 'Вже є схожий образ');
+    if (s.looks.some((l) => db.looks.some((x) => tooClose(db, withBuys(l.slots, l.buy), x.slots)))) throw new HttpError(409, 'Вже є схожий образ');
     const href = acceptSuggestion(db, s);
     queueAdvice(db, `Додано пропозицію: ${s.name}`);
     return { href };
@@ -1012,6 +1013,13 @@ on('POST', '/api/products/:id/unpurchase', async (ctx, [id]) => {
   });
   ctx.drain();
   return out;
+});
+
+// «Нові» (owner, 19.11): one search for new looks — the owner's words, a capsule and picked pieces are optional.
+on('POST', '/api/discover', async (ctx, _p, b) => {
+  const job = await ctx.store.mutate((db) => queueDiscover(db, { prompt: str(b.prompt, 400), capsuleId: str(b.capsuleId), itemIds: Array.isArray(b.itemIds) ? (b.itemIds as string[]) : [] }));
+  ctx.drain();
+  return job;
 });
 
 // «Магазини» (owner, 19.11): one web search for the shops whose nearest store is not known yet.

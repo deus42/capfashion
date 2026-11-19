@@ -80,11 +80,18 @@ export function tooClose(db: DB, a: Slots, b: Slots) {
   return sa !== null && sa === coreSignature(db, b);
 }
 
+/** A proposed look with its pieces to buy, as slots: each piece to buy stands in as a purchase by its name. */
+export function withBuys(slots: Slots, buy: { slot: keyof Slots; title: string }[] = []): Slots {
+  const out = JSON.parse(JSON.stringify(slots)) as Slots;
+  for (const b of buy) out[b.slot] = [...(out[b.slot] ?? []), { kind: 'need', id: `new:${b.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()}` }];
+  return out;
+}
+
 /** Every composition that ever existed on the site. */
 export function seenCompositions(db: DB): Slots[] {
   return [
     ...db.looks.flatMap((l) => [l.slots, ...l.versions.map((v) => v.slots)]),
-    ...(db.suggestions ?? []).flatMap((s) => s.looks.map((l) => l.slots)),
+    ...(db.suggestions ?? []).flatMap((s) => s.looks.map((l) => withBuys(l.slots, l.buy))),
     ...(db.lookMemory ?? []).map((m) => m.slots),
   ];
 }

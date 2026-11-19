@@ -4,16 +4,17 @@ import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, periodLine, autoCapsules, bestCapsule, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
+import { SEASON_LABEL, openSuggestions, periodLine, autoCapsules, bestCapsule, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile, tileCovers } from './Home.tsx';
+import { NewLooks } from './NewLooks.tsx';
 
 
 export function CapsulesPage() {
   const db = useDb();
   const { query } = useRoute();
   // The tab lives in the address, so links and Back switch it even while this page is open.
-  const tab = (['selections', 'looks', 'hidden'] as const).find((t) => t === query.get('tab')) ?? 'capsules';
+  const tab = (['new', 'selections', 'looks', 'hidden'] as const).find((t) => t === query.get('tab')) ?? 'capsules';
   const setTab = (t: typeof tab) => go(t === 'capsules' ? '/capsules' : `/capsules?tab=${t}`);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const ready = wardrobeCapsule(db);
@@ -29,7 +30,9 @@ export function CapsulesPage() {
   const hiddenCaps = db.capsules.filter((c) => !isCapsuleArchived(c) && isCapsuleHidden(db, c));
   const hiddenLooks = capsuleLooks(db, [...hiddenLookIds(db)]).filter((l) => !hiddenCaps.some((c) => c.lookIds.includes(l.id)));
   const hiddenCount = hiddenCaps.length + hiddenLooks.length;
-  const title = { capsules: 'Капсули', selections: 'Підбірки', looks: readyOnly ? WARDROBE_CAPSULE_NAME : 'Усі образи', hidden: 'Приховані' }[tab];
+  // With the «З моїх речей» filter on, the title stays «Усі образи»: the active button already says it.
+  const title = { capsules: 'Капсули', new: 'Нові', selections: 'Підбірки', looks: 'Усі образи', hidden: 'Приховані' }[tab];
+  const newCount = openSuggestions(db).length;
 
   return (
     <div className="page">
@@ -38,6 +41,7 @@ export function CapsulesPage() {
         <div className="actions">
           <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
             <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
+            <button className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>Нові <span className="faint">{newCount}</span></button>
             {(selections.length > 0 || tab === 'selections') && <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>Підбірки <span className="faint">{selections.length}</span></button>}
             <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{allLooks.length}</span></button>
             {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> Приховані <span className="faint">{hiddenCount}</span></button>}
@@ -51,7 +55,7 @@ export function CapsulesPage() {
           {hiddenCaps.length > 0 && <div className="capsule-grid" style={{ marginBottom: 30 }}>{hiddenCaps.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
           {hiddenLooks.length > 0 && <div className="look-grid">{hiddenLooks.map((l) => <LookCard key={l.id} look={l} />)}</div>}
         </>
-      ) : tab === 'looks' ? <LookGrid looks={filteredLooks} heading={false} /> : list.length === 0 ? (
+      ) : tab === 'new' ? <NewLooks /> : tab === 'looks' ? <LookGrid looks={filteredLooks} heading={false} /> : list.length === 0 ? (
         tab === 'selections' ? <Empty icon={<Sparkles />} title="Підбірок ще немає" /> : <Empty icon={<Sparkles />} title="Капсул ще немає" />
       ) : (
         <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>

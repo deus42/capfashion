@@ -20,6 +20,7 @@ import { coverForLook, currentCover, currentPeriod, indoorOnly, purchasePlan, to
 import { applyShopSearch, applyStoreFind, shopSearchPrompt, storeFindPrompt, storesToFind } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
+import { applyDiscover, discoverPrompt } from './discover.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
@@ -1529,4 +1530,41 @@ test('a fresh picture, «у приміщенні», today\'s looks and what a pu
   assert.equal(plan.fits, 1);
   assert.equal(plan.completes, 0);
   assert.deepEqual(plan.with?.others, ['Шарф']);
+});
+
+test('«Нові»: a search gives cards in a capsule\'s style, may add up to two pieces to buy, passes the look memory; «Додати» makes the purchases', async () => {
+  const { store, call } = setup();
+  const item = (id: string, category: 'tees' | 'shoes' | 'trousers' | 'knitwear', title: string, score = 7) =>
+    ({ id, rev: 1, category, title, status: 'confirmed' as const, photoIds: [], origin: 'candidate' as const, history: [], createdAt: at, updatedAt: at, rating: { score, note: 'x', rev: 1, at, scale: SCORE_SCALE } });
+  await store.mutate((d) => {
+    d.items.push(item('W-K', 'knitwear', 'Бордовий джемпер'), item('W-P', 'trousers', 'Вовняні штани'), item('W-S', 'shoes', 'Черевики'), item('W-WEAK', 'tees', 'Футболка з принтом', 4));
+    d.capsules[0].periods = ['late-autumn', 'winter'];
+  });
+  const job = await call('POST', '/api/discover', { prompt: 'пальто на прогулянку', capsuleId: 'C-1' });
+  await assert.rejects(call('POST', '/api/discover', {}), /Пошук уже йде/);
+  let db = store.read();
+  assert.match(discoverPrompt(db, db.jobs.find((j) => j.id === job.id)!), /The owner asks: пальто на прогулянку[\s\S]*C-1 \| Urban/);
+  const o = (name: string, top: string[], bottom: string[], shoes: string[], buy: { slot: string; title: string; category: string }[] = []) => ({ capsuleId: 'C-1', name, why: 'x', top, layer: [], bottom, shoes, accessories: [], buy });
+  await store.mutate((d) => void applyDiscover(d, d.jobs.find((j) => j.id === job.id)!, { status: 'done', reason: '', looks: [
+    o('Пальто й джемпер', ['W-K'], ['W-P'], ['W-S'], [{ slot: 'layer', title: 'Вовняне пальто кемел', category: 'outerwear' }]),
+    o('Зі слабкою', ['W-WEAK'], ['W-P'], ['W-S']),
+    o('Без низу', ['W-K'], [], ['W-S']),
+    o('Не та категорія', ['W-K'], ['W-S'], ['W-S']),
+    o('Майже те саме', ['W-K'], ['W-P'], ['W-S'], [{ slot: 'layer', title: 'Вовняне пальто кемел', category: 'outerwear' }, { slot: 'accessories', title: 'Шарф', category: 'accessories' }]),
+    o('Покупка не в той слот', ['W-K'], ['W-P'], ['W-S'], [{ slot: 'shoes', title: 'Пальто', category: 'outerwear' }]),
+  ] }));
+  db = store.read();
+  const open = db.suggestions!.filter((s) => s.status === 'open');
+  assert.deepEqual(open.map((s) => s.name), ['Пальто й джемпер'], 'weak pieces, missing bottom, wrong slots and near-copies are dropped');
+  assert.equal(open[0].source, 'search');
+  assert.deepEqual(open[0].looks[0].buy, [{ slot: 'layer', title: 'Вовняне пальто кемел', category: 'outerwear' }]);
+  // «Додати»: the piece to buy becomes a purchase and stands in the new look.
+  const before = db.needs.length;
+  const added = await call('POST', `/api/suggestions/${open[0].id}/accept`, {});
+  db = store.read();
+  const look = db.looks.find((l) => `/looks/${l.id}` === added.href)!;
+  const need = db.needs.find((n) => n.title === 'Вовняне пальто кемел')!;
+  assert.equal(db.needs.length, before + 1);
+  assert.deepEqual(look.slots.layer, [{ kind: 'need', id: need.id }]);
+  assert.equal(validateDb(db), null);
 });

@@ -1,7 +1,7 @@
 import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Period, Result, Season, SlotKey, SlotRef } from './api.ts';
 import { hiddenLookIds, isCapsuleHidden } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
-import { tooClose } from './look-memory.ts';
+import { tooClose, withBuys } from './look-memory.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   outerwear: 'Верхній одяг',
@@ -144,7 +144,7 @@ export const lookBusy = (db: DB, lookId: string) => db.jobs.some((j) => (j.kind 
 export const lookJob = (db: DB, lookId: string, includeQueued = false) =>
   db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && (j.state === 'running' || (includeQueued && j.state === 'queued'))).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
-const FALLBACK_SECONDS: Record<string, number> = { tryon: 140, packshot: 80, intake: 25, analyze: 60, shopsearch: 320, advise: 240, storefind: 240 };
+const FALLBACK_SECONDS: Record<string, number> = { tryon: 140, packshot: 80, intake: 25, analyze: 60, shopsearch: 320, advise: 240, storefind: 240, discover: 120 };
 
 /** How long a job of this kind usually takes here: the median of the last 20 finished ones (owner, 18.11). */
 export function expectedSeconds(db: DB, kind: Job['kind']) {
@@ -386,7 +386,7 @@ export function openSuggestions(db: DB) {
   const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title) && !weakPiece(i)).map((i) => i.id));
   const parents = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
   // A proposal that a look made meanwhile already covers is not shown (look memory, owner 19.11).
-  return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))) && !s.looks.some((l) => db.looks.some((x) => tooClose(db, l.slots, x.slots))));
+  return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))) && !s.looks.some((l) => db.looks.some((x) => tooClose(db, withBuys(l.slots, l.buy), x.slots))));
 }
 
 /** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */

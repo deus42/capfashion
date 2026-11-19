@@ -75,6 +75,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let href: string | undefined;
     let bad = false;
     for (const j of state.db.jobs) {
+      // A search for new looks says how it went, with a link to «Нові» (owner, 19.11).
+      if (j.kind === 'discover') {
+        if (j.state === 'queued' || j.state === 'running') uploads.current.add(j.id);
+        else if (uploads.current.delete(j.id)) {
+          notes.push(j.stateNote ?? 'Пошук завершено');
+          href ??= '/capsules?tab=new';
+          bad ||= j.state === 'error';
+        }
+        continue;
+      }
       if (j.kind !== 'intake') continue;
       if (j.state === 'queued' || j.state === 'running') uploads.current.add(j.id);
       else if (uploads.current.delete(j.id)) {
@@ -88,7 +98,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     if (notes.length) {
       const msg = notes.join(' · ');
-      toast(`Фото: ${msg}`, bad, href);
+      toast(href === '/capsules?tab=new' ? msg : `Фото: ${msg}`, bad, href);
     }
   }, [state, toast]);
 

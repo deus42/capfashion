@@ -91,7 +91,7 @@ function ItemPage({ item }: { item: Item }) {
       <div className="section-head">
         <h2 className="h2">Де використано <span className="count">{usageLabel(capsuleCount(capsules), looks.length)}</span></h2>
         {item.status !== 'inactive' && !isEyewear(item.title) && (
-          <button className="btn sm" onClick={() => void act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи — зʼявляться в «Підбірках»')}>
+          <button className="btn sm" onClick={async () => { const ok = await act(() => api('POST', '/api/discover', { itemIds: [item.id] }), 'Шукаю нові образи з цією річчю'); if (ok) go('/capsules?tab=new'); }}>
             <Sparkles size={13} /> Ще образ
           </button>
         )}
@@ -353,8 +353,11 @@ export function WardrobePage({ openId }: { openId?: string }) {
                   className="btn primary"
                   disabled={sel.length < 1}
                   onClick={async () => {
-                    const ok = await act(() => api('POST', '/api/analyze', { itemIds: sel }), 'Складаю образи з вибраних речей — зʼявляться в «Підбірках»');
-                    if (ok) stopMode();
+                    const ok = await act(() => api('POST', '/api/discover', { itemIds: sel }), 'Шукаю нові образи з вибраними речами');
+                    if (ok) {
+                      stopMode();
+                      go('/capsules?tab=new');
+                    }
                   }}
                 >
                   <Sparkles size={15} /> Доповнити {sel.length || ''}

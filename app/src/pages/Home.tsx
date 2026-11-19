@@ -71,7 +71,8 @@ function TodayLooks() {
 function Advice() {
   const db = useDb();
   const { act } = useApp();
-  const list = openSuggestions(db).slice(0, 2);
+  // The advisor's proposals; search results live in «Капсули → Нові».
+  const list = openSuggestions(db).filter((s) => s.source !== 'search').slice(0, 2);
   if (!list.length) return null;
   const add = async (id: string) => {
     const r = await act(() => api<{ href: string }>('POST', `/api/suggestions/${id}/accept`), 'Додано');
@@ -134,11 +135,12 @@ export function HomePage() {
   // Fashion capsules first (the current period leads), the automatic ones after them (owner, 19.11).
   const capsules = [...rankCapsules(db, shown.filter((c) => c.kind !== 'selection')), ...autoCapsules(db)];
   const covers = tileCovers(db, capsules);
-  const analyzeJob = db.jobs.find((j) => j.kind === 'analyze' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'analyze' && j.state === 'queued');
+  const analyzeJob = db.jobs.find((j) => j.kind === 'discover' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'discover' && j.state === 'queued');
   const analyzing = Boolean(analyzeJob);
 
   const analyze = async () => {
-    const ok = await act(() => api('POST', '/api/analyze', { prompt: text }), 'Аналізатор складає образи з твоїх речей');
+    // The same search as «Капсули → Нові» (owner, 19.11): results come there as cards «Ні / Додати».
+    const ok = await act(() => api('POST', '/api/discover', { prompt: text }), 'Шукаю — нові образи зʼявляться в «Нових»');
     if (ok) setText('');
   };
 

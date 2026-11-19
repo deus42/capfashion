@@ -243,7 +243,8 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
   // or anything within the closeness rule; never built around pieces the owner keeps refusing.
   const fresh2Slots: Slots[] = [];
   const refused = refusedPieces(db, hiddenLookIds(db));
-  const room = Math.max(0, MAX_OPEN_PROPOSALS - keep.filter((s) => s.status === 'open').length);
+  // Search results («Нові») do not take the advisor's places.
+  const room = Math.max(0, MAX_OPEN_PROPOSALS - keep.filter((s) => s.status === 'open' && s.source !== 'search').length);
   const fresh: Suggestion[] = [];
   const eyewear = new Set(db.items.filter((i) => isEyewear(i.title)).map((i) => i.id));
   const take = (o: Outfit) => {
@@ -272,7 +273,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
   const ordered = [...fresh.filter(forUnused), ...fresh.filter((s) => !forUnused(s))];
   let space = room;
   if (!space && ordered.length && forUnused(ordered[0])) {
-    const oldest = keep.filter((s) => s.status === 'open').sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    const oldest = keep.filter((s) => s.status === 'open' && s.source !== 'search').sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (oldest) {
       keep.splice(keep.indexOf(oldest), 1);
       space = 1;
@@ -354,7 +355,17 @@ function replacementNeed(item: Item, why: string, title: string, at: string): Ne
 export function acceptSuggestion(db: DB, s: Suggestion) {
   const at = now();
   const make = (l: Suggestion['looks'][number], capsuleId: string) => {
-    const look = { id: newId('L'), rev: 1, capsuleId, name: l.name, note: l.why, slots: l.slots, version: 1, versions: [{ version: 1, slots: l.slots, at }], favorite: false, origin: 'agent' as const, sourceNote: `Порадник (${s.jobId}), додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
+    // Pieces to buy (search, owner 19.11) become purchases only now; an open purchase of the same name is reused.
+    const slots = JSON.parse(JSON.stringify(l.slots)) as Slots;
+    for (const b of l.buy ?? []) {
+      let need = db.needs.find((n) => n.status === 'open' && norm(n.title) === norm(b.title));
+      if (!need) {
+        need = { id: newId('N'), rev: 1, title: b.title, category: b.category, priority: 'optional', description: '', why: `Для образу «${l.name}»`, fitCheck: '', status: 'open', origin: 'agent', sourceNote: `Пошук нових образів, додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
+        db.needs.push(need);
+      }
+      slots[b.slot] = [...slots[b.slot], { kind: 'need', id: need.id }];
+    }
+    const look = { id: newId('L'), rev: 1, capsuleId, name: l.name, note: l.why, slots, version: 1, versions: [{ version: 1, slots, at }], favorite: false, origin: 'agent' as const, sourceNote: `Порадник (${s.jobId}), додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
     db.looks.push(look);
     return look;
   };

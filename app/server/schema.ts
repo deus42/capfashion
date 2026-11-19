@@ -292,7 +292,7 @@ export interface SnapshotSlot {
 export interface Job {
   id: string;
   /** Missing kind means a try-on (records created before packshots). */
-  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch' | 'advise' | 'storefind';
+  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch' | 'advise' | 'storefind' | 'discover';
   lookId?: string;
   /** intake: uploaded photos to recognise. */
   inputPhotoIds?: string[];
@@ -403,7 +403,10 @@ export interface Suggestion {
   why: string;
   capsuleId?: string | null;
   season?: Season;
-  looks: { name: string; why: string; slots: Slots }[];
+  /** `buy`: pieces to buy for the look (search for new looks, owner 19.11) — they become purchases only on «Додати». */
+  looks: { name: string; why: string; slots: Slots; buy?: { slot: SlotKey; title: string; category: Category }[] }[];
+  /** «search»: a result of «Нові» (owner, 19.11); otherwise an advisor proposal. */
+  source?: 'search';
   jobId: string;
   createdAt: string;
   decidedAt?: string;

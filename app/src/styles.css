@@ -714,6 +714,10 @@ button.wtile { border: 0; background: none; padding: 0; font: inherit; color: in
 .capsule-card .tile-period { display: block; margin-bottom: 4px; }
 .today-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0 20px; }
 .today-grid .miss { justify-content: center; text-align: center; }
+.new-search { margin-bottom: 20px; }
+.new-search .bar { gap: 8px; }
+.new-card .miss { white-space: normal; display: block; }
+.new-card .card-foot { justify-content: flex-start; gap: 8px; }
 .store-list { display: grid; margin-bottom: 24px; }
 .store-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; color: var(--ink); }
 .store-row .store-place { color: var(--muted); font-size: 13.5px; text-align: right; }

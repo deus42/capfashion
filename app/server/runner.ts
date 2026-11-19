@@ -7,6 +7,7 @@ import { newId, now } from './store.ts';
 import { detectImageType, prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, lookPieces } from './analysis.ts';
 import { coverNeed, queueMissingItemPackshots, queueMissingRenders } from './routes.ts';
+import { DISCOVER_SCHEMA, applyDiscover, discoverPrompt } from './discover.ts';
 import { SHOP_SEARCH_SCHEMA, STORE_FIND_SCHEMA, applyShopSearch, applyStoreFind, fetchProductImage, queueStoreFind, shopSearchPrompt, storeFindPrompt } from './shop-search.ts';
 import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice, seenRevs } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
@@ -243,6 +244,9 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     } else if (job.kind === 'storefind') {
       prompt = storeFindPrompt(db0);
       fs.writeFileSync(schemaFile, JSON.stringify(STORE_FIND_SCHEMA));
+    } else if (job.kind === 'discover') {
+      prompt = discoverPrompt(db0, job);
+      fs.writeFileSync(schemaFile, JSON.stringify(DISCOVER_SCHEMA));
     } else if (job.kind === 'advise') {
       // The advisor sees the catalogue photos of the items it rates now (never personal photos).
       const dir = path.join(jobDir, 'items');
@@ -293,7 +297,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const j = db.jobs.find((x) => x.id === jobId)!;
       j.state = 'running';
       j.startedAt = now();
-      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'storefind' ? 'Шукаю найближчі магазини…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
+      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'storefind' ? 'Шукаю найближчі магазини…' : job.kind === 'discover' ? 'Шукаю нові образи…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
       j.logPath = path.relative(projectRoot, logFile);
     });
     const exit = await spawnCodex(args, prompt, jobDir, logFile);
@@ -321,6 +325,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         j.state = 'done';
         j.stateNote = applyAdvice(db, j, reply as never, adviseRevs.get(jobId));
         adviseRevs.delete(jobId);
+        return;
+      }
+      if (j.kind === 'discover') {
+        j.state = 'done';
+        j.stateNote = applyDiscover(db, j, reply as never);
         return;
       }
       if (j.kind === 'storefind') {
@@ -387,7 +396,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   async function runOne(jobId: string) {
     const db0 = store.read();
     const job = db0.jobs.find((j) => j.id === jobId)!;
-    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch' || job.kind === 'advise' || job.kind === 'storefind') return runAnalysis(jobId);
+    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch' || job.kind === 'advise' || job.kind === 'storefind' || job.kind === 'discover') return runAnalysis(jobId);
     const isPackshot = job.kind === 'packshot';
     if (!isPackshot && (db0.profile.identity?.disabledReason || job.snapshot.identity?.disabledReason)) throw Error(db0.profile.identity?.disabledReason || job.snapshot.identity!.disabledReason);
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
@@ -604,7 +613,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
         // Shop searches take minutes: they come after uploads and «Підібрати», one at a time, so a slot stays free.
         // The advisor is background text work: after try-ons, alongside packshots.
-        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'shopsearch' || k === 'storefind' ? 0.5 : k === 'packshot' || k === 'advise' ? 2 : 1);
+        const batch = (k?: string) => (k === 'intake' || k === 'analyze' || k === 'discover' ? 0 : k === 'shopsearch' || k === 'storefind' ? 0.5 : k === 'packshot' || k === 'advise' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
           // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.

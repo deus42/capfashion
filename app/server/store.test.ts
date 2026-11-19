@@ -23,6 +23,16 @@ import { MAX_OPEN_REPLACEMENTS, adviceDue, advisePrompt, applyAdvice, itemsToRat
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
 
+function sourceCropFixture(dir: string) {
+  const source = 'assets/photos/a.jpeg', crop = 'media/fixture-crop.png';
+  for (const file of [source, crop]) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), SAMPLE_PNG);
+  }
+  const sha256 = createHash('sha256').update(SAMPLE_PNG).digest('hex');
+  return { path: crop, sha256, source: { path: source, sha256 } };
+}
+
 test('hidden personal attempts stay in history but never reach site covers, gallery or result links', () => {
   const db = fixture();
   const result = { id: 'R-hide', jobId: 'J-hide', lookId: 'L-1', lookVersion: 1, imagePath: 'bad.png', tool: 'test', model: 'test', prompt: 'private prompt', sources: [], usedItemPhotos: true, review: 'rework' as const, favorite: false, createdAt: at, hiddenAt: at };
@@ -289,6 +299,13 @@ test('prompt carries the frozen outfit and the image standard', () => {
 
 test('runner processes packshot and try-on jobs in parallel without chat (A13)', async () => {
   const { dir, store, call } = setup();
+  const crop = sourceCropFixture(dir);
+  await store.mutate((db) => {
+    db.items[0].tryonReference = crop;
+    const look = db.looks[0];
+    look.slots.top = [];
+    look.versions[0].slots = look.slots;
+  });
   const fake = path.join(dir, 'fake-codex.sh');
   fs.writeFileSync(path.join(dir, 'fixture.png'), SAMPLE_PNG);
   fs.writeFileSync(
@@ -309,6 +326,8 @@ test('runner processes packshot and try-on jobs in parallel without chat (A13)',
   assert.equal(packshot.kind, 'packshot');
   assert.deepEqual(item.photoIds, ['P-1', 'P-2'], 'originals untouched');
   assert.equal(db.results.length, 1);
+  assert.equal(db.results[0].usedItemPhotos, true);
+  assert.deepEqual(db.results[0].sources, ['assets/photos/a.jpeg', crop.path]);
   assert.ok(db.jobs.every((j) => j.state === 'done'));
   const prompt = fs.readFileSync(path.join(dir, 'jobs', pk.jobIds[0], 'prompt.txt'), 'utf8');
   assert.match(prompt, /packshot/);
@@ -491,6 +510,7 @@ test('deleting capsule, look, item and photo cascades without dangling reference
 
 test('a new selection gets a try-on for every look; missing renders are queued once', async () => {
   const { dir, store, call } = setup();
+  const crop = sourceCropFixture(dir);
   const fake = path.join(dir, 'fake-codex.sh');
   fs.writeFileSync(
     fake,
@@ -502,6 +522,10 @@ test('a new selection gets a try-on for every look; missing renders are queued o
     db.items.push({ id: 'W-J', rev: 1, category: 'outerwear', title: 'Jacket', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
     db.items.push({ id: 'W-T', rev: 1, category: 'tees', title: 'Tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
     db.profile.basePhotoIds = ['P-1'];
+    for (const item of db.items) {
+      item.photoIds = [...new Set(['P-1', ...item.photoIds])];
+      item.tryonReference = crop;
+    }
   });
   const job = await call('POST', '/api/analyze', {});
   assert.match(job.instructions, /^Тема: /, 'an empty request gets a theme for variety');
@@ -514,6 +538,10 @@ test('a new selection gets a try-on for every look; missing renders are queued o
   const again = await call('POST', '/api/renders/missing', {});
   assert.equal(again.queued, 1, 'only the seed look L-1 still lacked a render');
   await createRunner(store, dir, fake).drain();
+  const blocked = store.read();
+  assert.equal(blocked.jobs.find((j) => j.lookId === 'L-1')?.state, 'needs_data');
+  assert.match(blocked.jobs.find((j) => j.lookId === 'L-1')?.stateNote ?? '', /Потрібні окремі фото речей: Молочна футболка/);
+  assert.ok(!blocked.results.some((r) => r.lookId === 'L-1'), 'a concept without a photo never reaches image generation');
   await store.mutate((d) => {
     const l = d.looks.find((x) => x.id === 'L-1')!;
     l.version += 1;

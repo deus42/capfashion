@@ -69,11 +69,12 @@ export function LookPage({ id }: { id: string }) {
   const [keptNow, setKeptNow] = useState('');
   const [asked, setAsked] = useState<string | null>(null);
   // The picture the owner asked for: one quiet word if it could not be made (the slider simply stops otherwise).
-  const askedState = asked ? db.jobs.find((j) => j.id === asked)?.state : undefined;
+  const askedJob = asked ? db.jobs.find((j) => j.id === asked) : undefined;
+  const askedState = askedJob?.state;
   useEffect(() => {
-    if (askedState === 'error') toast('Не вдалося оновити картинку', true);
-    if (askedState === 'error' || askedState === 'done') setAsked(null);
-  }, [askedState]);
+    if (askedState === 'error') toast(askedJob?.stateNote ?? 'Не вдалося оновити картинку', true);
+    if (askedState === 'error' || askedState === 'done' || askedState === 'needs_data') setAsked(null);
+  }, [askedState, askedJob?.stateNote, toast]);
   const look = db.looks.find((l) => l.id === id);
   if (!look) return <div className="page"><Empty icon={<ImageOff />} title="Образ не знайдено" /></div>;
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
@@ -83,7 +84,10 @@ export function LookPage({ id }: { id: string }) {
   const hidden = hiddenLookIds(db).has(look.id);
   const siblings = capsule ? distinctLooks(db, capsuleLooks(db, capsule.lookIds)).filter((l) => l.id !== look.id) : [];
   // The owner asked for a new picture: the slider runs until it arrives (queued or being made).
-  const busy = db.jobs.some((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === look.id && (j.state === 'queued' || j.state === 'running'));
+  const lookJobs = db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === look.id);
+  const busy = lookJobs.some((j) => j.state === 'queued' || j.state === 'running');
+  const latest = lookJobs.filter((j) => j.lookVersion === look.version).at(-1);
+  const missingPhotos = latest?.state === 'needs_data' && latest.stateNote?.startsWith('Потрібні окремі фото речей:') ? latest.stateNote : undefined;
   const paused = rendersPaused(db);
   const kept = look.keptVersion === look.version;
   // After pieces change, ask once whether to update the picture (owner, 17.11): never automatic.
@@ -155,6 +159,7 @@ export function LookPage({ id }: { id: string }) {
               </button>
             )}
           </div>
+          {!busy && missingPhotos && <p className="miss" role="status" style={{ marginTop: 8 }}>{missingPhotos}</p>}
           {askUpdate && (
             <div className="update-ask">
               <span>Речі змінено</span>

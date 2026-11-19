@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { DB, Job, SnapshotSlot } from './schema.ts';
@@ -11,6 +10,7 @@ import { coverNeed, queueMissingItemPackshots, queueMissingRenders } from './rou
 import { SHOP_SEARCH_SCHEMA, applyShopSearch, fetchProductImage, shopSearchPrompt } from './shop-search.ts';
 import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice, seenRevs } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
+import { fitGarmentCards, GARMENT_BOUNDS_SCHEMA, prepareGarmentCrops, type GarmentCard } from './garment-references.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
@@ -51,6 +51,7 @@ const REPLY_RULES = [
 export interface ImageRefs {
   identity: string[];
   garments: string[];
+  garmentCards?: GarmentCard[];
   packshotStyle?: string;
 }
 
@@ -84,12 +85,15 @@ export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
     : 'KEEP the original head tilt, rotation, gaze direction and closed-mouth expression. Do not straighten the head or force eye contact.';
   const supplied = new Set(refs?.garments.map((p) => path.basename(p)));
   const outfit = job.snapshot.slots
-    .map((s: SnapshotSlot) => {
+    .map((s: SnapshotSlot, slotIndex) => {
       const attached = s.photoPaths.filter((p) => !refs || supplied.has(path.basename(p)));
-      const ref = attached.length
+      const card = refs?.garmentCards?.find((c) => c.slotIndex === slotIndex);
+      const ref = card
+        ? ` Garment-only photo: ${path.basename(card.file)}${card.card === undefined ? '' : `, image in numbered cell ${card.card}`}. Match this item's visible construction and colours. Any numbers are guidance only.`
+        : attached.length
         ? ` Garment-only reference (${attached.map((p) => path.basename(p)).join(', ')}): copy ONLY this garment's colour and visible construction. It supplies NO identity, physique or pose.`
-        : ' No attached photo: use the description conservatively; do not invent visible details or branding.';
-      return `- ${SLOT_LABEL[s.slot]}: ${s.title}. ${s.description}${s.owned ? " (the owner's own item)" : ' (proposed item, concept by description)'}.${ref}`;
+        : ' No verified garment photo. Do not generate this look.';
+      return `- ${SLOT_LABEL[s.slot]}: ${s.title}. ${s.description}${s.owned ? " (the owner's own item)" : ' (proposed item)'}.${ref}`;
     })
     .join('\n');
   return [
@@ -103,6 +107,7 @@ export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
     `Image standard: one person; full length from head to shoes with margin; body standing naturally, arms relaxed at the sides; ${pinned?.preserveHeadAngle === false ? 'head upright, direct front view and eye contact' : 'preserve the original head angle'}; pure white (#FFFFFF) seamless studio background; soft even light; subtle ground shadow; no text, labels or watermarks. Remove selfie phone, mirror and source environment. No additional accessories, bags, headwear or watches unless explicitly listed in this outfit. ${pinned?.noGlasses ? 'ABSOLUTELY NO GLASSES: no eyeglasses, sunglasses, eyewear on the face, head or clothing. The owner does not wear glasses, regardless of anything in the source photos or outfit text.' : 'No glasses unless explicitly listed.'} Preserve small original garment logos only where evidenced; do not add branding.`,
     '',
     `Outfit "${job.snapshot.lookName}" — exactly these pieces, nothing else visible:`,
+    'Garment photographs take precedence over descriptions for visible colour, cut, panel and stripe placement, closures and details.',
     outfit || '- (no pieces listed)',
     '',
     job.instructions ? `Owner instructions: ${job.instructions}` : '',
@@ -145,24 +150,6 @@ export function buildPackshotPrompt(job: Job, resultFile: string, refs?: ImageRe
   ]
     .filter((l) => l !== '')
     .join('\n');
-}
-
-function newestGeneratedSince(since: number): string | null {
-  const root = path.join(os.homedir(), '.codex', 'generated_images');
-  if (!fs.existsSync(root)) return null;
-  let best: { file: string; t: number } | null = null;
-  const walk = (dir: string, depth: number) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory() && depth < 3) walk(p, depth + 1);
-      else if (e.isFile() && /\.(png|jpe?g|webp)$/i.test(e.name)) {
-        const t = fs.statSync(p).mtimeMs;
-        if (t >= since && (!best || t > best.t)) best = { file: p, t };
-      }
-    }
-  };
-  walk(root, 0);
-  return best ? (best as { file: string }).file : null;
 }
 
 function parseReply(text: string): { status?: string; notes?: string; reason?: string } {
@@ -217,6 +204,21 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       });
       child.stdin.end(prompt);
     });
+  }
+
+  async function locateGarments(jobDir: string, settings: DB['settings'], { prompt, images }: { prompt: string; images: string[] }): Promise<unknown> {
+    const schema = path.join(jobDir, 'garment-schema.json');
+    const answer = path.join(jobDir, 'garment-bounds.json');
+    fs.writeFileSync(schema, JSON.stringify(GARMENT_BOUNDS_SCHEMA));
+    fs.rmSync(answer, { force: true });
+    const args = [
+      'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
+      '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`,
+      ...WORKER_ISOLATION, '--output-schema', schema, '-o', answer, ...images.flatMap((p) => ['-i', p]),
+    ];
+    const exit = await spawnCodex(args, prompt, jobDir, path.join(jobDir, 'garment-bounds.log'));
+    if (exit.code !== 0 || !fs.existsSync(answer)) throw Error('Не вдалося підготувати кадри речей. Спробуй оновити примірку.');
+    return JSON.parse(fs.readFileSync(answer, 'utf8'));
   }
 
   /** Intake (photo → wardrobe candidates) and analyzer (owned-only outfits): JSON answers, read-only sandbox. */
@@ -386,19 +388,63 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     if (!isPackshot && db0.profile.identity && !job.snapshot.identity) throw Error('Стара спроба без закріпленого оригіналу. Створи нову примірку для поточної версії образу.');
     if (!isPackshot && !sameIdentity(db0.profile.identity, job.snapshot.identity)) throw Error('Опора обличчя або статури змінилася. Створи нову примірку з поточними референсами.');
     const resolve = (p: string) => resolveAllowed(projectRoot, store.dataDir, p);
-    verifyReferenceFiles(job, resolve);
-    const refs = pickRefs(job, isPackshot, resolve);
+    const settings = db0.settings;
+    let refs: ImageRefs;
+    if (isPackshot) {
+      refs = pickRefs(job, true, resolve);
+    } else {
+      const identityJob = { ...job, snapshot: { ...job.snapshot, slots: [] } };
+      verifyReferenceFiles(identityJob, resolve);
+      const { identity } = pickRefs(identityJob, false, resolve);
+      if (!identity.length) throw Error('Немає оригінального фото зовнішності — генерацію зупинено');
+      await store.mutate((db) => {
+        const current = db.jobs.find((j) => j.id === jobId)!;
+        current.state = 'running';
+        current.startedAt = now();
+        current.stateNote = 'Готую фото речей…';
+        current.logPath = path.relative(projectRoot, logFile);
+      });
+      const mediaDir = path.join(store.dataDir, 'media', 'tryon-references', job.id);
+      const prepared = await prepareGarmentCrops({ slots: job.snapshot.slots, projectRoot, mediaDir, jobDir, resolve, locate: (request) => locateGarments(jobDir, settings, request) });
+      const canRender = await store.mutate((db) => {
+        const current = db.jobs.find((j) => j.id === jobId);
+        if (current?.state !== 'running') return false;
+        if (!sameIdentity(db.profile.identity, job.snapshot.identity) || db.profile.identity?.disabledReason) {
+          current.state = 'needs_data';
+          current.finishedAt = now();
+          current.stateNote = 'Змінилися референси зовнішності. Створи нову примірку.';
+          return false;
+        }
+        current.snapshot.slots = prepared.slots;
+        prepared.crops.forEach((crop, i) => {
+          const slot = prepared.slots[i];
+          if (!crop || slot.kind !== 'item') return;
+          const item = db.items.find((candidate) => candidate.id === slot.id);
+          if (item && db.photos.some((photo) => photo.path === crop.source.path && item.photoIds.includes(photo.id) && photo.source !== 'generated' && !photo.inspiration)) {
+            if (!item.tryonReference) item.tryonReference = crop;
+          }
+        });
+        if (!prepared.missing.length && prepared.slots.length) return true;
+        current.state = 'needs_data';
+        current.finishedAt = now();
+        current.stateNote = prepared.missing.length ? `Потрібні окремі фото речей: ${[...new Set(prepared.missing)].join(', ')}.` : 'Додай речі до образу.';
+        return false;
+      });
+      if (!canRender) return;
+      job.snapshot.slots = prepared.slots;
+      verifyReferenceFiles(job, resolve);
+      const garmentCards = await fitGarmentCards(prepared.slots, MAX_IMAGE_REFS - identity.length, jobDir, path.join(mediaDir, 'garments.png'), resolve);
+      refs = { identity, garments: [...new Set(garmentCards.map((c) => c.file))], garmentCards };
+    }
     const slot = job.snapshot.slots[0]?.slot;
     const upperStyle = path.join(store.dataDir, 'media', 'packshot-style', 'upper.png');
     if (isPackshot && refs.garments.length && (slot === 'top' || slot === 'layer') && fs.existsSync(upperStyle)) {
       refs.packshotStyle = upperStyle;
     }
     const uniqueImages = [...refs.identity, ...refs.garments, ...(refs.packshotStyle ? [refs.packshotStyle] : [])];
-    if (!isPackshot && !refs.identity.length) throw Error('Немає оригінального фото зовнішності — генерацію зупинено');
     const prompt = buildPrompt(job, resultFile, refs);
     fs.writeFileSync(path.join(jobDir, 'references.json'), JSON.stringify({ ...refs, contract: job.snapshot.identity }, null, 2));
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
-    const settings = db0.settings;
     const args = [
       'exec',
       '--ignore-user-config',
@@ -415,29 +461,28 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       '-o', lastMsg,
       ...uniqueImages.flatMap((p) => ['-i', p]),
     ];
-    const started = Date.now();
-    await store.mutate((db) => {
-      const j = db.jobs.find((x) => x.id === jobId)!;
+    const startedJob = await store.mutate((db) => {
+      const j = db.jobs.find((x) => x.id === jobId);
+      if (!j || (!isPackshot && j.state !== 'running')) return false;
+      if (!isPackshot && (!sameIdentity(db.profile.identity, job.snapshot.identity) || db.profile.identity?.disabledReason)) {
+        j.state = 'needs_data';
+        j.finishedAt = now();
+        j.stateNote = 'Змінилися референси зовнішності. Створи нову примірку.';
+        return false;
+      }
       j.state = 'running';
       j.startedAt = now();
       j.stateNote = `Codex ${settings.codexModel} генерує…`;
       j.logPath = path.relative(projectRoot, logFile);
+      return true;
     });
+    if (!startedJob) return;
 
     const exit = await spawnCodex(args, prompt, jobDir, logFile);
 
     const reply = fs.existsSync(lastMsg) ? parseReply(fs.readFileSync(lastMsg, 'utf8')) : {};
     let image = fs.existsSync(resultFile) ? resultFile : null;
-    let note = reply.notes;
-    // The global fallback is unsafe with parallel jobs, so only use it when this job ran alone.
-    if (!isPackshot && !image && !job.snapshot.identity && reply.status !== 'error' && active.size <= 1) {
-      const fallback = newestGeneratedSince(started);
-      if (fallback) {
-        fs.copyFileSync(fallback, resultFile);
-        image = resultFile;
-        note = `${note ?? ''} (зображення знайдено в ~/.codex/generated_images)`.trim();
-      }
-    }
+    const note = reply.notes;
     if (isPackshot && (reply.status !== 'done' || exit.code !== 0 || (image && detectImageType(fs.readFileSync(image)) !== 'png'))) {
       image = null;
     }

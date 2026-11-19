@@ -61,19 +61,22 @@ export function snapshotSlots(db: DB, slots: Slots): SnapshotSlot[] {
     for (const ref of slots[slot]) {
       if (ref.kind === 'item') {
         const item = findOr404(db.items, ref.id, 'Річ');
-        const photos = item.photoIds.slice(0, 2).map((pid) => findOr404(db.photos, pid, 'Фото').path);
+        const photos = item.photoIds.map((pid) => findOr404(db.photos, pid, 'Фото'))
+          .filter((p) => p.source !== 'generated' && !p.inspiration && p.kind !== 'label' && p.referenceRole !== 'face')
+          .slice(-4).map((p) => p.path);
         const details = [item.color, item.brand, item.model, item.fit, item.composition, item.observation].filter(Boolean).join(', ');
         const crop = item.tryonReference;
-        // A pinned face must never compete with faces in full garment snapshots.
-        const photoPaths = db.profile.identity ? (crop ? [crop.path] : []) : photos;
+        // Prefer the verified crop even in profiles created before identity pinning.
+        const photoPaths = crop ? [crop.path] : db.profile.identity ? [] : photos;
         out.push({ slot, kind: 'item', id: item.id, title: item.title, description: details, owned: item.status !== 'inactive', photoPaths, originalPhotoPaths: photos, photoHashes: crop ? [crop, crop.source] : undefined });
       } else if (ref.kind === 'need') {
         const need = findOr404(db.needs, ref.id, 'Потреба');
         out.push({ slot, kind: 'need', id: need.id, title: need.title, description: need.description, owned: false, photoPaths: [] });
       } else {
         const p = findOr404(db.products, ref.id, 'Товар');
-        const photo = p.photoId && !db.profile.identity ? [findOr404(db.photos, p.photoId, 'Фото').path] : [];
-        out.push({ slot, kind: 'product', id: p.id, title: `${p.brand} ${p.model}`.trim(), description: [p.composition, p.fit].filter(Boolean).join(', '), owned: false, photoPaths: photo });
+        const photo = p.photoId ? findOr404(db.photos, p.photoId, 'Фото') : undefined;
+        const originals = photo?.kind === 'product' && !photo.inspiration ? [photo.path] : [];
+        out.push({ slot, kind: 'product', id: p.id, title: `${p.brand} ${p.model}`.trim(), description: [p.composition, p.fit].filter(Boolean).join(', '), owned: false, photoPaths: [], originalPhotoPaths: originals });
       }
     }
   }

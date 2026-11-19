@@ -322,11 +322,15 @@ export function itemVerdict(db: DB, item: Item): { line: string; note: string; k
 }
 
 /** Glasses never go into the owner's looks (owner rule: no eyewear of any kind). */
+/** The honest rank scale's version (owner, 19.11); ratings made with an older scale are redone once. */
+export const SCORE_SCALE = 2;
+/** A so-so piece (owner, 19.11: «відсіяти так собі речі»): honest score under 6, or still «варто замінити». New looks are not built with it. */
+export const weakPiece = (item: Item) => Boolean(item.rating && ((item.rating.scale === SCORE_SCALE && item.rating.score < 6) || (item.rating.replace && !item.rating.kept)));
 export const isEyewear = (title: string) => /окуляр|оправ|glasses|eyewear/i.test(title);
 
 /** Advisor proposals still worth showing: open and made only of active owned pieces, never eyewear. */
 export function openSuggestions(db: DB) {
-  const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title)).map((i) => i.id));
+  const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title) && !weakPiece(i)).map((i) => i.id));
   const parents = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
   // A proposal that a look made meanwhile already covers is not shown (look memory, owner 19.11).
   return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))) && !s.looks.some((l) => db.looks.some((x) => tooClose(db, l.slots, x.slots))));

@@ -5,7 +5,7 @@ import type { Category, DB, Item, Job, Look, Season, SlotKey, Slots } from './sc
 import { CATEGORIES, SEASONS, SLOT_KEYS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
 import { hiddenLookIds, lookKeys } from '../src/rating.ts';
-import { isEyewear } from '../src/lib.ts';
+import { isEyewear, weakPiece } from '../src/lib.ts';
 import { alreadySeen, refusedPieces } from '../src/look-memory.ts';
 
 export const CATEGORY_UK: Record<Category, string> = {
@@ -137,7 +137,8 @@ const outfitLine = (l: Look) => `- ${[...lookItems(l)].join(', ')}`;
 export const lookPieces = (db: DB) => ownedItems(db).filter((i) => !isEyewear(i.title));
 
 export function analyzePrompt(db: DB, job: Job, attached: string[]) {
-  const items = lookPieces(db);
+  // So-so pieces stay out unless the owner picked them himself (owner, 19.11).
+  const items = lookPieces(db).filter((i) => !weakPiece(i) || (job.requiredItemIds ?? []).includes(i.id));
   // Every regeneration is checked against what the owner already approved or removed.
   const hidden = hiddenLookIds(db);
   const usable = db.looks.filter((l) => lookItems(l).size >= 2);
@@ -332,6 +333,7 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
   // Look memory (owner, 19.11): nothing that already was — current, older versions, refused or deleted — or is within the closeness rule.
   const fresh: Slots[] = [];
   const refused = refusedPieces(db, hiddenLookIds(db));
+  for (const i of db.items) if (weakPiece(i)) refused.add(i.id);
   for (const l of reply.looks ?? []) {
     const slots = emptySlots();
     for (const k of SLOT_KEYS) {

@@ -6,7 +6,7 @@ import type { DB, Item, Job, Need, Season, SlotRef, Slots, Suggestion } from './
 import { CATEGORIES, SEASONS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
-import { SLOT_CATEGORIES, hasPieces, isComplete, isEyewear, itemUsage, openSuggestions, siteLooks } from '../src/lib.ts';
+import { SCORE_SCALE, SLOT_CATEGORIES, hasPieces, isComplete, isEyewear, itemUsage, openSuggestions, siteLooks, weakPiece } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../src/rating.ts';
 import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 import { alreadySeen, refusedPieces } from '../src/look-memory.ts';
@@ -55,7 +55,7 @@ export interface AdviseReply {
  * The honest rank scale (owner, 19.11): scores by place in the wardrobe — top 10 % 9–10, next 20 % 8, middle 40 % 6–7,
  * bottom 30 % 5 or lower; 9+ only for looks wearable today. Ratings made with an older scale are redone once.
  */
-export const SCORE_SCALE = 2;
+export { SCORE_SCALE };
 const SCALE_RULE = 'Score by RANK against the whole set (current scores of the others are shown as "rated N" / "score N"): top 10 % → 9–10, next 20 % → 8, middle 40 % → 6–7, bottom 30 % → 5 or lower, so the median is about 7. Be honest: redundant near-duplicates, loud logos or prints, poor versatility and style mismatches score low.';
 
 /** Items whose rating is missing, older than the item itself or made with an older scale: the agent looks at them (with photos). */
@@ -115,7 +115,9 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
   const openNeeds = db.needs.filter((n) => n.status === 'open').map((n) => `${n.title} (${n.category})`);
   const declined = db.declinedNeeds ?? [];
   const refused = refusedPieces(db, hidden);
-  const unused = items.filter((i) => itemUsage(db, i.id).looks === 0 && !refused.has(i.id)).map((i) => i.id);
+  // So-so pieces (score under 6 or «варто замінити») are not built into new outfits (owner, 19.11).
+  const weak = items.filter(weakPiece).map((i) => i.id);
+  const unused = items.filter((i) => itemUsage(db, i.id).looks === 0 && !refused.has(i.id) && !weakPiece(i)).map((i) => i.id);
   return [
     'You are the Cap Fashion wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in Ukrainian, short.',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
@@ -142,6 +144,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     disliked.length ? `\nLooks the owner disliked (avoid their direction):\n${disliked.map((l) => `- ${piecesLine(db, l.slots)}`).join('\n')}` : '',
     rejected.length ? `\nOutfits the owner rejected as suggestions or deleted (never again, nothing within one piece):\n${rejected.map((o) => `- ${piecesLine(db, o.slots)}`).join('\n')}` : '',
     refused.size ? `Pieces the owner keeps refusing — never build an outfit around them: ${[...refused].join(', ')}.` : '',
+    weak.length ? `So-so pieces — never use them in new outfits: ${weak.join(', ')}.` : '',
     '',
     openNeeds.length ? `Open purchases (already planned, do not repeat): ${openNeeds.join('; ')}` : '',
     declined.length ? `Purchases the owner declined (never propose again): ${declined.join('; ')}` : '',
@@ -231,7 +234,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
   // Unanswered proposals stay while all their pieces are still owned and their capsule is shown; new ones fill up to the cap.
   const ownedIds = new Set(owned.keys());
   const valid = (s: Suggestion) =>
-    s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind === 'item' && ownedIds.has(r.id))) &&
+    s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind === 'item' && ownedIds.has(r.id) && !weakPiece(owned.get(r.id)!))) &&
     (s.kind === 'capsule' || Boolean(db.capsules.find((c) => c.id === s.capsuleId && !isCapsuleHidden(db, c))));
   const keep = (db.suggestions ?? []).filter((s) => s.status !== 'open' || valid(s));
   // Look memory (owner, 19.11): never a composition that already was — looks, older versions, any proposal, deleted looks —
@@ -243,7 +246,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
   const eyewear = new Set(db.items.filter((i) => isEyewear(i.title)).map((i) => i.id));
   const take = (o: Outfit) => {
     const slots = slotsFrom(o, owned, eyewear);
-    if (!slots || Object.values(slots).flat().some((r) => refused.has(r.id))) return null;
+    if (!slots || Object.values(slots).flat().some((r) => refused.has(r.id) || weakPiece(owned.get(r.id)!))) return null;
     if (alreadySeen(db, slots, fresh2Slots)) return null;
     fresh2Slots.push(slots);
     return { name: text(o.name, 80) || 'Образ', why: text(o.why, 240), slots };
@@ -262,7 +265,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
     fresh.push({ id: newId('A'), kind: 'capsule', status: 'open', name: text(c.name, 80) || 'Нова капсула', why: text(c.why, 240), season, looks, jobId: job.id, createdAt: at });
   }
   // A piece with no look yet (e.g. just added) goes first: its proposal takes the place of the oldest unanswered one.
-  const unused = new Set([...owned.keys()].filter((id) => itemUsage(db, id).looks === 0 && !refused.has(id)));
+  const unused = new Set([...owned.keys()].filter((id) => itemUsage(db, id).looks === 0 && !refused.has(id) && !weakPiece(owned.get(id)!)));
   const forUnused = (s: Suggestion) => s.looks.some((l) => Object.values(l.slots).flat().some((r) => unused.has(r.id)));
   const ordered = [...fresh.filter(forUnused), ...fresh.filter((s) => !forUnused(s))];
   let space = room;

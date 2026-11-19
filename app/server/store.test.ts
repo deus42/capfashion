@@ -16,7 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
+import { openSuggestions, storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, applyStoreFind, shopSearchPrompt, storeFindPrompt, storesToFind } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
@@ -1096,7 +1096,7 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
     newLooks: [
       { name: 'Без капсули', capsuleId: '', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: '' },
       { name: 'Майже той самий', capsuleId: 'C-1', top: ['W-T2'], layer: [], bottom: ['W-1'], shoes: ['W-S'], accessories: [], why: '' },
-      { name: 'Новий', capsuleId: 'C-1', top: ['W-LOGO'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: ['W-G'], why: 'Вводить дубль чиносів.' },
+      { name: 'Новий', capsuleId: 'C-1', top: ['W-T2'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: ['W-G'], why: 'Вводить дубль чиносів.' },
     ],
     newCapsules: [],
     newNeeds: [
@@ -1298,7 +1298,8 @@ test('round 6: a found replacement is not proposed again; stale replacements go;
   // A proposal for a piece with no look comes before the older ones (Home shows two); bad outfits are rejected, glasses dropped.
   await store.mutate((d) => {
     d.items.push(item('W-FRESH', 'shirts', 'Linen shirt', 'manual'));
-    d.suggestions = [{ id: 'A-1', kind: 'look', status: 'open', name: 'Старий', why: '', capsuleId: 'C-1', looks: [{ name: 'Старий', why: '', slots: { ...emptySlots(), top: [{ kind: 'item', id: 'W-A' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] } }], jobId: 'J-0', createdAt: at }];
+    // (not W-A: its honest score 3 makes it a so-so piece that proposals never use)
+    d.suggestions = [{ id: 'A-1', kind: 'look', status: 'open', name: 'Старий', why: '', capsuleId: 'C-1', looks: [{ name: 'Старий', why: '', slots: { ...emptySlots(), top: [{ kind: 'item', id: 'W-NEW' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] } }], jobId: 'J-0', createdAt: at }];
   });
   await store.mutate((d) => void applyAdvice(d, advise, { ...empty, newLooks: [
     { name: 'З новою', capsuleId: 'C-1', top: ['W-FRESH'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: ['W-G'], why: '' },
@@ -1468,4 +1469,23 @@ test('«Магазини»: one row per shop, a shop at the owner\'s place is kn
   assert.deepEqual(db.stores!.map((s) => [s.place, s.km]), [['Arena Centar, Zagreb', 163]]);
   assert.equal(storesToFind(db).length, 0);
   assert.equal(validateDb(db), null);
+});
+
+test('so-so pieces (honest score under 6 or «варто замінити») are not used in new looks or shown proposals', async () => {
+  const { store } = setup();
+  const item = (id: string, category: 'tees' | 'shoes', title: string, score: number) =>
+    ({ id, rev: 1, category, title, status: 'confirmed' as const, photoIds: [], origin: 'candidate' as const, history: [], createdAt: at, updatedAt: at, rating: { score, note: 'x', rev: 1, at, scale: SCORE_SCALE } });
+  await store.mutate((d) => void d.items.push(item('W-WEAK', 'tees', 'Футболка з принтом', 4), item('W-OK', 'tees', 'Молочна футболка', 7), item('W-S', 'shoes', 'Білі кеди', 8), item('W-S2', 'shoes', 'Лофери', 7)));
+  const advise = { id: 'J-adv', kind: 'advise' as const, lookVersion: 0, snapshot: { lookName: 'Порадник', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+  await store.mutate((d) => void applyAdvice(d, advise, { status: 'done', reason: '', items: [], looks: [], newCapsules: [], newNeeds: [], newLooks: [
+    { name: 'Зі слабкою', capsuleId: 'C-1', top: ['W-WEAK'], layer: [], bottom: ['W-2'], shoes: ['W-S'], accessories: [], why: '' },
+    { name: 'Нормальна', capsuleId: 'C-1', top: ['W-OK'], layer: [], bottom: ['W-2'], shoes: ['W-S2'], accessories: [], why: '' },
+  ] }));
+  let db = store.read();
+  assert.deepEqual(db.suggestions!.filter((s) => s.status === 'open').map((s) => s.name), ['Нормальна']);
+  assert.match(advisePrompt(db, advise, []), /So-so pieces — never use them in new outfits: W-WEAK/);
+  // A shown proposal hides once one of its pieces turns so-so.
+  await store.mutate((d) => void (d.items.find((i) => i.id === 'W-OK')!.rating!.score = 5));
+  db = store.read();
+  assert.equal(openSuggestions(db).length, 0);
 });

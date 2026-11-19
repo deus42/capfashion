@@ -42,9 +42,10 @@ export function CapsulesPage() {
             <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{allLooks.length}</span></button>
             {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> Приховані <span className="faint">{hiddenCount}</span></button>}
           </div>
-          {tab === 'looks' && <ReadyFilter active={readyOnly} href={readyOnly ? '/capsules?tab=looks' : '/capsules?tab=looks&owned=1'} />}
         </div>
       </div>
+      {/* Below the tabs, not beside them: a button appearing next to the tabs made them jump when switching. */}
+      {tab === 'looks' && <div className="toolbar"><span className="grow" /><ReadyFilter active={readyOnly} href={readyOnly ? '/capsules?tab=looks' : '/capsules?tab=looks&owned=1'} /></div>}
       {tab === 'hidden' ? (
         hiddenCount === 0 ? <Empty icon={<EyeOff />} title="Нічого не приховано" /> : <>
           {hiddenCaps.length > 0 && <div className="capsule-grid" style={{ marginBottom: 30 }}>{hiddenCaps.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}

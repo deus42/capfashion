@@ -7,7 +7,7 @@ import { useApp, useDb } from '../store.tsx';
 import { api } from '../api.ts';
 import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
-import { REF_KIND_LABEL, coverForLook, expectedSeconds, jobProgress, lookJob, missingInfo, piecesOf, progressShare } from '../lib.ts';
+import { REF_KIND_LABEL, currentCover, indoorOnly, expectedSeconds, jobProgress, lookJob, missingInfo, piecesOf, progressShare } from '../lib.ts';
 import { TermInfo } from '../pages/Glossary.tsx';
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
@@ -302,7 +302,7 @@ export function JobEta({ job }: { job: Job }) {
 
 export function LookArt({ look, w = 700, max, busy, label = false }: { look: Look; w?: number; max?: number; busy?: boolean; label?: boolean }) {
   const db = useDb();
-  const cover = coverForLook(db, look);
+  const cover = currentCover(db, look);
   // `busy` = the owner asked on this page: waiting counts too; elsewhere only running work shows.
   const job = busy === false ? undefined : lookJob(db, look.id, busy === true);
   return (
@@ -317,8 +317,12 @@ export function LookArt({ look, w = 700, max, busy, label = false }: { look: Loo
 export function Missing({ look }: { look: Look }) {
   const db = useDb();
   const m = missingInfo(db, look);
-  if (!m) return null;
-  return <span className="miss"><span className="miss-t">{m.text}</span>{m.more > 0 && <span className="miss-n">+{m.more}</span>}</span>;
+  const indoor = indoorOnly(db, look);
+  if (!m && !indoor) return null;
+  return <>
+    {m && <span className="miss"><span className="miss-t">{m.text}</span>{m.more > 0 && <span className="miss-n">+{m.more}</span>}</span>}
+    {indoor && <span className="miss">у приміщенні</span>}
+  </>;
 }
 
 export function LookCollage({ slots, max = 5 }: { slots: Slots; max?: number }) {

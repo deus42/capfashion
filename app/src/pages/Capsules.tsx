@@ -17,7 +17,7 @@ export function CapsulesPage() {
   const setTab = (t: typeof tab) => go(t === 'capsules' ? '/capsules' : `/capsules?tab=${t}`);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const ready = wardrobeCapsule(db);
-  const capsules = [...autoCapsules(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
+  const capsules = [...rankCapsules(db, shown.filter((c) => c.kind !== 'selection')), ...autoCapsules(db)];
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const list = tab === 'capsules' ? capsules : selections;
   const covers = tileCovers(db, list);

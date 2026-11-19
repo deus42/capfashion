@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import { ArrowRight, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { api, uploadFile } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { JobEta, LookArt, LookCollage, RenderPlaceholder } from '../components/ui.tsx';
-import { autoCapsules, capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, openSuggestions, periodLine, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { JobEta, LookArt, LookCollage, Missing, RenderPlaceholder } from '../components/ui.tsx';
+import { autoCapsules, capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, lookRating, openSuggestions, periodLine, rankCapsules, readyLine, scoreLabel, todayLooks, WARDROBE_CAPSULE_ID } from '../lib.ts';
 import type { DB, Look } from '../api.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 import { NextPurchase } from './Shopping.tsx';
@@ -11,13 +11,16 @@ import { NextPurchase } from './Shopping.tsx';
 /** A tile's looks: a hidden capsule still shows its looks (never empty); the automatic ones keep their own order. */
 const tileLooks = (db: DB, c: CapsuleView) => (isCapsuleHidden(db, c) || isAutoCapsule(c.id) ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds)));
 
-/** Covers for a row of tiles: a look already on an earlier tile is not repeated, unless a capsule has nothing else. */
+/**
+ * Covers for a row of tiles (owner, 19.11): one look that shows the capsule's style — its best scored, liked first —
+ * and never a look already on an earlier tile, unless a capsule has nothing else.
+ */
 export function tileCovers(db: DB, list: CapsuleView[]) {
   const used = new Set<string>();
   return new Map(list.map((c) => {
-    const looks = tileLooks(db, c);
+    const looks = isAutoCapsule(c.id) ? tileLooks(db, c) : [...tileLooks(db, c)].sort((a, b) => (lookRating(b) ?? 0) - (lookRating(a) ?? 0) || Number(b.favorite) - Number(a.favorite));
     const fresh = looks.filter((l) => !used.has(l.id));
-    const cover = (fresh.length ? fresh : looks).slice(0, 4);
+    const cover = (fresh.length ? fresh : looks).slice(0, 1);
     for (const l of cover) used.add(l.id);
     return [c.id, cover] as const;
   }));
@@ -44,6 +47,23 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
         <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}{score !== null && ` · ${scoreLabel(score)}`}</div>
       </div>
     </a>
+  );
+}
+
+/** Two ready looks for today (owner, 19.11): owned pieces only, the current weather period first. */
+function TodayLooks() {
+  const db = useDb();
+  const looks = todayLooks(db);
+  if (!looks.length) return null;
+  return (
+    <div className="today-grid">
+      {looks.map((l) => (
+        <div key={l.id} className="look-card">
+          <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${l.id}`}><LookArt look={l} w={800} /></a>
+          <a href={`/looks/${l.id}`}><span className="eyebrow-sm best-mark">{db.capsules.find((c) => c.id === l.capsuleId)?.name}</span><h4>{l.name}</h4><Missing look={l} /></a>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -111,7 +131,8 @@ export function HomePage() {
   const [text, setText] = useState('');
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
-  const capsules = [...autoCapsules(db), ...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))];
+  // Fashion capsules first (the current period leads), the automatic ones after them (owner, 19.11).
+  const capsules = [...rankCapsules(db, shown.filter((c) => c.kind !== 'selection')), ...autoCapsules(db)];
   const covers = tileCovers(db, capsules);
   const analyzeJob = db.jobs.find((j) => j.kind === 'analyze' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'analyze' && j.state === 'queued');
   const analyzing = Boolean(analyzeJob);
@@ -125,6 +146,7 @@ export function HomePage() {
     <div className="page">
       <section className="home-hero">
         <h1>Що одягнемо сьогодні?</h1>
+        <TodayLooks />
         <div className="prompt-box hero-prompt">
           <textarea
             value={text}
@@ -136,7 +158,7 @@ export function HomePage() {
               }
             }}
             rows={2}
-            placeholder="Куди йдеш? Напр.: вихідні в місті, вечеря, офіс"
+            placeholder="Уточни: вечеря, довга прогулянка, буду в приміщенні"
           />
           <div className="bar">
             <span className="grow" />

@@ -16,7 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { openSuggestions, storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
+import { coverForLook, currentCover, currentPeriod, indoorOnly, purchasePlan, todayLooks, openSuggestions, storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, applyStoreFind, shopSearchPrompt, storeFindPrompt, storesToFind } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
@@ -1488,4 +1488,45 @@ test('so-so pieces (honest score under 6 or «варто замінити») are
   await store.mutate((d) => void (d.items.find((i) => i.id === 'W-OK')!.rating!.score = 5));
   db = store.read();
   assert.equal(openSuggestions(db).length, 0);
+});
+
+test('a fresh picture, «у приміщенні», today\'s looks and what a purchase gives (owner, 19.11)', async () => {
+  const { store } = setup();
+  const item = (id: string, category: 'tees' | 'shoes' | 'outerwear' | 'trousers', title: string) =>
+    ({ id, rev: 1, category, title, status: 'confirmed' as const, photoIds: [], origin: 'candidate' as const, history: [], createdAt: at, updatedAt: at });
+  await store.mutate((d) => {
+    d.items.push(item('W-T', 'tees', 'Молочна футболка'), item('W-S', 'shoes', 'Черевики'), item('W-C', 'outerwear', 'Пальто'), item('W-P', 'trousers', 'Вовняні штани'));
+    d.capsules[0].periods = ['late-autumn', 'winter'];
+    const l = d.looks[0];
+    l.slots = { ...emptySlots(), top: [{ kind: 'item', id: 'W-T' }], bottom: [{ kind: 'item', id: 'W-P' }], shoes: [{ kind: 'item', id: 'W-S' }] };
+    l.version = 2;
+    l.versions.push({ version: 2, slots: l.slots, at });
+    d.jobs.push({ id: 'J-x', lookId: 'L-1', resultId: 'R-old', lookVersion: 1, snapshot: { lookName: 'Look', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'done', origin: 'import', createdAt: at });
+    d.results.push({ id: 'R-old', jobId: 'J-x', lookId: 'L-1', lookVersion: 1, imagePath: 'old.png', tool: 't', model: 'm', prompt: '', sources: [], usedItemPhotos: true, review: 'accepted', favorite: false, createdAt: at });
+  });
+  let db = store.read();
+  // A try-on of the older pieces is not shown; «Ні» on «Речі змінено» brings it back.
+  assert.equal(coverForLook(db, db.looks[0])?.id, 'R-old');
+  assert.equal(currentCover(db, db.looks[0]), undefined);
+  await store.mutate((d) => void (d.looks[0].keptVersion = 2));
+  assert.equal(currentCover(store.read(), store.read().looks[0])?.id, 'R-old');
+  // A cold-period look without any outer layer is for indoors.
+  db = store.read();
+  assert.equal(indoorOnly(db, db.looks[0]), true);
+  await store.mutate((d) => void (d.looks[0].slots.layer = [{ kind: 'item', id: 'W-C' }]));
+  assert.equal(indoorOnly(store.read(), store.read().looks[0]), false);
+  // Today's looks: complete looks of the current period's capsules (November → late autumn).
+  db = store.read();
+  if (currentPeriod() === 'late-autumn' || currentPeriod() === 'winter') assert.deepEqual(todayLooks(db).map((l) => l.id), ['L-1']);
+  // What a purchase gives: fits / completes / the rest of the smallest set.
+  await store.mutate((d) => {
+    d.needs.push({ id: 'N-2', rev: 1, title: 'Шарф', category: 'accessories', priority: 'optional', description: '', why: '', fitCheck: '', status: 'open', origin: 'owner', createdAt: at, updatedAt: at });
+    d.looks[0].slots.top = [{ kind: 'need', id: 'N-1' }];
+    d.looks[0].slots.accessories = [{ kind: 'need', id: 'N-2' }];
+  });
+  db = store.read();
+  const plan = purchasePlan(db, 'N-1');
+  assert.equal(plan.fits, 1);
+  assert.equal(plan.completes, 0);
+  assert.deepEqual(plan.with?.others, ['Шарф']);
 });

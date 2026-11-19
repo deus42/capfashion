@@ -23,6 +23,29 @@ export function currentPeriod(date = new Date()): Period {
   const m = date.getMonth() + 1;
   return m >= 3 && m <= 5 ? 'spring' : m <= 8 && m >= 6 ? 'summer' : m === 9 || m === 10 ? 'early-autumn' : m === 11 ? 'late-autumn' : 'winter';
 }
+/** «у приміщенні» (owner, 19.11): a look of a capsule only for cold periods, without any outer layer, is not for going out in 0–12 °C. */
+export function indoorOnly(db: DB, look: Look): boolean {
+  const c = look.capsuleId ? db.capsules.find((x) => x.id === look.capsuleId) : undefined;
+  if (!c?.periods?.length || !c.periods.every((p) => p === 'late-autumn' || p === 'winter')) return false;
+  const category = (r: SlotRef) => (r.kind === 'item' ? db.items.find((i) => i.id === r.id)?.category : r.kind === 'need' ? db.needs.find((n) => n.id === r.id)?.category : db.needs.find((n) => n.id === db.products.find((p) => p.id === r.id)?.needId)?.category);
+  return !Object.values(look.slots).flat().some((r) => category(r) === 'outerwear');
+}
+
+const NEAR: Record<Period, Period[]> = { spring: ['early-autumn', 'summer'], summer: ['spring', 'early-autumn'], 'early-autumn': ['spring', 'late-autumn'], 'late-autumn': ['winter', 'early-autumn'], winter: ['late-autumn'] };
+/** Home (owner, 19.11): ready looks for today — capsules of the current period first, then the nearest periods; liked and best scored first. */
+export function todayLooks(db: DB, n = 2): Look[] {
+  const now = currentPeriod();
+  const caps = db.capsules.filter((c) => !c.redirectCapsuleIds && c.kind !== 'selection' && !isCapsuleHidden(db, c) && c.periods?.length);
+  const rank = (ps: Period[]) => caps
+    .filter((c) => c.periods!.some((p) => ps.includes(p)))
+    .flatMap((c) => distinctLooks(db, capsuleLooks(db, c.lookIds)))
+    .filter((l) => isComplete(db, l))
+    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || (lookRating(b) ?? 0) - (lookRating(a) ?? 0));
+  const out: Look[] = [];
+  for (const l of [...rank([now]), ...rank(NEAR[now])]) if (!out.some((x) => x.id === l.id) && out.length < n) out.push(l);
+  return out;
+}
+
 /** «Пізня осінь · Зима» on a tile; with temperatures on the capsule page. */
 export const periodLine = (c: { periods?: Period[] }, temps = false) => (c.periods ?? []).map((p) => (temps ? `${PERIOD_LABEL[p]} ${PERIOD_TEMP[p]}` : PERIOD_LABEL[p])).join(' · ');
 
@@ -103,6 +126,15 @@ export function coverForLook(db: DB, look: Look): Result | undefined {
   const face = db.profile.identity && !db.profile.identity.disabledReason ? db.profile.identity.face?.sha256 : undefined;
   const current = (r: Result) => Boolean(face) && db.jobs.find((j) => j.id === r.jobId)?.snapshot.identity?.face?.sha256 === face;
   return rs.find((r) => r.review === 'accepted') ?? rs.find((r) => r.review === 'pending' && current(r));
+}
+
+/**
+ * The picture shown for a look (owner, 19.11): a try-on of an older composition is not shown — the collage of the
+ * current pieces stands in until a new try-on (⟳) — unless the owner answered «Ні» to «Речі змінено» for this version.
+ */
+export function currentCover(db: DB, look: Look): Result | undefined {
+  const cover = coverForLook(db, look);
+  return cover && (cover.lookVersion === look.version || look.keptVersion === look.version) ? cover : undefined;
 }
 
 /** A try-on of this look is being made right now (a queued one is not shown as work in progress). */
@@ -440,6 +472,22 @@ export function purchaseRanking(db: DB) {
       return { need: n, looksIn, completes, score: completes * 3 + closer + liked + (n.priority === 'core' ? 0.5 : 0) };
     })
     .sort((a, b) => b.score - a.score || b.looksIn - a.looksIn);
+}
+
+/**
+ * What a purchase really gives (owner, 19.11): the looks it fits, how many it completes on its own, and when one is not
+ * enough, the smallest set of open purchases after which a look — liked first — can be worn.
+ */
+export function purchasePlan(db: DB, needId: string) {
+  const looks = siteLooks(db).filter((l) => missingNeeds(db, l).includes(needId));
+  // Only looks whose every missing piece is a purchase (not an item taken out of the wardrobe).
+  const buyable = looks.filter((l) => missingTitles(db, l).length === missingNeeds(db, l).length);
+  const completes = buyable.filter((l) => missingNeeds(db, l).length === 1).length;
+  const best = completes ? undefined : buyable
+    .map((l) => ({ l, n: missingNeeds(db, l).length }))
+    .sort((a, b) => Number(b.l.favorite) - Number(a.l.favorite) || a.n - b.n)[0];
+  const others = best ? missingNeeds(db, best.l).filter((id) => id !== needId).map((id) => db.needs.find((x) => x.id === id)?.title ?? id) : [];
+  return { fits: looks.length, completes, with: best ? { look: best.l, others } : undefined };
 }
 
 export const capsuleLooks = (db: DB, lookIds: string[]) => lookIds.map((id) => db.looks.find((l) => l.id === id)).filter((l): l is Look => Boolean(l));

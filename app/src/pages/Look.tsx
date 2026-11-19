@@ -5,7 +5,7 @@ import { api, media, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, LookArt, Missing, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
-import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, distinctLooks, lookRating, lookVariants, resolveRef, scoreLabel } from '../lib.ts';
+import { SLOT_CATEGORIES, SLOT_LABEL, capsuleLooks, coverForLook, currentCover, distinctLooks, indoorOnly, lookRating, lookVariants, resolveRef, scoreLabel } from '../lib.ts';
 import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
@@ -81,6 +81,7 @@ export function LookPage({ id }: { id: string }) {
   const isSelection = capsule?.kind === 'selection';
   const cover = coverForLook(db, look);
   const stale = cover && cover.lookVersion !== look.version;
+  const shown = currentCover(db, look);
   const hidden = hiddenLookIds(db).has(look.id);
   const variants = lookVariants(db, look);
   const siblings = capsule ? distinctLooks(db, capsuleLooks(db, capsule.lookIds)).filter((l) => l.id !== look.id && !variants.some((v) => v.id === l.id)) : [];
@@ -139,7 +140,10 @@ export function LookPage({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{look.name}</h1>
-          {lookRating(look) !== null && <p className="item-verdict">{scoreLabel(lookRating(look)!)}{look.advice!.why && <InfoMark title={scoreLabel(lookRating(look)!)} text={look.advice!.why} />}</p>}
+          {(lookRating(look) !== null || indoorOnly(db, look)) && <p className="item-verdict">
+            {lookRating(look) !== null && <>{scoreLabel(lookRating(look)!)}{look.advice!.why && <InfoMark title={scoreLabel(lookRating(look)!)} text={look.advice!.why} />}</>}
+            {indoorOnly(db, look) && <>{lookRating(look) !== null ? ' · ' : ''}у приміщенні</>}
+          </p>}
           {hidden && <div className="row wrap" style={{ marginTop: 12 }}><Badge>{look.disliked ? 'приховано' : capsule?.disliked ? 'капсулу приховано' : 'схожий на прихований'}</Badge></div>}
         </div>
         <div className="actions">
@@ -151,7 +155,7 @@ export function LookPage({ id }: { id: string }) {
       <div className="look-page">
         <div className="look-hero">
           <div className="hero-pic">
-            <a className="cover" href={cover ? media(cover.imagePath) : undefined} target={cover ? '_blank' : undefined} rel="noreferrer">
+            <a className="cover" href={shown ? media(shown.imagePath) : undefined} target={shown ? '_blank' : undefined} rel="noreferrer">
               <LookArt look={look} w={960} busy={busy} label />
             </a>
             {!paused && (

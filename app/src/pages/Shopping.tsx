@@ -4,7 +4,7 @@ import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, JobBar, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, shopLocation, shopStores, siteLooks } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchasePlan, purchaseRanking, shopLocation, shopStores, siteLooks } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -214,8 +214,10 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
   );
 }
 
-const inLooks = (n: number) => `у ${n} ${n === 1 ? 'образі' : 'образах'}`;
-const willComplete = (n: number) => (n === 1 ? '1 стане готовим' : `${n} стануть готовими`);
+/** «пасує до 5 образів · завершує 0» (owner, 19.11): what the spend really gives. */
+const planLine = (p: { fits: number; completes: number }) => `пасує до ${p.fits} ${p.fits === 1 ? 'образу' : 'образів'} · завершує ${p.completes}`;
+/** When one purchase is not enough: the rest of the smallest set and the look it makes wearable. */
+const planWith = (p: ReturnType<typeof purchasePlan>) => (p.with ? `ще ${p.with.others.join(', ')} — і готовий «${p.with.look.name}»` : '');
 
 /** The one purchase that helps most right now (owner, 17.11): it completes or brings closer the most looks. */
 export function NextPurchase() {
@@ -223,6 +225,7 @@ export function NextPurchase() {
   const top = purchaseRanking(db)[0];
   if (!top || top.looksIn === 0) return null;
   const n = top.need;
+  const plan = purchasePlan(db, n.id);
   const art = n.conceptPhotoId ? db.photos.find((p) => p.id === n.conceptPhotoId)?.path : undefined;
   return (
     <a className="next-buy" href={`/shopping?need=${n.id}`}>
@@ -230,7 +233,8 @@ export function NextPurchase() {
       <span className="txt">
         <span className="eyebrow">Наступна покупка</span>
         <span className="t">{n.title}</span>
-        <span className="miss">{inLooks(top.looksIn)}{top.completes ? ` · ${willComplete(top.completes)}` : ''}</span>
+        <span className="miss">{planLine(plan)}</span>
+        {plan.with && <span className="miss">{planWith(plan)}</span>}
       </span>
     </a>
   );
@@ -244,6 +248,7 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
   const [owning, setOwning] = useState(false);
   // Found variants, best match first.
   const products = db.products.filter((p) => p.needId === need.id).sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
+  const plan = purchasePlan(db, need.id);
   const shopPhoto = products.map((p) => db.photos.find((x) => p.photoId && x.id === p.photoId)).find((x) => x !== undefined);
   const searches = db.jobs.filter((j) => j.kind === 'shopsearch' && j.needId === need.id);
   const waitJob = searches.find((j) => j.state === 'running') ?? searches.find((j) => j.state === 'queued');
@@ -313,6 +318,10 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
             <dd><a href={`/wardrobe/${replaces.id}`} style={{ textDecoration: 'underline' }}>{replaces.title}</a></dd>
           </>
         )}
+        {need.status === 'open' && plan.fits > 0 && <>
+          <dt>Дасть</dt>
+          <dd>{planLine(plan)}{plan.with && <><br />{planWith(plan)}</>}</dd>
+        </>}
         {(looks.length > 0 || (!forCapsule && !replaces)) && <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>}
         {(looks.length > 0 || (!forCapsule && !replaces)) && <dd>
           <div className="chips">

@@ -69,7 +69,8 @@ export function queueStoreFind(db: DB): Job | null {
 export function storeFindPrompt(db: DB) {
   const location = shopLocation(db) || 'Rijeka, Croatia';
   return [
-    'You are the Cap Fashion store-finder worker running unattended. Use live web search: you find where the owner can visit shops in person. Answer with JSON only (schema enforced).',
+    'You are the Cap Fashion store-finder worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
+    'Web search is enabled and required for this task, exactly like the shop search: the rule about using only the provided text means no local files or repositories, not no web. For every shop open its official store locator (or the brand\'s Croatian site) and search the web for its stores near the owner\'s place.',
     `The owner's shopping place: ${location}.`,
     'For each shop below, find the NEAREST physical store to that place that sells this shop\'s clothes — its own store first, else an official retailer of the brand. place: mall or street and city, e.g. "Tower Center, Rijeka" or "Arena Centar, Zagreb". km: approximate road distance from the owner\'s place, 0 if unknown. url: the store locator or store page you used. online: true when there is no physical store within about 300 km (then place empty). Only facts you verified on the web; never invent a store.',
     'Shops (key | name | website):',

@@ -39,7 +39,7 @@ export function CapsulesPage() {
       <div className="page-head">
         <div><h1>{title}</h1></div>
         <div className="actions">
-          <div className="seg" style={{ flexWrap: 'wrap', maxWidth: '100%' }}>
+          <div className="seg seg-scroll">
             <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
             <button className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>Нові <span className="faint">{newCount}</span></button>
             {(selections.length > 0 || tab === 'selections') && <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>Підбірки <span className="faint">{selections.length}</span></button>}

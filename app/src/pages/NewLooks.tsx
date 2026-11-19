@@ -18,7 +18,8 @@ export function NewLooks() {
   const [capsuleId, setCapsuleId] = useState('');
   const capsules = db.capsules.filter((c) => !c.redirectCapsuleIds && c.kind !== 'selection' && !isCapsuleHidden(db, c));
   const job = db.jobs.find((j) => j.kind === 'discover' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'discover' && j.state === 'queued');
-  const list = openSuggestions(db);
+  // The newest first: what a search just found comes before older proposals.
+  const list = [...openSuggestions(db)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const search = async () => {
     const ok = await act(() => api('POST', '/api/discover', { prompt: text, capsuleId }), 'Шукаю нові образи');
     if (ok) setText('');

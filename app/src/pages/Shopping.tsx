@@ -4,7 +4,7 @@ import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, JobBar, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, shopLocation, siteLooks } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchaseRanking, shopLocation, shopStores, siteLooks } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -397,6 +397,32 @@ export function ShoppingPage({ focus }: { focus?: string }) {
           {needs.map((n, i) => <NeedCard key={n.id} need={n} focus={n.id === focus} top={i === 0 && n.status === 'open'} />)}
         </div>
       )}
+      <Stores />
     </div>
   );
+}
+
+/** «Магазини» (owner, 19.11): every shop of the found products and its nearest store, one quiet row each. */
+function Stores() {
+  const db = useDb();
+  const here = shopLocation(db);
+  const rows = shopStores(db)
+    .map((s) => {
+      const name = s.name.replace(/\s+(croatia|hrvatska|hr)$/i, '');
+      const map = (q: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+      if (s.atPlace && here) return { s, name, line: here.split(',')[0], href: map(`${name} ${here}`), rank: 0 };
+      if (s.place && !s.place.online) return { s, name, line: `${s.place.place}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`), rank: 1 + (s.place.km ?? 999) / 1000 };
+      if (s.place?.online) return { s, name, line: 'лише онлайн', href: s.place.url ?? (s.host ? `https://${s.host}` : undefined), rank: 3 };
+      return { s, name, line: '', href: undefined, rank: 4 };
+    })
+    .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+  if (!rows.length) return null;
+  return <>
+    <div className="section-head"><h2 className="h2">Магазини <span className="count">{rows.length}</span></h2></div>
+    <div className="store-list">
+      {rows.map((r) => r.href
+        ? <a key={r.s.key} className="store-row" href={r.href} target="_blank" rel="noreferrer"><span>{r.name}</span><span className="store-place">{r.line}</span></a>
+        : <div key={r.s.key} className="store-row"><span>{r.name}</span><span className="store-place">{r.line}</span></div>)}
+    </div>
+  </>;
 }

@@ -1,11 +1,12 @@
 // Text/vision analysis jobs (no image output): photo intake and the outfit
 // analyzer. Codex answers with JSON constrained by --output-schema; the result
 // is validated here before anything is written.
-import type { Category, DB, Item, Job, Look, Season, SlotKey } from './schema.ts';
+import type { Category, DB, Item, Job, Look, Season, SlotKey, Slots } from './schema.ts';
 import { CATEGORIES, SEASONS, SLOT_KEYS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
-import { hiddenLookIds, lookKeys, sameLookKeys } from '../src/rating.ts';
+import { hiddenLookIds, lookKeys } from '../src/rating.ts';
 import { isEyewear } from '../src/lib.ts';
+import { alreadySeen, refusedPieces } from '../src/look-memory.ts';
 
 export const CATEGORY_UK: Record<Category, string> = {
   outerwear: 'верхній одяг', knitwear: 'худі й трикотаж', shirts: 'сорочки й поло', tees: 'футболки',
@@ -141,7 +142,13 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
   const hidden = hiddenLookIds(db);
   const usable = db.looks.filter((l) => lookItems(l).size >= 2);
   const liked = usable.filter((l) => l.favorite);
-  const rejected = usable.filter((l) => hidden.has(l.id));
+  // Disliked looks, refused advisor proposals and deleted looks: never again (look memory, owner 19.11).
+  const rejected: Pick<Look, 'slots'>[] = [
+    ...usable.filter((l) => hidden.has(l.id)),
+    ...(db.suggestions ?? []).filter((s) => s.status === 'rejected').flatMap((s) => s.looks),
+    ...(db.lookMemory ?? []),
+  ].filter((l) => lookItems(l as Look).size >= 2).slice(-60);
+  const refused = [...refusedPieces(db, hidden)];
   const existing = usable.filter((l) => !l.favorite && !hidden.has(l.id)).slice(-40);
   const names = db.capsules.filter((c) => c.kind === 'selection').map((c) => c.name);
   const required = (job.requiredItemIds ?? []).map((id) => db.items.find((i) => i.id === id)).filter((i): i is Item => Boolean(i));
@@ -162,7 +169,8 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
     'Rules: use only ids from the list (exact strings). Each look needs a bottom and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
     'Same-look rule (the owner\'s): two outfits are the SAME look when they are identical or differ by only one piece — one swap, one addition or one removal, accessories included. A DIFFERENT look has at least two different pieces. Every look you return must be a different look from each other and from every outfit listed below; looks that break this are discarded.',
     'Spread the wardrobe: use pieces that existing outfits rarely use, vary colours and silhouettes. Give the selection a new name, different from the existing names.',
-    rejected.length ? `Outfits the owner REJECTED (never propose them again or anything within one piece of them; steer away from their direction):\n${rejected.map(outfitLine).join('\n')}` : '',
+    rejected.length ? `Outfits the owner REJECTED (never propose them again or anything within one piece of them; steer away from their direction):\n${rejected.map((l) => outfitLine(l as Look)).join('\n')}` : '',
+    refused.length ? `Pieces the owner keeps refusing — do not build looks around them: ${refused.join(', ')}.` : '',
     liked.length ? `Outfits the owner LIKED (already saved — do not repeat or near-copy them; their style is a good signal):\n${liked.map(outfitLine).join('\n')}` : '',
     existing.length ? `Other existing outfits (do not repeat or near-copy):\n${existing.map(outfitLine).join('\n')}` : '',
     names.length ? `Existing selection names (do not reuse): ${names.join('; ')}` : '',
@@ -321,7 +329,9 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
   const required = job.requiredItemIds ?? [];
   // The owner's same-look rule against every existing look — liked, hidden/disliked and
   // neutral alike. Picked items in complete-the-look mode are shared, so they never count as a difference.
-  const taken = db.looks.map(lookKeys).filter((s) => s.size >= 2);
+  // Look memory (owner, 19.11): nothing that already was — current, older versions, refused or deleted — or is within the closeness rule.
+  const fresh: Slots[] = [];
+  const refused = refusedPieces(db, hiddenLookIds(db));
   for (const l of reply.looks ?? []) {
     const slots = emptySlots();
     for (const k of SLOT_KEYS) {
@@ -331,8 +341,9 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
     if (!slots.bottom.length || !slots.shoes.length) continue;
     const set = lookKeys({ slots });
     if (required.some((id) => !set.has(`item:${id}`))) continue;
-    if (taken.some((t) => sameLookKeys(set, t))) continue;
-    taken.push(set);
+    if ([...set].some((k) => refused.has(k.slice(5)) && !required.includes(k.slice(5)))) continue;
+    if (alreadySeen(db, slots, fresh)) continue;
+    fresh.push(slots);
     looks.push({
       id: newId('L'),
       rev: 1,

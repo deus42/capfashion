@@ -1,6 +1,7 @@
 import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Result, Season, SlotKey, SlotRef } from './api.ts';
 import { hiddenLookIds, isCapsuleHidden } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
+import { tooClose } from './look-memory.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   outerwear: 'Верхній одяг',
@@ -101,7 +102,7 @@ export const lookBusy = (db: DB, lookId: string) => db.jobs.some((j) => (j.kind 
 export const lookJob = (db: DB, lookId: string, includeQueued = false) =>
   db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === lookId && (j.state === 'running' || (includeQueued && j.state === 'queued'))).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
-const FALLBACK_SECONDS: Record<string, number> = { tryon: 140, packshot: 80, intake: 25, analyze: 60, shopsearch: 320, advise: 240 };
+const FALLBACK_SECONDS: Record<string, number> = { tryon: 140, packshot: 80, intake: 25, analyze: 60, shopsearch: 320, advise: 240, storefind: 240 };
 
 /** How long a job of this kind usually takes here: the median of the last 20 finished ones (owner, 18.11). */
 export function expectedSeconds(db: DB, kind: Job['kind']) {
@@ -192,7 +193,7 @@ function missingTitles(db: DB, look: Pick<Look, 'slots'>): string[] {
   return [...missingNeeds(db, look).map((id) => db.needs.find((n) => n.id === id)?.title ?? id), ...gone];
 }
 
-const hasPieces = (look: Pick<Look, 'slots'>) => Object.values(look.slots).some((refs) => refs.length);
+export const hasPieces = (look: Pick<Look, 'slots'>) => Object.values(look.slots).some((refs) => refs.length);
 
 /** Everything in the look is in the wardrobe and in use: it can be worn today. */
 export const isComplete = (db: DB, look: Look) => hasPieces(look) && missingTitles(db, look).length === 0;
@@ -327,12 +328,36 @@ export const isEyewear = (title: string) => /окуляр|оправ|glasses|eye
 export function openSuggestions(db: DB) {
   const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title)).map((i) => i.id));
   const parents = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
-  return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))));
+  // A proposal that a look made meanwhile already covers is not shown (look memory, owner 19.11).
+  return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))) && !s.looks.some((l) => db.looks.some((x) => tooClose(db, l.slots, x.slots))));
 }
 
 /** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */
 export const DEFAULT_LOCATION = 'Tower Center Rijeka, Rijeka, Croatia';
 export const shopLocation = (db: DB) => db.profile.location ?? DEFAULT_LOCATION;
+
+// «Магазини» (owner, 19.11): the shops of the found products and where their nearest store is.
+/** One key per shop: «Levi’s Croatia» and «Levi’s Hrvatska» are the same shop. */
+export const storeKey = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\b(croatia|hrvatska|hr|online|shop|store|eu)\b/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** Shops of the found products, once each, with their known place (a shop at the owner's place counts as known). */
+export function shopStores(db: DB) {
+  const seen = new Map<string, { key: string; name: string; host: string; atPlace: boolean }>();
+  for (const p of db.products) {
+    const key = storeKey(p.store);
+    if (!key) continue;
+    const prev = seen.get(key);
+    let host = '';
+    try {
+      host = p.url ? new URL(p.url).hostname : '';
+    } catch {
+      /* no link */
+    }
+    seen.set(key, { key, name: prev?.name ?? p.store, host: prev?.host || host, atPlace: Boolean(prev?.atPlace || p.towerAvailability === 'confirmed') });
+  }
+  return [...seen.values()].map((s) => ({ ...s, place: (db.stores ?? []).find((x) => x.key === s.key) }));
+}
+
 
 /** «4 з 6 готові» / «усі готові» — the quiet capsule line. */
 export function readyLine(db: DB, c: Pick<Capsule, 'lookIds'>) {

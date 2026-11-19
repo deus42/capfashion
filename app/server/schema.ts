@@ -30,6 +30,19 @@ export type ReworkReason = (typeof REWORK_REASONS)[number];
 export const MEASURE_KEYS = ['height', 'chest', 'waist', 'hips', 'shoulders', 'sleeve', 'inseam', 'foot'] as const;
 export type MeasureKey = (typeof MEASURE_KEYS)[number];
 
+/** The nearest physical store of a shop found in «Покупки» (owner, 19.11). */
+export interface StorePlace {
+  key: string;
+  name: string;
+  /** Mall or street and city, e.g. «Tower Center, Rijeka»; empty when online only. */
+  place: string;
+  /** Approximate road distance from the owner's shopping place. */
+  km?: number;
+  online: boolean;
+  url?: string;
+  checkedAt: string;
+}
+
 export interface HistoryEntry {
   at: string;
   action: string;
@@ -135,6 +148,8 @@ export interface ItemRating {
   at: string;
   /** The owner keeps the item: never suggest replacing it again. */
   kept?: boolean;
+  /** The scoring scale this rating was made with (the honest rank scale, owner 19.11, is 2). */
+  scale?: number;
 }
 
 export interface Need {
@@ -228,7 +243,7 @@ export interface Look {
   /** «Речі змінено → Ні»: the owner keeps the picture for this version, so the question does not return. */
   keptVersion?: number;
   /** Advisor: harmony 0–10 for this version and, maybe, one better owned piece; rejected swaps never return. */
-  advice?: { score: number; why: string; version: number; swap?: { from: string; to: string }; rejected?: string[] };
+  advice?: { score: number; why: string; version: number; swap?: { from: string; to: string }; rejected?: string[]; scale?: number };
   origin: 'source' | 'agent' | 'owner';
   sourceNote?: string;
   createdAt: string;
@@ -272,7 +287,7 @@ export interface SnapshotSlot {
 export interface Job {
   id: string;
   /** Missing kind means a try-on (records created before packshots). */
-  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch' | 'advise';
+  kind?: 'tryon' | 'packshot' | 'intake' | 'analyze' | 'shopsearch' | 'advise' | 'storefind';
   lookId?: string;
   /** intake: uploaded photos to recognise. */
   inputPhotoIds?: string[];
@@ -408,6 +423,10 @@ export interface DB {
   suggestions?: Suggestion[];
   /** Titles of advisor purchases the owner deleted: never proposed again. */
   declinedNeeds?: string[];
+  /** Compositions of deleted looks (owner, 19.11): kept so no source ever proposes them, or anything within one piece, again. */
+  lookMemory?: { slots: Slots; outcome: 'deleted'; ref: string; name: string; at: string }[];
+  /** Where the nearest physical store of each shop is (owner, 19.11), keyed by the shop's plain name. */
+  stores?: StorePlace[];
 }
 
 export function emptySlots(): Slots {

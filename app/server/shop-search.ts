@@ -6,10 +6,10 @@ import fs from 'node:fs';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import path from 'node:path';
-import type { DB, Job, Product } from './schema.ts';
+import type { DB, Job, Product, StorePlace } from './schema.ts';
 import { newId, now } from './store.ts';
 import { detectImageType } from './media.ts';
-import { siteLooks, wardrobeBrands, missingNeeds, resolveRef, shopLocation } from '../src/lib.ts';
+import { siteLooks, wardrobeBrands, missingNeeds, resolveRef, shopLocation, shopStores } from '../src/lib.ts';
 
 const str = { type: 'string' } as const;
 
@@ -36,6 +36,65 @@ export interface ShopReply {
   status: string;
   reason: string;
   products: { store: string; brand: string; model: string; sku?: string; url: string; imageUrl: string; price: string; currency: string; inTower: boolean; size: string; matchScore: number; matchNote: string }[];
+}
+
+// ── Stores (owner, 19.11): where the nearest physical store of each shop is ──────────────────────────
+/** Shops whose place is not known yet (not at the owner's place and never looked up). */
+export const storesToFind = (db: DB) => shopStores(db).filter((s) => !s.atPlace && !s.place);
+
+export const STORE_FIND_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['status', 'reason', 'stores'],
+  properties: {
+    status: { type: 'string', enum: ['done', 'error'] },
+    reason: str,
+    stores: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['key', 'place', 'km', 'online', 'url'], properties: { key: str, place: str, km: { type: 'number' }, online: { type: 'boolean' }, url: str } } },
+  },
+};
+export interface StoreReply {
+  status: string;
+  reason: string;
+  stores: { key: string; place: string; km: number; online: boolean; url: string }[];
+}
+
+/** One store search at a time; new shops from later searches wait for the next one. */
+export function queueStoreFind(db: DB): Job | null {
+  if (!storesToFind(db).length || db.jobs.some((j) => j.kind === 'storefind' && (j.state === 'queued' || j.state === 'running'))) return null;
+  const j: Job = { id: newId('J'), kind: 'storefind', lookVersion: 0, snapshot: { lookName: 'Магазини', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'queued', origin: 'site', createdAt: now() };
+  db.jobs.push(j);
+  return j;
+}
+
+export function storeFindPrompt(db: DB) {
+  const location = shopLocation(db) || 'Rijeka, Croatia';
+  return [
+    'You find where the owner can visit shops in person. Reply in the JSON schema.',
+    `The owner's shopping place: ${location}.`,
+    'For each shop below, find the NEAREST physical store to that place that sells this shop\'s clothes — its own store first, else an official retailer of the brand. place: mall or street and city, e.g. "Tower Center, Rijeka" or "Arena Centar, Zagreb". km: approximate road distance from the owner\'s place, 0 if unknown. url: the store locator or store page you used. online: true when there is no physical store within about 300 km (then place empty). Only facts you verified on the web; never invent a store.',
+    'Shops (key | name | website):',
+    storesToFind(db).map((s) => `${s.key} | ${s.name} | ${s.host || '—'}`).join('\n'),
+  ].join('\n');
+}
+
+export function applyStoreFind(db: DB, reply: StoreReply) {
+  const at = now();
+  const wanted = new Map(storesToFind(db).map((s) => [s.key, s] as const));
+  const list: StorePlace[] = [...(db.stores ?? [])];
+  let found = 0;
+  for (const r of reply.stores ?? []) {
+    const s = wanted.get(String(r.key || '').trim());
+    if (!s) continue;
+    const place = String(r.place || '').trim().slice(0, 120);
+    const online = Boolean(r.online) || !place;
+    const url = httpsUrl(String(r.url || '').trim())?.href;
+    const km = Number(r.km);
+    list.push({ key: s.key, name: s.name, place: online ? '' : place, km: !online && km > 0 ? Math.round(km) : undefined, online, url, checkedAt: at });
+    wanted.delete(s.key);
+    if (!online) found += 1;
+  }
+  db.stores = list;
+  return `Магазини: знайдено ${found}${wanted.size ? `, без відповіді ${wanted.size}` : ''}`;
 }
 
 /** The owner's brands: the saved list, or what the wardrobe shows until the owner edits it. */

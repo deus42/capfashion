@@ -8,7 +8,8 @@ import { pickTheme } from './analysis.ts';
 import { acceptSuggestion, dropReplacementsFor, keepItem, queueAdvice, rememberDeclined } from './advisor.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
 import { isEyewear } from '../src/lib.ts';
-import { productKey } from './shop-search.ts';
+import { productKey, queueStoreFind } from './shop-search.ts';
+import { tooClose } from '../src/look-memory.ts';
 import { sameIdentity } from './identity.ts';
 import { placeLook, requireParentCapsule } from './capsule-membership.ts';
 
@@ -309,7 +310,16 @@ function dropJobs(db: DB, pred: (j: Job) => boolean) {
 }
 
 export function deleteLook(db: DB, id: string) {
-  findOr404(db.looks, id, 'Образ');
+  const look = findOr404(db.looks, id, 'Образ');
+  // The look memory keeps what it was, every version, so it is never proposed again (owner, 19.11).
+  const at = now();
+  const seen = new Set<string>();
+  for (const slots of [look.slots, ...look.versions.map((v) => v.slots)]) {
+    const key = JSON.stringify(slots);
+    if (seen.has(key) || !Object.values(slots).some((r) => r.length)) continue;
+    seen.add(key);
+    db.lookMemory = [...(db.lookMemory ?? []), { slots, outcome: 'deleted' as const, ref: look.id, name: look.name, at }];
+  }
   busyJob(db, (j) => j.lookId === id);
   dropJobs(db, (j) => j.lookId === id);
   db.results = db.results.filter((r) => r.lookId !== id);
@@ -526,8 +536,13 @@ on('POST', '/api/suggestions/:id/accept', async (ctx, [id]) => {
   const out = await ctx.store.mutate((db) => {
     const s = findOr404(db.suggestions ?? [], id, 'Пропозиція');
     if (s.status !== 'open') throw new HttpError(409, 'Пропозицію вже розглянуто');
-    return { href: acceptSuggestion(db, s) };
+    // A look made meanwhile may already be this one (look memory, owner 19.11).
+    if (s.looks.some((l) => db.looks.some((x) => tooClose(db, l.slots, x.slots)))) throw new HttpError(409, 'Вже є схожий образ');
+    const href = acceptSuggestion(db, s);
+    queueAdvice(db, `Додано пропозицію: ${s.name}`);
+    return { href };
   });
+  ctx.drain();
   return out;
 });
 
@@ -994,6 +1009,13 @@ on('POST', '/api/products/:id/unpurchase', async (ctx, [id]) => {
   });
   ctx.drain();
   return out;
+});
+
+// «Магазини» (owner, 19.11): one web search for the shops whose nearest store is not known yet.
+on('POST', '/api/stores/find', async (ctx) => {
+  const job = await ctx.store.mutate((db) => queueStoreFind(db));
+  ctx.drain();
+  return { queued: Boolean(job) };
 });
 
 on('DELETE', '/api/products/:id', (ctx, [id]) =>

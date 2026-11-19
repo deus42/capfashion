@@ -7,7 +7,7 @@ import { newId, now } from './store.ts';
 import { detectImageType, prewarm, resolveAllowed, thumbnail } from './media.ts';
 import { ANALYZE_SCHEMA, INTAKE_SCHEMA, analyzePrompt, applyAnalyze, applyIntake, intakePrompt, lookPieces } from './analysis.ts';
 import { coverNeed, queueMissingItemPackshots, queueMissingRenders } from './routes.ts';
-import { SHOP_SEARCH_SCHEMA, applyShopSearch, fetchProductImage, shopSearchPrompt } from './shop-search.ts';
+import { SHOP_SEARCH_SCHEMA, STORE_FIND_SCHEMA, applyShopSearch, applyStoreFind, fetchProductImage, queueStoreFind, shopSearchPrompt, storeFindPrompt } from './shop-search.ts';
 import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice, seenRevs } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 import { fitGarmentCards, GARMENT_BOUNDS_SCHEMA, prepareGarmentCrops, type GarmentCard } from './garment-references.ts';
@@ -240,6 +240,9 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     } else if (job.kind === 'shopsearch') {
       prompt = shopSearchPrompt(db0, job);
       fs.writeFileSync(schemaFile, JSON.stringify(SHOP_SEARCH_SCHEMA));
+    } else if (job.kind === 'storefind') {
+      prompt = storeFindPrompt(db0);
+      fs.writeFileSync(schemaFile, JSON.stringify(STORE_FIND_SCHEMA));
     } else if (job.kind === 'advise') {
       // The advisor sees the catalogue photos of the items it rates now (never personal photos).
       const dir = path.join(jobDir, 'items');
@@ -281,7 +284,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const settings = db0.settings;
     const args = [
       // Shop search needs live web search; the other analyses stay offline.
-      ...(job.kind === 'shopsearch' ? ['--search'] : []),
+      ...(job.kind === 'shopsearch' || job.kind === 'storefind' ? ['--search'] : []),
       'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
       '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`, ...WORKER_ISOLATION,
       '--output-schema', schemaFile, '-o', lastMsg, ...images.flatMap((p) => ['-i', p]),
@@ -290,7 +293,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const j = db.jobs.find((x) => x.id === jobId)!;
       j.state = 'running';
       j.startedAt = now();
-      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
+      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'storefind' ? 'Шукаю найближчі магазини…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
       j.logPath = path.relative(projectRoot, logFile);
     });
     const exit = await spawnCodex(args, prompt, jobDir, logFile);
@@ -320,9 +323,16 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         adviseRevs.delete(jobId);
         return;
       }
+      if (j.kind === 'storefind') {
+        j.state = 'done';
+        j.stateNote = applyStoreFind(db, reply as never);
+        return;
+      }
       if (j.kind === 'shopsearch') {
         const out = applyShopSearch(db, j, reply as never);
         productImages = out.images;
+        // A new shop gets its nearest store looked up (owner, 19.11).
+        queueStoreFind(db);
         j.state = 'done';
         j.stateNote = out.note;
         return;
@@ -377,7 +387,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   async function runOne(jobId: string) {
     const db0 = store.read();
     const job = db0.jobs.find((j) => j.id === jobId)!;
-    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch' || job.kind === 'advise') return runAnalysis(jobId);
+    if (job.kind === 'intake' || job.kind === 'analyze' || job.kind === 'shopsearch' || job.kind === 'advise' || job.kind === 'storefind') return runAnalysis(jobId);
     const isPackshot = job.kind === 'packshot';
     if (!isPackshot && (db0.profile.identity?.disabledReason || job.snapshot.identity?.disabledReason)) throw Error(db0.profile.identity?.disabledReason || job.snapshot.identity!.disabledReason);
     const jobDir = path.join(store.dataDir, 'jobs', job.id);
@@ -594,7 +604,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
         // Shop searches take minutes: they come after uploads and «Підібрати», one at a time, so a slot stays free.
         // The advisor is background text work: after try-ons, alongside packshots.
-        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'shopsearch' ? 0.5 : k === 'packshot' || k === 'advise' ? 2 : 1);
+        const batch = (k?: string) => (k === 'intake' || k === 'analyze' ? 0 : k === 'shopsearch' || k === 'storefind' ? 0.5 : k === 'packshot' || k === 'advise' ? 2 : 1);
         const queued = db.jobs
           .filter((j) => j.state === 'queued' && !active.has(j.id))
           // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.
@@ -605,7 +615,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
           const activeKinds = [...active].map((id) => db.jobs.find((x) => x.id === id)?.kind);
           // The advisor rates items with their catalogue pictures, so it waits for uploads and pictures still being made.
           const photosPending = db.jobs.some((x) => (x.kind === 'packshot' || x.kind === 'intake') && (x.state === 'queued' || x.state === 'running'));
-          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !(j.kind === 'shopsearch' && activeKinds.includes('shopsearch')) && !(j.kind === 'advise' && (activeKinds.includes('advise') || photosPending)));
+          const idx = queued.findIndex((j) => !(j.kind === 'intake' && activeKinds.includes('intake')) && !((j.kind === 'shopsearch' || j.kind === 'storefind') && (activeKinds.includes('shopsearch') || activeKinds.includes('storefind'))) && !(j.kind === 'advise' && (activeKinds.includes('advise') || photosPending)));
           if (idx < 0) break;
           const next = queued.splice(idx, 1)[0];
           active.add(next.id);

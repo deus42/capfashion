@@ -16,9 +16,10 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
-import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
-import { MAX_OPEN_REPLACEMENTS, adviceDue, advisePrompt, applyAdvice, itemsToRate, seenRevs } from './advisor.ts';
+import { storeKey, capsuleCount, capsuleRating, isComplete, itemPlacements, itemRating, itemVerdict, lookRating, missingInfo, purchaseRanking, scoreLabel, usageLabel, wardrobeCapsule } from '../src/lib.ts';
+import { applyShopSearch, applyStoreFind, shopSearchPrompt, storesToFind } from './shop-search.ts';
+import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
+import { refusedPieces, tooClose } from '../src/look-memory.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
@@ -1136,7 +1137,9 @@ test('the advisor rates items and looks, proposes looks only on «Додати»
   // Declining the replacement keeps the item for good.
   await call('DELETE', `/api/needs/${replacement.id}`);
   assert.equal(store.read().items.find((i) => i.id === 'W-LOGO')!.rating!.kept, true);
-  // The weekly review is due seven days after the last one.
+  // «Додати» queued a fresh rating for the new look; the weekly review is due seven days after the last one.
+  assert.ok(store.read().jobs.some((j) => j.kind === 'advise' && j.state === 'queued'));
+  await store.mutate((d) => void (d.jobs = d.jobs.filter((j) => !(j.kind === 'advise' && j.state === 'queued'))));
   db = store.read();
   assert.equal(adviceDue(db), false);
   assert.equal(adviceDue(db, Date.now() + 8 * 24 * 60 * 60 * 1000), true);
@@ -1177,7 +1180,7 @@ test('round 5: eyewear stays out of «Підібрати»; advice is stamped wi
   assert.ok(itemsToRate(db).some((i) => i.id === 'W-S'), 'edited during the run → rated again');
   const polo = db.items.find((i) => i.id === 'W-POLO')!;
   assert.equal(polo.rating!.replace, undefined, 'a piece the owner added himself is never «варто замінити»');
-  assert.equal(db.looks[0].advice!.score, 9.5, 'look scores keep one decimal');
+  assert.equal(db.looks[0].advice!.score, 8, 'a look with a piece to buy is at most 8 (honest scale, 19.11)');
   const open = () => store.read().needs.filter((n) => n.replaces && n.status === 'open');
   assert.equal(open().length, MAX_OPEN_REPLACEMENTS);
   assert.deepEqual(open().map((n) => n.replaces), ['W-A', 'W-B', 'W-C'], 'lowest scores take the places');
@@ -1388,4 +1391,80 @@ test('scores on cards: a look\'s only while current, a capsule\'s is the mean of
   db = store.read();
   assert.equal(lookRating(db.looks[0]), null, 'a stale score is not shown');
   assert.equal(capsuleRating(db, db.capsules[0]), null);
+});
+
+test('round 7: look memory keeps deleted and refused compositions, closeness catches near-copies and twins; honest scale scores only what changed', async () => {
+  const { store, call } = setup();
+  const item = (id: string, category: 'tees' | 'shoes' | 'trousers' | 'accessories', title: string) =>
+    ({ id, rev: 1, category, title, status: 'confirmed' as const, photoIds: [], origin: 'candidate' as const, history: [], createdAt: at, updatedAt: at });
+  await store.mutate((d) => {
+    d.items.push(item('W-T', 'tees', 'Біла футболка'), item('W-T9', 'tees', 'Біла футболка без принту'), item('W-T3', 'tees', 'Чорна футболка'), item('W-S', 'shoes', 'Білі кеди'), item('W-S2', 'shoes', 'Коричневі лофери'), item('W-P', 'trousers', 'Темно-сині чиноси'), item('W-BAG', 'accessories', 'Червона сумка'));
+  });
+  const slots = (top: string, bottom: string, shoes: string, acc: string[] = []) => ({ ...emptySlots(), top: [{ kind: 'item' as const, id: top }], bottom: [{ kind: 'item' as const, id: bottom }], shoes: [{ kind: 'item' as const, id: shoes }], accessories: acc.map((id) => ({ kind: 'item' as const, id })) });
+  let db = store.read();
+  // Closeness: one core piece different (shoes) counts as the same look; twin items by kind and colour too.
+  assert.equal(tooClose(db, slots('W-T', 'W-P', 'W-S'), slots('W-T', 'W-P', 'W-S2')), true);
+  assert.equal(tooClose(db, slots('W-T', 'W-P', 'W-S'), slots('W-T9', 'W-P', 'W-S', ['W-BAG'])), true, 'a twin white tee plus a bag is the same look');
+  assert.equal(tooClose(db, slots('W-T', 'W-P', 'W-S'), slots('W-T3', 'W-1', 'W-S2')), false);
+  // A deleted look is remembered; «Підібрати» never brings it, or a near-copy, back.
+  const look = await call('POST', '/api/looks', { capsuleId: 'C-1', name: 'Видалити', slots: slots('W-T', 'W-P', 'W-S') });
+  await call('DELETE', `/api/looks/${look.id}`);
+  db = store.read();
+  assert.equal(db.lookMemory!.length, 1);
+  const job = { id: 'J-an', kind: 'analyze' as const, lookVersion: 0, snapshot: { lookName: 'x', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+  assert.match(analyzePrompt(db, job, []), /REJECTED[\s\S]*W-T/);
+  await store.mutate((d) => {
+    const id = applyAnalyze(d, job, { status: 'done', reason: '', name: 'Тест', description: '', looks: [
+      { name: 'Знову', occasion: '', season: 'all', why: '', top: ['W-T'], layer: [], bottom: ['W-P'], shoes: ['W-S2'], accessories: [] },
+      { name: 'Нове', occasion: '', season: 'all', why: '', top: ['W-T3'], layer: [], bottom: ['W-1'], shoes: ['W-S2'], accessories: [] },
+    ] });
+    assert.deepEqual(d.looks.filter((l) => l.capsuleId === id).map((l) => l.name), ['Нове']);
+  });
+  // A piece in two refused proposals and in no kept look is not built around again.
+  await store.mutate((d) => {
+    const s = (sid: string, top: string) => ({ id: sid, kind: 'look' as const, status: 'rejected' as const, name: sid, why: '', capsuleId: 'C-1', looks: [{ name: sid, why: '', slots: slots(top, 'W-2', 'W-S', ['W-BAG']) }], jobId: 'J-0', createdAt: at });
+    d.suggestions = [s('A-1', 'W-T'), s('A-2', 'W-T3')];
+  });
+  db = store.read();
+  assert.deepEqual([...refusedPieces(db, new Set())].sort(), ['W-2', 'W-BAG', 'W-S'], 'in both refused proposals and in no kept look');
+  const advise = { id: 'J-adv', kind: 'advise' as const, lookVersion: 0, snapshot: { lookName: 'Порадник', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+  await store.mutate((d) => void applyAdvice(d, advise, { status: 'done', reason: '', items: [], looks: [], newCapsules: [], newNeeds: [], newLooks: [
+    { name: 'Із сумкою', capsuleId: 'C-1', top: ['W-T9'], layer: [], bottom: ['W-1'], shoes: ['W-S2'], accessories: ['W-BAG'], why: '' },
+  ] }));
+  assert.equal(store.read().suggestions!.filter((s) => s.status === 'open').length, 0, 'never around a refused piece');
+  // Honest scale: a look scored on the current scale is not re-scored; a look with a piece to buy is at most 8.
+  await store.mutate((d) => {
+    const l = d.looks[0];
+    l.advice = { score: 7.2, why: 'x', version: l.version, scale: SCORE_SCALE };
+  });
+  db = store.read();
+  assert.ok(!looksToScore(db).some((l) => l.id === 'L-1'));
+  await store.mutate((d) => void applyAdvice(d, advise, { status: 'done', reason: '', items: [], looks: [{ id: 'L-1', score: 9.8, weakItem: '', swapTo: '', why: 'y' }], newLooks: [], newCapsules: [], newNeeds: [] }));
+  assert.equal(store.read().looks[0].advice!.score, 7.2, 'a current score does not jump');
+  await store.mutate((d) => void delete d.looks[0].advice!.scale);
+  await store.mutate((d) => void applyAdvice(d, advise, { status: 'done', reason: '', items: [], looks: [{ id: 'L-1', score: 9.8, weakItem: '', swapTo: '', why: 'y' }], newLooks: [], newCapsules: [], newNeeds: [] }));
+  assert.equal(store.read().looks[0].advice!.score, 8, 'an older-scale score is redone; to-buy looks stop at 8');
+  assert.ok(itemsToRate(store.read()).some((i) => i.id === 'W-T'), 'unrated items are rated');
+  assert.equal(validateDb(store.read()), null);
+});
+
+test('«Магазини»: one row per shop, a shop at the owner\'s place is known, one search fills the rest', async () => {
+  const { store, call } = setup();
+  await call('POST', '/api/products', { needId: 'N-1', store: 'Levi’s Croatia', model: 'Tee', url: 'https://www.levi.com/HR/a' });
+  await call('POST', '/api/products', { needId: 'N-1', store: 'Levi’s Hrvatska', model: 'Tee 2', url: 'https://www.levi.com/HR/b' });
+  await call('POST', '/api/products', { needId: 'N-1', store: 'Zara', model: 'Shirt', url: 'https://www.zara.com/hr/c' });
+  await store.mutate((d) => {
+    const p = d.products.find((x) => x.store === 'Zara')!;
+    p.towerAvailability = 'confirmed';
+  });
+  let db = store.read();
+  assert.equal(storeKey('Levi’s Croatia'), storeKey('Levi’s Hrvatska'));
+  assert.deepEqual(storesToFind(db).map((s) => s.key), [storeKey('Levi’s Croatia')], 'Zara is at the owner\'s place');
+  assert.deepEqual(await call('POST', '/api/stores/find'), { queued: true });
+  assert.deepEqual(await call('POST', '/api/stores/find'), { queued: false }, 'one search at a time');
+  await store.mutate((d) => void applyStoreFind(d, { status: 'done', reason: '', stores: [{ key: storeKey('Levi’s Croatia'), place: 'Arena Centar, Zagreb', km: 163.4, online: false, url: 'https://www.levi.com/HR/stores' }] }));
+  db = store.read();
+  assert.deepEqual(db.stores!.map((s) => [s.place, s.km]), [['Arena Centar, Zagreb', 163]]);
+  assert.equal(storesToFind(db).length, 0);
+  assert.equal(validateDb(db), null);
 });

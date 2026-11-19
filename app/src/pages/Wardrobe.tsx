@@ -4,7 +4,7 @@ import type { Category, Item, ItemStatus, Job } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, JobBar, LookArt, Missing, Modal, PageHead, SubNav, UploadButton } from '../components/ui.tsx';
-import { CATEGORY_LABEL, isEyewear, itemPlacements, itemVerdict, usageLabel, wardrobeCapsule } from '../lib.ts';
+import { CATEGORY_LABEL, capsuleCount, isEyewear, itemPlacements, itemVerdict, usageLabel, wardrobeCapsule } from '../lib.ts';
 
 import { InfoMark, TermInfo } from './Glossary.tsx';
 
@@ -89,7 +89,7 @@ function ItemPage({ item }: { item: Item }) {
       )}
 
       <div className="section-head">
-        <h2 className="h2">Де використано <span className="count">{usageLabel(capsules.length, looks.length)}</span></h2>
+        <h2 className="h2">Де використано <span className="count">{usageLabel(capsuleCount(capsules), looks.length)}</span></h2>
         {item.status !== 'inactive' && !isEyewear(item.title) && (
           <button className="btn sm" onClick={() => void act(() => api('POST', '/api/analyze', { itemIds: [item.id] }), 'Складаю образи — зʼявляться в «Підбірках»')}>
             <Sparkles size={13} /> Ще образ
@@ -322,7 +322,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
                       {st?.state === 'running' && <JobBar job={st} />}
                     </div>
                     <span className="nm">{i.title}<TermInfo texts={[i.title]} /></span>
-                    {usage && <span className="sub">{usageLabel(usage.capsules.length, usage.looks.length)}</span>}
+                    {usage && <span className="sub">{usageLabel(capsuleCount(usage.capsules), usage.looks.length)}</span>}
                   </button>
                 );
               })}

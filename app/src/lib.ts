@@ -257,6 +257,9 @@ export function itemPlacements(db: DB, itemId: string, ready = wardrobeCapsule(d
   return { looks, capsules };
 }
 
+/** Capsules an item counts in: only real ones — «З моїх речей» and «Найкращі» are other views of the same looks (owner, 19.11). */
+export const capsuleCount = (capsules: { id: string }[]) => capsules.filter((c) => !isAutoCapsule(c.id)).length;
+
 const ukrainianPlural = new Intl.PluralRules('uk');
 export function usageLabel(capsules: number, looks: number) {
   if (!capsules && !looks) return 'без образів';
@@ -288,7 +291,7 @@ export function capsuleReady(db: DB, c: Pick<Capsule, 'lookIds'>) {
 export function itemUsage(db: DB, itemId: string, ready = wardrobeCapsule(db)) {
   // The same looks «Де використано» lists, so the verdict and the page never disagree.
   const { looks, capsules } = itemPlacements(db, itemId, ready);
-  return { looks: looks.length, complete: looks.filter((l) => isComplete(db, l)).length, liked: looks.filter((l) => l.favorite).length, capsules: capsules.filter((c) => c.id !== WARDROBE_CAPSULE_ID).length };
+  return { looks: looks.length, complete: looks.filter((l) => isComplete(db, l)).length, liked: looks.filter((l) => l.favorite).length, capsules: capsuleCount(capsules) };
 }
 
 /** The item page's quiet line (owner, 18.11): «8/10 · сильна річ», «гарна, мало образів», «варто замінити: …»; the count lives in «Де використано». */

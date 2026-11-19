@@ -16,7 +16,7 @@ import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
-import { isComplete, itemPlacements, itemVerdict, missingInfo, purchaseRanking, wardrobeCapsule } from '../src/lib.ts';
+import { capsuleCount, isComplete, itemPlacements, itemVerdict, missingInfo, purchaseRanking, usageLabel, wardrobeCapsule } from '../src/lib.ts';
 import { applyShopSearch, shopSearchPrompt } from './shop-search.ts';
 import { MAX_OPEN_REPLACEMENTS, adviceDue, advisePrompt, applyAdvice, itemsToRate, seenRevs } from './advisor.ts';
 
@@ -1321,4 +1321,17 @@ test('round 6: a dropped product stays dropped under another link or with tracki
     found('Mango', 'Ecru tee', 'https://mango.com/ecru'),
   ] } as never));
   assert.deepEqual(store.read().products.map((p) => p.model), ['Ecru tee']);
+});
+
+test('an item counts only in real capsules, not in «З моїх речей» or «Найкращі»', async () => {
+  const { store } = setup();
+  await store.mutate((d) => {
+    d.items.push({ id: 'W-T', rev: 1, category: 'tees', title: 'White tee', status: 'confirmed', photoIds: [], origin: 'candidate', history: [], createdAt: at, updatedAt: at });
+    d.looks[0].slots.top = [{ kind: 'item', id: 'W-T' }];
+  });
+  const db = store.read();
+  const { looks, capsules } = itemPlacements(db, 'W-T');
+  assert.deepEqual(capsules.map((c) => c.id).sort(), ['C-1', 'my-wardrobe'], 'the ready look also shows under «З моїх речей»');
+  assert.equal(capsuleCount(capsules), 1);
+  assert.equal(usageLabel(capsuleCount(capsules), looks.length), 'у 1 капсулі · 1 образ');
 });

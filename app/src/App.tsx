@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import {
-  House, ImagePlus, Images, LayoutGrid, Loader2, Shirt, ShoppingBag, TriangleAlert, User,
+  House, ImagePlus, Images, LayoutGrid, Loader2, Plus, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
 import { Img, SpanBar } from './components/ui.tsx';
@@ -77,11 +77,16 @@ export default function App() {
         <a href="/home" className="rail-logo" aria-label="Cap Fashion">
           <Shirt size={18} />
         </a>
-        <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} />
+        <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} desk />
         <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
         <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
         <button type="button" className="rail-item rail-upload" aria-label="Додати фото" title="Додати фото" onClick={intake.pick} disabled={intake.busy}>
-          {intake.busy ? <Loader2 size={ic} className="spin" /> : <ImagePlus size={ic} />}
+          <span className="upload-icon" aria-hidden="true">
+            {intake.busy ? <Loader2 size={ic} className="spin" /> : <>
+              <ImagePlus size={ic} className="upload-desktop-icon" />
+              <Plus size={22} className="m-only" />
+            </>}
+          </span>
           <span>Додати фото</span>
         </button>
         <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
@@ -95,7 +100,7 @@ export default function App() {
       <div className="frame">
         {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
-          <a href="/home" className="wordmark m-only">Cap Fashion</a>
+          <a href="/home" className="wordmark m-only" aria-label="Cap Fashion — Головна" aria-current={section === 'home' ? 'page' : undefined}>Cap Fashion</a>
           <div className="grow" />
           <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}

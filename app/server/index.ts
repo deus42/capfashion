@@ -12,7 +12,7 @@ import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, th
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROJECT_ROOT = path.resolve(APP_DIR, '..');
-const DATA_DIR = path.resolve(process.env.CAPFASHION_DATA_DIR || path.join(PROJECT_ROOT, '.local', 'app-data'));
+const DATA_DIR = path.resolve(process.env.CAPSULA_DATA_DIR || path.join(PROJECT_ROOT, '.local', 'app-data'));
 const DIST = path.join(APP_DIR, 'dist');
 const PORT = Number(process.env.PORT || 4317);
 const HOST = '127.0.0.1';
@@ -32,7 +32,7 @@ const PROXY_HEADERS = ['tailscale-user-login', 'tailscale-headers-info', 'x-forw
 
 /**
  * Trusted without a login: plain loopback requests, and requests from the
- * private exmachina gateway (https://capfashion.exmachina), which verifies the
+ * private exmachina gateway (https://capsula.exmachina), which verifies the
  * owner's Tailscale identity itself and forwards with a loopback Host and
  * X-Forwarded-Host. `tailscale serve` requests carry the tailnet hostname and
  * identity headers and are checked below.
@@ -44,7 +44,7 @@ function authorize(req: http.IncomingMessage): string | null {
   const proxied = PROXY_HEADERS.some((h) => h in req.headers);
   if (LOOPBACK_HOST.test(host) && localForward && !proxied) return null;
   const login = String(req.headers['tailscale-user-login'] ?? '').toLowerCase();
-  const allowed = (process.env.CAPFASHION_TAILSCALE_LOGIN || store.read().settings.tailscaleLogin || '').toLowerCase();
+  const allowed = (process.env.CAPSULA_TAILSCALE_LOGIN || store.read().settings.tailscaleLogin || '').toLowerCase();
   if (!allowed) return 'Віддалений доступ вимкнено: у налаштуваннях не вказано Tailscale-логін власника';
   if (!login || login !== allowed) return 'Доступ дозволено лише власнику через Tailscale';
   return null;
@@ -111,7 +111,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const method = req.method ?? 'GET';
 
   if (url.pathname.startsWith('/api/')) {
-    if (method !== 'GET' && req.headers['x-capfashion'] !== '1') return send(res, 403, { error: 'Запит без заголовка сайту відхилено' });
+    if (method !== 'GET' && req.headers['x-capsula'] !== '1') return send(res, 403, { error: 'Запит без заголовка сайту відхилено' });
     if (method === 'GET' && url.pathname === '/api/state') {
       const db = store.read();
       return send(res, 200, { db: stateView(db), runner: runner.state, recovered: store.recovered(), dataDir: path.relative(PROJECT_ROOT, DATA_DIR) }, req);

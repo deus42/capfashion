@@ -43,4 +43,4 @@ Run from this directory before work:
 node /Users/deus/Projects/Vault-Tec/scripts/vault-preflight.mjs
 ```
 
-The shared project record is [Capfashion Current State](/Users/deus/Projects/Vault-Tec/35%20Context/Projects/Capfashion%20Current%20State.md). Vault holds the project map and workflow context; source photos and raw chats remain here locally.
+The shared project record is [Capsula Current State](/Users/deus/Projects/Vault-Tec/35%20Context/Projects/Capsula%20Current%20State.md). Vault holds the project map and workflow context; source photos and raw chats remain here locally.

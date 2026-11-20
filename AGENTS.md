@@ -2,15 +2,15 @@
 
 ## Vault Preload
 
-- Before each new task/session, same-task follow-up or compaction/resume, run `node /Users/deus/Projects/Vault-Tec/scripts/vault-preflight.mjs` from `/Users/deus/Projects/Capfashion` and read the complete output. Stop project changes and report `unavailable` if it fails. Apply the Vault OS `Mandatory Current Vault and Writeback` contract before handoff.
+- Before each new task/session, same-task follow-up or compaction/resume, run `node /Users/deus/Projects/Vault-Tec/scripts/vault-preflight.mjs` from `/Users/deus/Projects/Capsula` and read the complete output. Stop project changes and report `unavailable` if it fails. Apply the Vault OS `Mandatory Current Vault and Writeback` contract before handoff.
 - Preload `/Users/deus/Projects/Vault-Tec/00 Agent Memory.md`, then `35 Context/Agent Operating System.md` and the current project context returned by preflight.
-- Read the exact Source Project overlay: `/Users/deus/Projects/Vault-Tec/90 Admin/Workstream Registry/Source Projects/local-capfashion.md`.
-- Read the exact Project Workspace record: `/Users/deus/Projects/Vault-Tec/90 Admin/Workstream Registry/Project Workspaces/capfashion.md`.
+- Read the exact Source Project overlay: `/Users/deus/Projects/Vault-Tec/90 Admin/Workstream Registry/Source Projects/local-capsula.md`.
+- Read the exact Project Workspace record: `/Users/deus/Projects/Vault-Tec/90 Admin/Workstream Registry/Project Workspaces/capsula.md`.
 - Treat this file as the repo-specific specialization after Vault defaults.
 
 ## Workspace Policy
 
-- Repo root: `/Users/deus/Projects/Capfashion`; default branch `main`; preserve unrelated and concurrent changes. Use branches or worktrees only when explicitly requested.
+- Repo root: `/Users/deus/Projects/Capsula`; default branch `main`; preserve unrelated and concurrent changes. Use branches or worktrees only when explicitly requested.
 - Remote: public GitHub repo `deus42/capsula` (created 17 November 2026 as `capfashion`, renamed by the owner 20 November 2026). Push only when the owner asks; the site itself stays local.
 - Local initialization, scoped edits and verification are within the project task. Publishing, cloud uploads and external sharing require task-specific authorization.
 - Do not spawn native subagents without explicit user or applicable task-packet authorization. When authorized without a tighter budget: at most two concurrent children, one generation, no nested spawning.
@@ -25,7 +25,7 @@
 
 - Personal fashion and capsule-wardrobe workspace: preserve source conversations/photos, maintain source-backed wardrobe notes, and develop capsule plans.
 - Current phase: local site v1 (`app/`) built from the accepted specification (17 November 2026), with candidate catalogue confirmation and personal try-on review in progress. No deployment or public hosting of the site; only the code is public.
-- Project workspace: `/Users/deus/Projects/Vault-Tec/90 Admin/Workstream Registry/Project Workspaces/capfashion.md`
+- Project workspace: `/Users/deus/Projects/Vault-Tec/90 Admin/Workstream Registry/Project Workspaces/capsula.md`
 
 ## Execution Policy
 

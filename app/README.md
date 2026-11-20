@@ -16,16 +16,16 @@ Checks: `npm run check`, which runs typecheck, server tests (acceptance A02, A04
 
 ## Running as a background service
 
-The site runs as the user LaunchAgent `ai.deus.capfashion` (`~/Library/LaunchAgents/ai.deus.capfashion.plist`). It starts at login, restarts on crash and logs to `~/Library/Logs/capfashion/`. If it stopped during a generation run, it resumes the run on start; jobs that were only queued wait for "Запустити".
+The site runs as the user LaunchAgent `ai.deus.capsula` (`~/Library/LaunchAgents/ai.deus.capsula.plist`). It starts at login, restarts on crash and logs to `~/Library/Logs/capsula/`. If it stopped during a generation run, it resumes the run on start; jobs that were only queued wait for "Запустити".
 
 - After UI changes: `cd app && npm run build`. No restart is needed: the server reads `dist/` from disk.
-- After server changes: `launchctl kickstart -k gui/$(id -u)/ai.deus.capfashion`.
-- Stop: `launchctl bootout gui/$(id -u)/ai.deus.capfashion`.
+- After server changes: `launchctl kickstart -k gui/$(id -u)/ai.deus.capsula`.
+- Stop: `launchctl bootout gui/$(id -u)/ai.deus.capsula`.
 
 ## Addresses
 
 - Mac: http://127.0.0.1:4317
-- Private domain: **https://capfashion.exmachina**, served by the owner's existing `exmachina-domains` gateway (route added 17.11.2026; see that gateway's README). Each device needs Tailscale DNS and the Exmachina root profile installed once.
+- Private domain: **https://capsula.exmachina**, served by the owner's existing `exmachina-domains` gateway (route added 17.11.2026; see that gateway's README). Each device needs Tailscale DNS and the Exmachina root profile installed once.
 - Tailnet fallback: `https://<this-mac>.<tailnet>.ts.net:10443` via `tailscale serve`.
 
 ## Photo intake and outfit analyzer
@@ -64,7 +64,7 @@ API responses and static assets are gzip-compressed (state ≈ 28 KB on the wire
 
 "Запустити" adds a job (a frozen snapshot of items and base photos) and processes the queue sequentially with the local Codex CLI. No chat is needed.
 
-- Binary: the Codex bundled with `/Applications/ChatGPT.app` (it knows current models such as `gpt-6.1-sol`); override with `CAPFASHION_CODEX_BIN`.
+- Binary: the Codex bundled with `/Applications/ChatGPT.app` (it knows current models such as `gpt-6.1-sol`); override with `CAPSULA_CODEX_BIN`.
 - Isolation: `codex exec --ignore-user-config --ephemeral -s workspace-write -C .local/app-data/jobs/<id>`. Personal Codex config (including its env block) is not loaded. Inputs are attached with `-i`; the model writes only into the job folder.
 - Model and effort are set in Профіль → Генерація.
 - The result is saved as "На перевірці". The owner chooses "Прийняти" or "Переробити" with a reason, which queues a linked retry.
@@ -91,7 +91,7 @@ The server listens only on `127.0.0.1`. To open it from the iPhone inside the ta
 
 3. Open `https://<this-mac>.<tailnet>.ts.net:10443` on the iPhone.
 
-Requests whose Host is not loopback, or that carry proxy headers, must have a `Tailscale-User-Login` header equal to the configured login; otherwise they get 403. Mutating API calls also require the site's `x-capfashion` header, which blocks cross-site form posts. Never use `tailscale funnel` for this site.
+Requests whose Host is not loopback, or that carry proxy headers, must have a `Tailscale-User-Login` header equal to the configured login; otherwise they get 403. Mutating API calls also require the site's `x-capsula` header, which blocks cross-site form posts. Never use `tailscale funnel` for this site.
 
 Enabled 17 November 2026 with the owner's approval: `https://<this-mac>.<tailnet>.ts.net:10443`, owner login set in settings. The server must be running (`npm start`) for the phone to connect.
 

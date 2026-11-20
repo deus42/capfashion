@@ -124,7 +124,7 @@ export function useDb() {
   return state!.db;
 }
 
-const ROUTE_EVENT = 'capfashion:route';
+const ROUTE_EVENT = 'capsula:route';
 
 /**
  * Clean addresses (/capsules/C-1, /looks/L-1). Old #/ links still work: they

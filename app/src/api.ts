@@ -36,7 +36,7 @@ export async function getState(): Promise<AppState> {
 export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
-    headers: { 'content-type': 'application/json', 'x-capfashion': '1' },
+    headers: { 'content-type': 'application/json', 'x-capsula': '1' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return parse<T>(res);
@@ -46,7 +46,7 @@ export async function uploadFile(file: File, params: Record<string, string>) {
   const qs = new URLSearchParams(params).toString();
   const res = await fetch(`/api/upload?${qs}`, {
     method: 'POST',
-    headers: { 'x-capfashion': '1', 'x-filename': encodeURIComponent(file.name), 'content-type': file.type || 'application/octet-stream' },
+    headers: { 'x-capsula': '1', 'x-filename': encodeURIComponent(file.name), 'content-type': file.type || 'application/octet-stream' },
     body: file,
   });
   return parse<{ id: string }>(res);

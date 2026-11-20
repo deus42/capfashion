@@ -106,7 +106,7 @@ test('chat stylist sees current catalogue roles and owner decisions without pers
 });
 
 function setup() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capfashion-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-test-'));
   const store = createStore(dir, fixture);
   let drained = 0;
   const ctx = { store, projectRoot: dir, drain: () => void drained++ };
@@ -115,7 +115,7 @@ function setup() {
 }
 
 test('reference import verifies bytes, deduplicates and preserves wardrobe and base photos', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capfashion-inspiration-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-inspiration-'));
   try {
     const dir = path.join(root, '.local/data');
     fs.mkdirSync(path.join(root, 'assets/references'), { recursive: true });
@@ -677,7 +677,7 @@ test('pinned original freezes face/body crops and excludes faces from garment ph
 });
 
 test('pinned reference integrity fails before generation when a file changes', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capfashion-identity-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-identity-'));
   try {
     const file = (p: string) => { fs.writeFileSync(path.join(dir, p), p); return { path: p, sha256: createHash('sha256').update(p).digest('hex') }; };
     const db = fixture();

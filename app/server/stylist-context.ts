@@ -36,7 +36,7 @@ export function stylistContext(db: DB) {
 }
 
 if (import.meta.main) {
-  const dataDir = process.env.CAPFASHION_DATA_DIR || fileURLToPath(new URL('../../.local/app-data/', import.meta.url));
+  const dataDir = process.env.CAPSULA_DATA_DIR || fileURLToPath(new URL('../../.local/app-data/', import.meta.url));
   try {
     const db: DB = JSON.parse(readFileSync(path.join(dataDir, 'db.json'), 'utf8'));
     console.log(JSON.stringify(stylistContext(db)));

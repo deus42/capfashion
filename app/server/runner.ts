@@ -38,7 +38,7 @@ export interface RunnerState {
 
 /** Prefers the Codex bundled with the ChatGPT desktop app: it knows the current models (e.g. Sol). */
 export function findCodex() {
-  if (process.env.CAPFASHION_CODEX_BIN) return process.env.CAPFASHION_CODEX_BIN;
+  if (process.env.CAPSULA_CODEX_BIN) return process.env.CAPSULA_CODEX_BIN;
   if (fs.existsSync(BUNDLED_CODEX)) return BUNDLED_CODEX;
   return 'codex';
 }
@@ -196,7 +196,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       child.on('error', (e) => {
         clearTimeout(timer);
         const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
-        resolve({ code: null, err: missing ? `Codex не знайдено (${codexBin}). Потрібен застосунок ChatGPT з Codex або змінна CAPFASHION_CODEX_BIN.` : e.message });
+        resolve({ code: null, err: missing ? `Codex не знайдено (${codexBin}). Потрібен застосунок ChatGPT з Codex або змінна CAPSULA_CODEX_BIN.` : e.message });
       });
       child.on('close', (code) => {
         clearTimeout(timer);

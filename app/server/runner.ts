@@ -227,6 +227,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         log.end();
         resolve({ code });
       });
+      // A Codex that exits before reading the prompt closes the pipe (EPIPE); its exit code reports the failure.
+      child.stdin.on('error', () => {});
       child.stdin.end(prompt);
     });
   }

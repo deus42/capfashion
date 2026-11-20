@@ -14,7 +14,7 @@
     "dev:client": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p .",
-    "test": "node --test server/",
+    "test": "node --test 'server/*.test.ts'",
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

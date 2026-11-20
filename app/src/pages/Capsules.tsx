@@ -8,6 +8,7 @@ import { SEASON_LABEL, openSuggestions, periodLine, bestLooks, capsuleLooks, cap
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile, tileCovers } from './Home.tsx';
 import { NewLooks } from './NewLooks.tsx';
+import { CapsuleSetEditor, CapsuleSetSection, initialSetDraft, sameSetDraft, setDraftPayload } from '../components/CapsuleSet.tsx';
 
 
 export function CapsulesPage() {
@@ -172,12 +173,18 @@ function LookCard({ look, mark = false }: { look: Look; mark?: boolean }) {
 
 function EditCapsule({ capsule, onClose }: { capsule: Capsule; onClose: () => void }) {
   const { act } = useApp();
+  const db = useDb();
+  const isSelection = capsule.kind === 'selection';
+  // The set (owner, 20.11) is sent only when it changed, so renaming never trips over an unsaved, too-large set.
+  const [initialSet] = useState(() => initialSetDraft(db, capsule));
+  const [setDraft, setSetDraft] = useState(initialSet);
   const [name, setName] = useState(capsule.name);
   const [description, setDescription] = useState(capsule.description);
   const [season, setSeason] = useState<Season>(capsule.season);
   const [situations, setSituations] = useState(capsule.situations.join('\n'));
   const save = async () => {
-    const ok = await act(() => api('PATCH', `/api/capsules/${capsule.id}`, { rev: capsule.rev, name, description, season, situations: situations.split('\n') }), 'Збережено');
+    const set = !isSelection && !sameSetDraft(setDraft, initialSet) ? setDraftPayload(setDraft) : {};
+    const ok = await act(() => api('PATCH', `/api/capsules/${capsule.id}`, { rev: capsule.rev, name, description, season, situations: situations.split('\n'), ...set }), 'Збережено');
     if (ok) onClose();
   };
   return (
@@ -213,6 +220,7 @@ function EditCapsule({ capsule, onClose }: { capsule: Capsule; onClose: () => vo
           </select>
         </label>
         <label className="field full"><span>Ситуації (по рядку)</span><textarea className="textarea" value={situations} onChange={(e) => setSituations(e.target.value)} /></label>
+        {!isSelection && <CapsuleSetEditor draft={setDraft} onChange={setSetDraft} />}
       </div>
     </Modal>
   );
@@ -280,7 +288,7 @@ export function CapsuleDetail({ id }: { id: string }) {
         </div>
       </div>
       <LookGrid looks={looks} filter={!hidden && <div className="filters" role="group" aria-label="Фільтр образів"><Filter active={readyOnly} href={`/capsules/${capsule.id}${readyOnly ? '' : '?owned=1'}`}>{WARDROBE_CAPSULE_NAME}</Filter></div>} />
-      <PieceBlocks pieces={pieces} ownTitle="Речі капсули" />
+      {isSelection ? <PieceBlocks pieces={pieces} ownTitle="Речі капсули" /> : <CapsuleSetSection capsule={capsule} />}
       {editing && <EditCapsule capsule={capsule} onClose={() => setEditing(false)} />}
     </div>
   );

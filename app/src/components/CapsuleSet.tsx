@@ -1,0 +1,158 @@
+import { useMemo } from 'react';
+import { X } from 'lucide-react';
+import type { Capsule, SlotRef } from '../api.ts';
+import { thumb } from '../api.ts';
+import { useDb } from '../store.tsx';
+import { CATEGORY_LABEL, resolveRef } from '../lib.ts';
+import { CAPSULE_LIMITS, MAX_BASE_PIECES, capsuleSet, pieceCategory, pieceGroup, pieceKey, type CapsulePiece, type PieceGroup } from '../capsule-pieces.ts';
+import { Badge, CategoryIcon } from './ui.tsx';
+
+const plural = new Intl.PluralRules('uk');
+const looksText = (n: number) => (n ? `${n} ${{ one: 'образ', few: 'образи' }[plural.select(n) as string] ?? 'образів'}` : 'без образів');
+const combosText = (n: number) => `${n} ${plural.select(n) === 'many' ? 'поєднань' : 'поєднання'}`;
+const GROUP_TEXT: Record<PieceGroup, string> = { garments: 'Одяг', shoes: 'Взуття', accessories: 'Аксесуари' };
+const ROLE_ORDER = ['layer', 'top', 'bottom', 'shoes', 'accessories'];
+const byRole = (a: CapsulePiece, b: CapsulePiece) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || Number(b.base) - Number(a.base) || b.looks - a.looks;
+const pieceHref = (r: SlotRef) => (r.kind === 'item' ? `/wardrobe/${r.id}` : `/shopping?need=${r.id}`);
+
+/**
+ * «Речі» under a capsule's looks (owner, 20.11): its ten garments in the order they are worn,
+ * then — after a fine line — shoes and accessories, each with how many looks it makes.
+ */
+export function CapsuleSetSection({ capsule }: { capsule: Capsule }) {
+  const db = useDb();
+  const set = useMemo(() => capsuleSet(db, capsule), [db, capsule]);
+  if (!set.pieces.length) return null;
+  const garments = set.pieces.filter((p) => p.group === 'garments').sort(byRole);
+  const extras = set.pieces.filter((p) => p.group !== 'garments').sort(byRole);
+  const over = set.counts.garments > CAPSULE_LIMITS.garments;
+  const tile = (p: CapsulePiece) => {
+    const r = resolveRef(db, p.ref);
+    const art = r.art ?? r.photo;
+    return (
+      <a key={pieceKey(p.ref)} className="wtile" href={pieceHref(p.ref)}>
+        <div className="img">
+          {art ? <img src={thumb(art, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
+          {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
+        </div>
+        <span className="nm">{r.title}</span>
+        <span className="sub">{[p.base && 'база', !p.owned && 'докупити', looksText(p.looks)].filter(Boolean).join(' · ')}</span>
+      </a>
+    );
+  };
+  return (
+    <section className="capsule-set" aria-label="Речі капсули">
+      <div className="section-head">
+        <h2 className="h2">Речі <span className={`count${over ? ' over' : ''}`}>{over ? `${set.counts.garments}/${CAPSULE_LIMITS.garments}` : set.counts.garments}</span></h2>
+        {set.combinations > 0 && <span className="set-combos">{combosText(set.combinations)}</span>}
+      </div>
+      {garments.length > 0 && <div className="ward-grid">{garments.map(tile)}</div>}
+      {extras.length > 0 && <div className="ward-grid small set-extras">{extras.map(tile)}</div>}
+    </section>
+  );
+}
+
+export interface SetDraft {
+  pieces: SlotRef[];
+  base: string[];
+  /** A piece waiting for the owner to pick which piece of its full group it replaces. */
+  pending: SlotRef | null;
+}
+
+export const initialSetDraft = (db: Parameters<typeof capsuleSet>[0], capsule: Capsule): SetDraft => ({
+  pieces: capsuleSet(db, capsule).pieces.map((p) => p.ref),
+  base: (capsule.base ?? []).map(pieceKey),
+  pending: null,
+});
+
+/** The set inside the capsule's pencil modal: remove, add, replace at the limit, mark the base. */
+export function CapsuleSetEditor({ draft, onChange }: { draft: SetDraft; onChange: (next: SetDraft) => void }) {
+  const db = useDb();
+  const groupOf = (r: SlotRef): PieceGroup => {
+    const c = pieceCategory(db, r);
+    return c ? pieceGroup(c) : 'garments';
+  };
+  const counts: Record<PieceGroup, number> = { garments: 0, shoes: 0, accessories: 0 };
+  for (const r of draft.pieces) counts[groupOf(r)] += 1;
+  const inSet = new Set(draft.pieces.map(pieceKey));
+  const pendingGroup = draft.pending ? groupOf(draft.pending) : null;
+  const items = db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !inSet.has(`item:${i.id}`));
+  const needs = db.needs.filter((n) => n.status === 'open' && !inSet.has(`need:${n.id}`));
+  const roleOf = (r: SlotRef) => {
+    const c = pieceCategory(db, r);
+    return c === 'outerwear' ? 'layer' : c === 'trousers' || c === 'shorts' ? 'bottom' : c === 'shoes' || c === 'accessories' ? c : 'top';
+  };
+  const ordered = [...draft.pieces].sort((a, b) => ROLE_ORDER.indexOf(roleOf(a)) - ROLE_ORDER.indexOf(roleOf(b)));
+
+  const add = (value: string) => {
+    const [kind, id] = value.split(':') as [SlotRef['kind'], string];
+    if (!id) return;
+    const ref: SlotRef = { kind, id };
+    const g = groupOf(ref);
+    if (counts[g] >= CAPSULE_LIMITS[g]) onChange({ ...draft, pending: ref });
+    else onChange({ ...draft, pieces: [...draft.pieces, ref], pending: null });
+  };
+  const remove = (r: SlotRef) => onChange({ ...draft, pieces: draft.pieces.filter((x) => pieceKey(x) !== pieceKey(r)), base: draft.base.filter((k) => k !== pieceKey(r)) });
+  const replace = (r: SlotRef) => {
+    if (!draft.pending) return;
+    const pending = draft.pending;
+    onChange({ pieces: draft.pieces.map((x) => (pieceKey(x) === pieceKey(r) ? pending : x)), base: draft.base.filter((k) => k !== pieceKey(r)), pending: null });
+  };
+  const toggleBase = (r: SlotRef) => {
+    const k = pieceKey(r);
+    if (draft.base.includes(k)) onChange({ ...draft, base: draft.base.filter((x) => x !== k) });
+    else if (draft.base.length < MAX_BASE_PIECES) onChange({ ...draft, base: [...draft.base, k] });
+  };
+
+  return (
+    <div className="field full set-edit">
+      <span>Речі</span>
+      <p className="set-counts">
+        {(Object.keys(CAPSULE_LIMITS) as PieceGroup[]).map((g) => (
+          <span key={g} className={counts[g] > CAPSULE_LIMITS[g] ? 'over' : ''}>{GROUP_TEXT[g]} {counts[g]}/{CAPSULE_LIMITS[g]}</span>
+        ))}
+      </p>
+      <ul className="set-list">
+        {ordered.map((r) => {
+          const res = resolveRef(db, r);
+          const art = res.art ?? res.photo;
+          const g = groupOf(r);
+          const key = pieceKey(r);
+          const isBase = draft.base.includes(key);
+          return (
+            <li key={key} className={pendingGroup === g ? 'replaceable' : ''}>
+              <span className="set-thumb">{art ? <img src={thumb(art, 160)} alt="" /> : <CategoryIcon category={res.category} size={16} />}</span>
+              <span className="set-name">{res.title}{r.kind === 'need' && <span className="buy"> · докупити</span>}</span>
+              {g === 'garments' && (
+                <button type="button" className={`quiet-toggle${isBase ? ' on' : ''}`} aria-pressed={isBase} disabled={!isBase && draft.base.length >= MAX_BASE_PIECES} onClick={() => toggleBase(r)}>база</button>
+              )}
+              {pendingGroup === g
+                ? <button type="button" className="quiet-toggle" onClick={() => replace(r)}>замінити</button>
+                : <button type="button" className="icon-btn sm" aria-label={`Прибрати «${res.title}»`} onClick={() => remove(r)}><X size={13} /></button>}
+            </li>
+          );
+        })}
+      </ul>
+      {draft.pending && pendingGroup && (
+        <p className="set-note">
+          {GROUP_TEXT[pendingGroup]} уже {counts[pendingGroup]}/{CAPSULE_LIMITS[pendingGroup]}: що замінить «{resolveRef(db, draft.pending).title}»?
+          <button type="button" className="quiet-toggle" onClick={() => onChange({ ...draft, pending: null })}>Скасувати</button>
+        </p>
+      )}
+      <select className="select" value="" aria-label="Додати річ у капсулу" onChange={(e) => add(e.target.value)}>
+        <option value="">Додати річ…</option>
+        {items.length > 0 && <optgroup label="Мої речі">{items.map((i) => <option key={i.id} value={`item:${i.id}`}>{i.title} — {CATEGORY_LABEL[i.category]}</option>)}</optgroup>}
+        {needs.length > 0 && <optgroup label="Докупити">{needs.map((n) => <option key={n.id} value={`need:${n.id}`}>{n.title} — {CATEGORY_LABEL[n.category]}</option>)}</optgroup>}
+      </select>
+    </div>
+  );
+}
+
+/** What the modal sends when the set changed: refs, and the base as refs of the set. */
+export function setDraftPayload(draft: SetDraft) {
+  const byKey = new Map(draft.pieces.map((r) => [pieceKey(r), r]));
+  return { pieces: draft.pieces, base: draft.base.map((k) => byKey.get(k)).filter((r): r is SlotRef => Boolean(r)) };
+}
+
+export const sameSetDraft = (a: SetDraft, b: SetDraft) =>
+  a.pieces.map(pieceKey).join('|') === b.pieces.map(pieceKey).join('|') && [...a.base].sort().join('|') === [...b.base].sort().join('|');

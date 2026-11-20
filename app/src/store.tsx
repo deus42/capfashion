@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AppState, Session } from './api.ts';
-import { ApiError, getSession, getState } from './api.ts';
+import { ApiError, getSession, getState, setUploadConversion } from './api.ts';
 
 interface Ctx {
   state: AppState | null;
@@ -43,7 +43,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
   useEffect(() => {
-    void getSession().then(setSession).catch(() => setSession({ mode: 'local', user: null }));
+    void getSession().then((s) => { setUploadConversion(s.mode === 'accounts'); setSession(s); }).catch(() => setSession({ mode: 'local', user: null }));
   }, []);
 
   const act = useCallback(

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import sharp from 'sharp';
 import type { HashedFile, SnapshotSlot } from './schema.ts';
 
 const imageTool = fileURLToPath(new URL('./garment-imaging.swift', import.meta.url));
@@ -32,7 +33,80 @@ export interface GarmentCard {
   card?: number;
 }
 
-async function imaging<T>(mode: 'preview' | 'crop' | 'sheet', dir: string, request: unknown): Promise<T | undefined> {
+/** Answers, per crop file in order, whether any part of a face is visible (a model check where macOS Vision is absent). */
+export type FaceCheck = (files: string[]) => Promise<boolean[]>;
+
+export const FACE_CHECK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['faces'],
+  properties: { faces: { type: 'array', items: { type: 'boolean' } } },
+} as const;
+export const FACE_CHECK_PROMPT = 'For each attached image, in attachment order, answer true if ANY part of a human face or head (eyes, nose, mouth, ear, hairline) is visible, otherwise false. Return JSON only: {"faces":[...]} with exactly one boolean per image. Analysis only.';
+
+const useSwift = process.platform === 'darwin' && fs.existsSync('/usr/bin/swift');
+
+type Preview = { key: number; source: string; destination: string };
+type CropEntry = { key: number; source: string; destination: string; box: { x: number; y: number; width: number; height: number } };
+
+/**
+ * The same three operations as `garment-imaging.swift`, with sharp, for servers without macOS (production).
+ * Previews are upright copies; crops are cut from the upright original and kept only when the face check says
+ * no face is visible — without a face check no crop is accepted, so a face never reaches a garment reference.
+ */
+export async function sharpImaging(mode: 'preview' | 'crop' | 'sheet', request: unknown, faceCheck?: FaceCheck): Promise<unknown> {
+  if (mode === 'preview') {
+    const keys: number[] = [];
+    for (const p of request as Preview[]) {
+      try {
+        await sharp(p.source).rotate().resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toFile(p.destination);
+        keys.push(p.key);
+      } catch {
+        /* an unreadable photo is left out */
+      }
+    }
+    return keys;
+  }
+  if (mode === 'crop') {
+    const cut: CropEntry[] = [];
+    for (const e of request as CropEntry[]) {
+      try {
+        const { data, info } = await sharp(e.source).rotate().toBuffer({ resolveWithObject: true });
+        const left = Math.max(0, Math.round(e.box.x * info.width));
+        const top = Math.max(0, Math.round(e.box.y * info.height));
+        const width = Math.min(info.width - left, Math.round(e.box.width * info.width));
+        const height = Math.min(info.height - top, Math.round(e.box.height * info.height));
+        if (width < 48 || height < 48) continue;
+        await sharp(data).extract({ left, top, width, height }).png().toFile(e.destination);
+        cut.push(e);
+      } catch {
+        /* a rectangle outside the photo is skipped */
+      }
+    }
+    if (!cut.length || !faceCheck) {
+      for (const e of cut) fs.rmSync(e.destination, { force: true });
+      return [];
+    }
+    const faces = await faceCheck(cut.map((e) => e.destination)).catch(() => cut.map(() => true));
+    const accepted = cut.filter((_, i) => faces.length === cut.length && faces[i] === false);
+    for (const e of cut) if (!accepted.includes(e)) fs.rmSync(e.destination, { force: true });
+    return accepted.map((e) => e.key);
+  }
+  // A numbered sheet: each crop on white in its own cell, the cell number in the corner.
+  const { sources, destination } = request as { sources: string[]; destination: string };
+  const cell = 512, cols = Math.ceil(Math.sqrt(sources.length)), rows = Math.ceil(sources.length / cols);
+  const tiles = await Promise.all(sources.map(async (src, i) => {
+    const img = await sharp(src).rotate().resize({ width: cell - 32, height: cell - 64, fit: 'contain', background: '#ffffff' }).png().toBuffer();
+    const label = Buffer.from(`<svg width="${cell}" height="${cell}"><text x="18" y="40" font-family="Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#111">${i + 1}</text></svg>`);
+    return [
+      { input: img, left: (i % cols) * cell + 16, top: Math.floor(i / cols) * cell + 48 },
+      { input: label, left: (i % cols) * cell, top: Math.floor(i / cols) * cell },
+    ];
+  }));
+  await sharp({ create: { width: cols * cell, height: rows * cell, channels: 3, background: '#ffffff' } }).composite(tiles.flat()).png().toFile(destination);
+  return undefined;
+}
+
+async function imaging<T>(mode: 'preview' | 'crop' | 'sheet', dir: string, request: unknown, faceCheck?: FaceCheck): Promise<T | undefined> {
+  if (!useSwift) return (await sharpImaging(mode, request, faceCheck)) as T | undefined;
   const input = path.join(dir, `${mode}-input.json`);
   fs.writeFileSync(input, JSON.stringify(request), { mode: 0o600 });
   const { stdout } = await exec('/usr/bin/swift', [imageTool, mode, input], { timeout: 90_000 });
@@ -56,8 +130,9 @@ export async function prepareGarmentCrops(options: {
   jobDir: string;
   resolve: (p: string) => string;
   locate: (request: Request) => Promise<unknown>;
+  faceCheck?: FaceCheck;
 }) {
-  const { slots, projectRoot, mediaDir, jobDir, resolve, locate } = options;
+  const { slots, projectRoot, mediaDir, jobDir, resolve, locate, faceCheck } = options;
   const prepared = slots.map((slot) => validCrop(slot, resolve));
   const sources: Source[] = [];
   const pending = slots.flatMap((slot, index) => {
@@ -105,7 +180,7 @@ export async function prepareGarmentCrops(options: {
       .slice(0, 3)
       .map((box, attempt) => ({ index, box, source: sources[visible[box.image - 1].key], destination: path.join(mediaDir, `garment-${index + 1}-${attempt + 1}.png`) })));
     const entries = candidates.map((c, key) => ({ key, source: c.source.absolute, destination: c.destination, box: c.box }));
-    const accepted = entries.length ? await imaging<number[]>('crop', jobDir, entries) : [];
+    const accepted = entries.length ? await imaging<number[]>('crop', jobDir, entries, faceCheck) : [];
     for (const key of accepted ?? []) {
       const { index, source, destination } = candidates[key];
       if (prepared[index] || hash(source.absolute) !== source.sha256) continue;

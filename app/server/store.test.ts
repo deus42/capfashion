@@ -1927,3 +1927,24 @@ test('the runner uses the OpenAI engine when one is configured: a search for new
   assert.equal(done.state, 'done', done.stateNote ?? '');
   assert.match(prompts[0], /Capsula stylist worker/);
 });
+
+test('without macOS Vision: upright previews, crops kept only when the face check finds no face, numbered sheets', async () => {
+  const sharp = (await import('sharp')).default;
+  const { sharpImaging } = await import('./garment-references.ts');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-sharp-'));
+  const src = path.join(dir, 'photo.png');
+  await sharp({ create: { width: 400, height: 600, channels: 3, background: '#335577' } }).png().toFile(src);
+  assert.deepEqual(await sharpImaging('preview', [{ key: 0, source: src, destination: path.join(dir, 'p.jpg') }]), [0]);
+  assert.ok(fs.existsSync(path.join(dir, 'p.jpg')));
+  const entry = (key: number) => ({ key, source: src, destination: path.join(dir, `c${key}.png`), box: { x: 0.1, y: 0.4, width: 0.5, height: 0.4 } });
+  assert.deepEqual(await sharpImaging('crop', [entry(0)]), [], 'no face check: no crop is trusted');
+  assert.equal(fs.existsSync(path.join(dir, 'c0.png')), false);
+  assert.deepEqual(await sharpImaging('crop', [entry(1)], async () => [true]), [], 'a crop with a face is dropped');
+  assert.deepEqual(await sharpImaging('crop', [entry(2)], async () => [false]), [2]);
+  const meta = await sharp(path.join(dir, 'c2.png')).metadata();
+  assert.equal(meta.width, 200);
+  assert.equal(meta.height, 240);
+  assert.deepEqual(await sharpImaging('crop', [{ ...entry(3), box: { x: 0.9, y: 0.9, width: 0.05, height: 0.05 } }], async () => [false]), [], 'a tiny rectangle is skipped');
+  await sharpImaging('sheet', { sources: [path.join(dir, 'c2.png'), src, src], destination: path.join(dir, 'sheet.png') });
+  assert.equal((await sharp(path.join(dir, 'sheet.png')).metadata()).width, 1024);
+});

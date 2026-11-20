@@ -11,7 +11,7 @@ import { DISCOVER_SCHEMA, applyDiscover, discoverPrompt } from './discover.ts';
 import { SHOP_SEARCH_SCHEMA, STORE_FIND_SCHEMA, applyShopSearch, applyStoreFind, fetchProductImage, queueStoreFind, shopSearchPrompt, storeFindPrompt } from './shop-search.ts';
 import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice, seenRevs } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
-import { fitGarmentCards, GARMENT_BOUNDS_SCHEMA, prepareGarmentCrops, type GarmentCard } from './garment-references.ts';
+import { FACE_CHECK_PROMPT, FACE_CHECK_SCHEMA, fitGarmentCards, GARMENT_BOUNDS_SCHEMA, prepareGarmentCrops, type GarmentCard } from './garment-references.ts';
 import { apiImagePrompt, type OpenAIEngine } from './openai-engine.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
@@ -459,7 +459,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         current.logPath = path.relative(projectRoot, logFile);
       });
       const mediaDir = path.join(store.dataDir, 'media', 'tryon-references', job.id);
-      const prepared = await prepareGarmentCrops({ slots: job.snapshot.slots, projectRoot, mediaDir, jobDir, resolve, locate: (request) => locateGarments(jobDir, settings, request) });
+      // Where macOS Vision is absent, the model checks each crop for a face; a crop with a face is never used.
+      const faceCheck = opts.engine
+        ? async (files: string[]) => ((await opts.engine!.json({ prompt: FACE_CHECK_PROMPT, schema: FACE_CHECK_SCHEMA, images: files, logFile: path.join(jobDir, 'face-check.log') })).reply?.faces as boolean[] | undefined) ?? files.map(() => true)
+        : undefined;
+      const prepared = await prepareGarmentCrops({ slots: job.snapshot.slots, projectRoot, mediaDir, jobDir, resolve, locate: (request) => locateGarments(jobDir, settings, request), faceCheck });
       const canRender = await store.mutate((db) => {
         const current = db.jobs.find((j) => j.id === jobId);
         if (current?.state !== 'running') return false;

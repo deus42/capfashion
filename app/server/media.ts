@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import sharp from 'sharp';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -18,8 +19,8 @@ export function detectImageType(buf: Buffer): 'jpg' | 'png' | 'heic' | 'webp' | 
 }
 
 /**
- * Stores an uploaded original untouched. HEIC (iPhone) gets an extra JPEG
- * display copy made with macOS `sips`; the original is kept.
+ * Stores an uploaded original untouched. HEIC (iPhone) gets an extra JPEG display copy — macOS `sips` on the
+ * owner's Mac, sharp elsewhere when its build reads HEIC (the site converts HEIC in the browser before upload).
  */
 export async function saveUpload(projectRoot: string, dataDir: string, id: string, buf: Buffer) {
   if (buf.length > MAX_UPLOAD_BYTES) throw new HttpError(413, 'Файл більший за 40 МБ');
@@ -33,9 +34,11 @@ export async function saveUpload(projectRoot: string, dataDir: string, id: strin
   if (type === 'heic') {
     display = path.join(dir, `${id}.jpg`);
     try {
-      await run('sips', ['-s', 'format', 'jpeg', original, '--out', display]);
+      if (process.platform === 'darwin') await run('sips', ['-s', 'format', 'jpeg', original, '--out', display]);
+      else await sharp(original).rotate().jpeg({ quality: 90 }).toFile(display);
     } catch {
-      throw new HttpError(422, 'Не вдалося конвертувати HEIC у JPEG (sips)');
+      fs.rmSync(original, { force: true });
+      throw new HttpError(422, 'Не вдалося прочитати HEIC — завантаж це фото як JPEG');
     }
   }
   return {
@@ -66,7 +69,7 @@ function pumpWarm() {
   }
 }
 
-/** Generates thumbnails in the background (two sips processes at most). */
+/** Generates thumbnails in the background (two at a time). */
 export function prewarm(projectRoot: string, dataDir: string, rels: string[], sizes = [160, 480]) {
   for (const rel of rels) for (const size of sizes) warmQueue.push({ projectRoot, dataDir, rel, size });
   pumpWarm();
@@ -74,7 +77,7 @@ export function prewarm(projectRoot: string, dataDir: string, rels: string[], si
 
 const inflight = new Map<string, Promise<string>>();
 
-/** Lazily builds a cached JPEG thumbnail; concurrent requests for one file share a single sips run. */
+/** Lazily builds a cached JPEG thumbnail with sharp (EXIF-upright, never enlarged); concurrent requests share one run. */
 export async function thumbnail(projectRoot: string, dataDir: string, key: string, relPath: string, size = 720) {
   const dir = path.join(dataDir, 'media', 'thumbs');
   fs.mkdirSync(dir, { recursive: true });
@@ -84,7 +87,9 @@ export async function thumbnail(projectRoot: string, dataDir: string, key: strin
   const pending = inflight.get(out);
   if (pending) return pending;
   const tmp = `${out}.${process.pid}.${Math.random().toString(36).slice(2, 7)}.jpg`;
-  const job = run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '82', '-Z', String(size), src, '--out', tmp])
+  const job = sharp(src).rotate().resize({ width: size, height: size, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 82 }).toFile(tmp)
+    // A format sharp cannot read falls back to macOS `sips` on the owner's Mac.
+    .catch((e: unknown) => (process.platform === 'darwin' ? run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '82', '-Z', String(size), src, '--out', tmp]) : Promise.reject(e)))
     .then(() => {
       fs.renameSync(tmp, out);
       return out;

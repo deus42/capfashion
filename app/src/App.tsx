@@ -23,6 +23,18 @@ function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: Re
   );
 }
 
+/** The logo (owner, 20.11): a capsule — half filled, half drawn — for a site built around capsules. */
+function CapsuleMark({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="capsule-mark">
+      <g transform="rotate(45 16 16)">
+        <path d="M10.5 16V9.5a5.5 5.5 0 0 1 11 0V16Z" fill="currentColor" />
+        <rect x="10.5" y="4" width="11" height="24" rx="5.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      </g>
+    </svg>
+  );
+}
+
 /** Old addresses (the retired studio) land on their new page. */
 function Redirect({ to }: { to: string }) {
   useEffect(() => go(to, true), [to]);
@@ -78,7 +90,7 @@ export default function App() {
     <div className="shell">
       <nav className="rail" aria-label="Розділи">
         <a href="/home" className="rail-logo" aria-label="Cap Fashion">
-          <Shirt size={18} />
+          <CapsuleMark size={34} />
         </a>
         <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} desk />
         <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
@@ -100,7 +112,7 @@ export default function App() {
       <div className="frame">
         {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
-          <a href="/home" className="wordmark m-only" aria-label="Cap Fashion — Головна" aria-current={section === 'home' ? 'page' : undefined}>Cap Fashion</a>
+          <a href="/home" className="wordmark m-only" aria-label="Cap Fashion — Головна" aria-current={section === 'home' ? 'page' : undefined}><CapsuleMark size={22} />Cap Fashion</a>
           <div className="grow" />
           <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}

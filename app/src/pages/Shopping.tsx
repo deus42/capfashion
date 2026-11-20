@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Check, Pencil, Plus, RefreshCw, ShoppingBag, Trash2, Undo2, X } from 'lucide-react';
+import { Check, MapPin, Pencil, Plus, RefreshCw, ShoppingBag, Trash2, Undo2, X } from 'lucide-react';
 import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, JobBar, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchasePlan, purchaseRanking, shopLocation, shopStores, siteLooks } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, purchasePlan, purchaseRanking, shopLocation, shopStores, siteLooks, storeKey } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -137,39 +137,51 @@ const money = (v: number, cur?: string) => {
 const cleanName = (s: string) => s.replace(/\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9 /.-]{3,}\)\s*$/, '').replace(/\s+\d{6,}(?=\s|$)/g, '').trim();
 
 /** A found product (owner, 18.11): the name opens the shop page; one «Куплено»; × removes the variant. */
-function ProductCard({ p, need, best = false }: { p: Product; need: Need; best?: boolean }) {
+/** Where a shop is (owner, 19–20.11): the owner's own shopping place, the nearest store with its distance, or online. */
+type Where = { line: string; href?: string };
+function storePlaces(db: ReturnType<typeof useDb>): Map<string, Where> {
+  const here = shopLocation(db);
+  const map = (q: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  const out = new Map<string, Where>();
+  for (const s of shopStores(db)) {
+    const name = s.name.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '');
+    // A store at the owner's own shopping place is named like the others there.
+    const atHere = Boolean(here) && Boolean(s.place?.place.toLowerCase().includes(here.split(',')[0].toLowerCase().replace(/\s+rijeka$/, '')));
+    if (s.place && !s.place.online) out.set(s.key, { line: atHere ? here.split(',')[0] : `${s.place.place.replace(/,\s*Rijeka$/i, '')}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`) });
+    else if (s.atPlace && here) out.set(s.key, { line: here.split(',')[0], href: map(`${name} ${here}`) });
+    else if (s.place?.online) out.set(s.key, { line: 'онлайн', href: s.place.url ?? (s.host ? `https://${s.host}` : undefined) });
+  }
+  return out;
+}
+
+/** One found product as one line (owner, 20.11): what, where to buy, price, size, how well it fits, actions. */
+function ProductLine({ p, need, best, where }: { p: Product; need: Need; best: boolean; where?: Where }) {
   const db = useDb();
   const { act } = useApp();
   const [buy, setBuy] = useState(false);
   const photo = p.photoId ? db.photos.find((x) => x.id === p.photoId) : undefined;
   const concept = need.conceptPhotoId ? db.photos.find((x) => x.id === need.conceptPhotoId) : undefined;
   const stale = p.checkedAt && Date.now() - new Date(p.checkedAt).getTime() > STALE_DAYS * 864e5;
-  const place = p.towerAvailability === 'confirmed' && shopLocation(db) ? shopLocation(db).split(',')[0] : '';
   const name = cleanName(`${p.brand} ${p.model}`.trim());
   const open = need.status === 'open' && p.status !== 'purchased';
+  const shop = p.store.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '');
   return (
-    <div className={`product${p.status === 'purchased' ? ' bought' : ''}`}>
-      <div className="product-img">
-        {photo ? <Img path={photo.path} w={200} /> : concept ? <Img path={concept.path} w={200} /> : <CategoryIcon category={need.category} size={22} />}
-      </div>
-      <div className="product-txt">
-        {p.url ? <a className="product-name" href={p.url} target="_blank" rel="noreferrer">{name}</a> : <b className="product-name">{name}</b>}
-        <span className="small muted">{[p.store, place, p.price != null ? money(p.price, p.currency) : '', p.recommendedSize ? `розмір ${p.recommendedSize}` : ''].filter(Boolean).join(' · ')}</span>
-        {p.matchScore != null && <span className="small">{p.matchScore}/10{best ? ' · найкраще пасує' : ''}</span>}
-        {p.matchNote && <span className="small muted">{p.matchNote}</span>}
-        {stale && <span className="small" style={{ color: 'var(--warn)' }}>Ціну перевірено {fmtDay(p.checkedAt!)}</span>}
+    <div className={`product-line${p.status === 'purchased' ? ' bought' : ''}`}>
+      <span className="pl-img">{photo ? <Img path={photo.path} w={160} /> : concept ? <Img path={concept.path} w={160} /> : <CategoryIcon category={need.category} size={18} />}</span>
+      <span className="pl-main">
+        {p.url ? <a className="pl-name" href={p.url} target="_blank" rel="noreferrer">{name}</a> : <b className="pl-name">{name}</b>}
+        <span className="pl-sub">{[shop, p.recommendedSize ? `розмір ${p.recommendedSize}` : ''].filter(Boolean).join(' · ')}</span>
+      </span>
+      {where?.href
+        ? <a className="pl-where" href={where.href} target="_blank" rel="noreferrer"><MapPin size={13} />{where.line}</a>
+        : <span className="pl-where">{where ? <><MapPin size={13} />{where.line}</> : null}</span>}
+      <span className="pl-price">{p.price != null ? money(p.price, p.currency) : ''}{stale && <span className="pl-stale">ціна {fmtDay(p.checkedAt!)}</span>}</span>
+      <span className="pl-score">{p.matchScore != null && <>{p.matchScore}/10{best && <span className="pl-best">найкраще</span>}<TermInfo texts={[]} notes={[{ title: 'Чому пасує', text: p.matchNote }]} /></>}</span>
+      <span className="pl-act">
         {p.status === 'purchased' && <Badge tone="ok">куплено</Badge>}
-        {open && (
-          <button className="btn sm product-buy" onClick={() => setBuy(true)}>
-            <Check size={12} /> Куплено
-          </button>
-        )}
-      </div>
-      {open && (
-        <button className="product-x" aria-label={`Прибрати варіант ${name}`} onClick={() => void act(() => api('DELETE', `/api/products/${p.id}`))}>
-          <X size={13} />
-        </button>
-      )}
+        {open && <button className="btn sm quiet" onClick={() => setBuy(true)}><Check size={12} /> Куплено</button>}
+        {open && <button className="product-x" aria-label={`Прибрати варіант ${name}`} onClick={() => void act(() => api('DELETE', `/api/products/${p.id}`))}><X size={13} /></button>}
+      </span>
       {buy && <PurchaseModal product={p} onClose={() => setBuy(false)} />}
     </div>
   );
@@ -219,7 +231,7 @@ const planLine = (p: { fits: number; completes: number }) => `пасує до ${
 /** When one purchase is not enough: the rest of the smallest set and the look it makes wearable. */
 const planWith = (p: ReturnType<typeof purchasePlan>) => (p.with ? `ще ${p.with.others.join(', ')} — і готовий «${p.with.look.name}»` : '');
 
-function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; top?: boolean }) {
+function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; places: Map<string, Where> }) {
   const db = useDb();
   const { act, toast } = useApp();
   const [adding, setAdding] = useState(false);
@@ -255,75 +267,51 @@ function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; to
     if (ok !== undefined) setEditing(false);
   };
   return (
-    <div id={`need-${need.id}`} className="card need-card">
-      <div className="art">
+    <div id={`need-${need.id}`} className="need">
+      <span className="need-art">
         {need.conceptPhotoId && db.photos.find((p) => p.id === need.conceptPhotoId) ? (
-          <img src={thumb(db.photos.find((p) => p.id === need.conceptPhotoId)!.path, 360)} alt={need.title} />
+          <img src={thumb(db.photos.find((p) => p.id === need.conceptPhotoId)!.path, 240)} alt={need.title} />
         ) : covered?.packshotId && db.photos.find((p) => p.id === covered.packshotId) ? (
-          <img src={thumb(db.photos.find((p) => p.id === covered.packshotId)!.path, 360)} alt={need.title} />
+          <img src={thumb(db.photos.find((p) => p.id === covered.packshotId)!.path, 240)} alt={need.title} />
         ) : shopPhoto ? (
           // An advisor purchase has no concept picture: the best found product stands in.
-          <img src={thumb(shopPhoto.path, 360)} alt={need.title} />
+          <img src={thumb(shopPhoto.path, 240)} alt={need.title} />
         ) : (
-          <CategoryIcon category={need.category} size={30} />
+          <CategoryIcon category={need.category} size={24} />
         )}
-      </div>
-      <div className="stack" style={{ gap: 14, minWidth: 0 }}>
-      <div className="need-head">
-        <div className="grow stack" style={{ gap: 4 }}>
-          {top && <span className="eyebrow-sm">Наступна покупка</span>}
-          <div className="row wrap">
-            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} notes={[{ title: 'Навіщо', text: need.why }, ...(need.status === 'open' ? [{ title: 'Що перевірити', text: need.fitCheck }] : [])]} /></span></h3>
-            {need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}
+      </span>
+      <div className="need-body">
+        <div className="need-head">
+          <div className="need-info">
+            {top && <span className="eyebrow-sm">Наступна покупка</span>}
+            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} notes={[{ title: 'Навіщо', text: need.why }, ...(need.status === 'open' ? [{ title: 'Що перевірити', text: need.fitCheck }] : [])]} /></span>{need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}</h3>
+            <span className="need-line">
+              {forCapsule && <a href={`/capsules/${forCapsule.id}`}>{forCapsule.name}</a>}
+              {replaces && <span>замінить <a href={`/wardrobe/${replaces.id}`}>{replaces.title}</a></span>}
+              {covered && <span>{bought ? 'куплено' : 'своя річ'}: <a href={`/wardrobe/${covered.id}`}>{covered.title}</a></span>}
+              {need.status === 'open' && plan.fits > 0 && <span>{planLine(plan)}</span>}
+            </span>
+            {need.status === 'open' && plan.with && <span className="need-line">{planWith(plan)}</span>}
+            {looks.length > 0 && (
+              <span className="need-looks">{looks.map((l) => <a key={l.id} href={`/looks/${l.id}`}>{l.name}</a>)}</span>
+            )}
+          </div>
+          <div className="need-acts">
+            {need.status === 'open' && (
+              <button className="icon-btn" disabled={waiting} onClick={() => void search()} aria-label={products.length ? 'Оновити пошук' : 'Знайти варіанти'} title={products.length ? 'Оновити пошук' : 'Знайти варіанти'}>
+                <RefreshCw size={14} />
+              </button>
+            )}
+            <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
           </div>
         </div>
-        {need.status === 'open' && (
-          <button className="icon-btn" disabled={waiting} onClick={() => void search()} aria-label={products.length ? 'Оновити пошук' : 'Знайти варіанти'} title={products.length ? 'Оновити пошук' : 'Знайти варіанти'}>
-            <RefreshCw size={14} />
-          </button>
-        )}
-        <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
-      </div>
-      <div className="kv">
-        {forCapsule && (
-          <>
-            <dt>Для капсули</dt>
-            <dd><a href={`/capsules/${forCapsule.id}`} style={{ textDecoration: 'underline' }}>{forCapsule.name}</a></dd>
-          </>
-        )}
-        {replaces && (
-          <>
-            <dt>Замінить</dt>
-            <dd><a href={`/wardrobe/${replaces.id}`} style={{ textDecoration: 'underline' }}>{replaces.title}</a></dd>
-          </>
-        )}
-        {need.status === 'open' && plan.fits > 0 && <>
-          <dt>Дасть</dt>
-          <dd>{planLine(plan)}{plan.with && <><br />{planWith(plan)}</>}</dd>
-        </>}
-        {(looks.length > 0 || (!forCapsule && !replaces)) && <dt>{need.status === 'covered' ? 'Замінено в образах' : 'Доповнить образи'}</dt>}
-        {(looks.length > 0 || (!forCapsule && !replaces)) && <dd>
-          <div className="chips">
-            {looks.length === 0 && <span className="muted small">не використовується</span>}
-            {looks.map((l) => (
-              <a key={l.id} className="badge" href={`/looks/${l.id}`}>{l.name}</a>
-            ))}
+        {waitJob && <div className="search-run"><JobBar job={waitJob} label /></div>}
+        {lastNote && <span className="small muted">{lastNote}</span>}
+        {products.length > 0 && (
+          <div className="product-lines">
+            {products.map((p) => <ProductLine key={p.id} p={p} need={need} best={p.id === bestId} where={places.get(storeKey(p.store))} />)}
           </div>
-        </dd>}
-        {covered && (
-          <>
-            <dt>{bought ? 'Куплено' : 'Своя річ'}</dt>
-            <dd><a href={`/wardrobe/${covered.id}`} style={{ textDecoration: 'underline' }}>{covered.title}</a></dd>
-          </>
         )}
-      </div>
-      {waitJob && <div className="search-run"><JobBar job={waitJob} label /></div>}
-      {lastNote && <span className="small muted">{lastNote}</span>}
-      {products.length > 0 && (
-        <div className="product-grid">
-          {products.map((p) => <ProductCard key={p.id} p={p} need={need} best={p.id === bestId} />)}
-        </div>
-      )}
       </div>
       {adding && <ProductEditor need={need} onClose={() => setAdding(false)} />}
       {editing && (
@@ -367,52 +355,26 @@ export function ShoppingPage({ focus }: { focus?: string }) {
   const needs = db.needs
     .filter((n) => show === 'all' || n.status === 'open')
     .sort((a, b) => (order.get(a.id) ?? 1e6) - (order.get(b.id) ?? 1e6));
+  const places = storePlaces(db);
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Покупки</h1>
         </div>
-        <div className="actions chips">
-          <button className={`chip${show === 'open' ? ' active' : ''}`} onClick={() => setShow('open')}>Відкриті</button>
-          <button className={`chip${show === 'all' ? ' active' : ''}`} onClick={() => setShow('all')}>Усі</button>
+        <div className="filters" role="group" aria-label="Які покупки">
+          <button className={show === 'open' ? 'on' : ''} aria-pressed={show === 'open'} onClick={() => setShow('open')}>Відкриті</button>
+          <button className={show === 'all' ? 'on' : ''} aria-pressed={show === 'all'} onClick={() => setShow('all')}>Усі</button>
         </div>
       </div>
+      {/* Where to buy sits on every product line (owner, 20.11), so there is no separate store list to scroll to. */}
       {needs.length === 0 ? (
         <Empty icon={<ShoppingBag />} title="Відкритих покупок немає" />
       ) : (
-        <div className="list">
-          {needs.map((n, i) => <NeedCard key={n.id} need={n} focus={n.id === focus} top={i === 0 && n.status === 'open'} />)}
+        <div className="needs">
+          {needs.map((n, i) => <NeedCard key={n.id} need={n} top={i === 0 && n.status === 'open'} places={places} />)}
         </div>
       )}
-      <Stores />
     </div>
   );
-}
-
-/** «Магазини» (owner, 19.11): every shop of the found products and its nearest store, one quiet row each. */
-function Stores() {
-  const db = useDb();
-  const here = shopLocation(db);
-  const rows = shopStores(db)
-    .map((s) => {
-      const name = s.name.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '');
-      const map = (q: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
-      if (s.atPlace && here) return { s, name, line: here.split(',')[0], href: map(`${name} ${here}`), rank: 0 };
-      // A store at the owner's own shopping place comes with the others there, distance or not.
-      const atHere = Boolean(here) && s.place?.place.toLowerCase().includes(here.split(',')[0].toLowerCase().replace(/\s+rijeka$/, ''));
-      if (s.place && !s.place.online) return { s, name, line: `${s.place.place}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`), rank: atHere ? 0.5 : 1 + (s.place.km ?? 999) / 1000 };
-      if (s.place?.online) return { s, name, line: 'лише онлайн', href: s.place.url ?? (s.host ? `https://${s.host}` : undefined), rank: 3 };
-      return { s, name, line: '', href: undefined, rank: 4 };
-    })
-    .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
-  if (!rows.length) return null;
-  return <>
-    <div className="section-head"><h2 className="h2">Магазини <span className="count">{rows.length}</span></h2></div>
-    <div className="store-list">
-      {rows.map((r) => r.href
-        ? <a key={r.s.key} className="store-row" href={r.href} target="_blank" rel="noreferrer"><span>{r.name}</span><span className="store-place">{r.line}</span></a>
-        : <div key={r.s.key} className="store-row"><span>{r.name}</span><span className="store-place">{r.line}</span></div>)}
-    </div>
-  </>;
 }

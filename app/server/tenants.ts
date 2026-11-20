@@ -7,6 +7,7 @@ import type { DB } from './schema.ts';
 import { MEASURE_KEYS, SCHEMA_VERSION } from './schema.ts';
 import { createStore, now, type Store } from './store.ts';
 import { createRunner, type Limiter } from './runner.ts';
+import type { OpenAIEngine } from './openai-engine.ts';
 
 export type Runner = ReturnType<typeof createRunner>;
 export interface Tenant {
@@ -40,12 +41,12 @@ export function emptyDb(): DB {
 /** Account ids come from the auth database; anything else is refused before it can name a folder. */
 const SAFE_ID = /^[A-Za-z0-9_-]{6,64}$/;
 
-export function createTenants(opts: { projectRoot: string; dataDir: string; seed: () => DB; limiter?: Limiter; codexBin?: string }) {
+export function createTenants(opts: { projectRoot: string; dataDir: string; seed: () => DB; limiter?: Limiter; codexBin?: string; engine?: OpenAIEngine }) {
   const cache = new Map<string, Tenant>();
 
   function open(id: string, root: string, dataDir: string, seed: () => DB): Tenant {
     const store = createStore(dataDir, seed);
-    const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter });
+    const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine: opts.engine });
     const tenant: Tenant = { id, root, store, runner, ctx: { store, projectRoot: root, drain: () => void runner.drain() } };
     // A run stopped by a restart continues when its account is opened again.
     void runner.recover().then((n) => (n > 0 ? runner.drain() : undefined)).catch(() => undefined);

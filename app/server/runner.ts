@@ -12,6 +12,7 @@ import { SHOP_SEARCH_SCHEMA, STORE_FIND_SCHEMA, applyShopSearch, applyStoreFind,
 import { ADVISE_SCHEMA, adviceDue, advisePrompt, applyAdvice, itemsToRate, queueAdvice, seenRevs } from './advisor.ts';
 import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 import { fitGarmentCards, GARMENT_BOUNDS_SCHEMA, prepareGarmentCrops, type GarmentCard } from './garment-references.ts';
+import { apiImagePrompt, type OpenAIEngine } from './openai-engine.ts';
 
 const SLOT_LABEL: Record<string, string> = { top: 'Top', layer: 'Outer layer', bottom: 'Bottom', shoes: 'Shoes', accessories: 'Accessory' };
 const JOB_TIMEOUT_MS = 15 * 60 * 1000;
@@ -188,7 +189,7 @@ export function createLimiter(max: number): Limiter {
   };
 }
 
-export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter } = {}) {
+export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter; engine?: OpenAIEngine } = {}) {
   const active = new Set<string>();
   // Item revisions each advise run saw when its prompt was built (see seenRevs).
   const adviseRevs = new Map<string, Map<string, number>>();
@@ -227,6 +228,11 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   }
 
   async function locateGarments(jobDir: string, settings: DB['settings'], { prompt, images }: { prompt: string; images: string[] }): Promise<unknown> {
+    if (opts.engine) {
+      const out = await opts.engine.json({ prompt, schema: GARMENT_BOUNDS_SCHEMA, images, logFile: path.join(jobDir, 'garment-bounds.log') });
+      if (!out.reply) throw Error('Не вдалося підготувати кадри речей. Спробуй оновити примірку.');
+      return out.reply;
+    }
     const schema = path.join(jobDir, 'garment-schema.json');
     const answer = path.join(jobDir, 'garment-bounds.json');
     fs.writeFileSync(schema, JSON.stringify(GARMENT_BOUNDS_SCHEMA));
@@ -252,20 +258,21 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     const schemaFile = path.join(jobDir, 'schema.json');
     const images: string[] = [];
     let prompt: string;
+    let schema: object;
     if (job.kind === 'intake') {
       const photos = (job.inputPhotoIds ?? []).map((id) => db0.photos.find((p) => p.id === id)!).filter(Boolean);
       for (const p of photos) images.push(resolveAllowed(projectRoot, store.dataDir, p.path));
       prompt = intakePrompt(db0, job, photos.map((p) => path.basename(p.path)));
-      fs.writeFileSync(schemaFile, JSON.stringify(INTAKE_SCHEMA));
+      schema = INTAKE_SCHEMA;
     } else if (job.kind === 'shopsearch') {
       prompt = shopSearchPrompt(db0, job);
-      fs.writeFileSync(schemaFile, JSON.stringify(SHOP_SEARCH_SCHEMA));
+      schema = SHOP_SEARCH_SCHEMA;
     } else if (job.kind === 'storefind') {
       prompt = storeFindPrompt(db0);
-      fs.writeFileSync(schemaFile, JSON.stringify(STORE_FIND_SCHEMA));
+      schema = STORE_FIND_SCHEMA;
     } else if (job.kind === 'discover') {
       prompt = discoverPrompt(db0, job);
-      fs.writeFileSync(schemaFile, JSON.stringify(DISCOVER_SCHEMA));
+      schema = DISCOVER_SCHEMA;
     } else if (job.kind === 'advise') {
       // The advisor sees the catalogue photos of the items it rates now (never personal photos).
       const dir = path.join(jobDir, 'items');
@@ -284,7 +291,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       }
       prompt = advisePrompt(db0, job, images);
       adviseRevs.set(jobId, seenRevs(db0));
-      fs.writeFileSync(schemaFile, JSON.stringify(ADVISE_SCHEMA));
+      schema = ADVISE_SCHEMA;
     } else {
       const dir = path.join(jobDir, 'items');
       fs.mkdirSync(dir, { recursive: true });
@@ -301,9 +308,10 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         }
       }
       prompt = analyzePrompt(db0, job, images);
-      fs.writeFileSync(schemaFile, JSON.stringify(ANALYZE_SCHEMA));
+      schema = ANALYZE_SCHEMA;
     }
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
+    fs.writeFileSync(schemaFile, JSON.stringify(schema));
     const settings = db0.settings;
     const args = [
       // Shop search needs live web search; the other analyses stay offline.
@@ -319,13 +327,21 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'storefind' ? 'Шукаю найближчі магазини…' : job.kind === 'discover' ? 'Шукаю нові образи…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
       j.logPath = path.relative(projectRoot, logFile);
     });
-    const exit = await spawnCodex(args, prompt, jobDir, logFile);
+    let exit: { code: number | null; err?: string };
     let reply: Record<string, unknown> | null = null;
     let productImages: { productId: string; url: string }[] = [];
-    try {
-      reply = JSON.parse(fs.readFileSync(lastMsg, 'utf8'));
-    } catch {
-      reply = null;
+    if (opts.engine) {
+      // OpenAI API (accounts mode): the same schema, images attached, web search for the shop searches.
+      const out = await opts.engine.json({ prompt, schema, images, webSearch: job.kind === 'shopsearch' || job.kind === 'storefind', logFile });
+      reply = out.reply;
+      exit = { code: out.reply ? 0 : 1, err: out.err };
+    } else {
+      exit = await spawnCodex(args, prompt, jobDir, logFile);
+      try {
+        reply = JSON.parse(fs.readFileSync(lastMsg, 'utf8'));
+      } catch {
+        reply = null;
+      }
     }
     await store.mutate((db) => {
       const j = db.jobs.find((x) => x.id === jobId)!;
@@ -510,15 +526,22 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       }
       j.state = 'running';
       j.startedAt = now();
-      j.stateNote = `Codex ${settings.codexModel} генерує…`;
+      j.stateNote = `${opts.engine ? opts.engine.imageLabel : `Codex ${settings.codexModel}`} генерує…`;
       j.logPath = path.relative(projectRoot, logFile);
       return true;
     });
     if (!startedJob) return;
 
-    const exit = await spawnCodex(args, prompt, jobDir, logFile);
-
-    const reply = fs.existsSync(lastMsg) ? parseReply(fs.readFileSync(lastMsg, 'utf8')) : {};
+    let exit: { code: number | null; err?: string };
+    let reply: { status?: string; notes?: string; reason?: string };
+    if (opts.engine) {
+      const out = await opts.engine.image({ prompt: apiImagePrompt(prompt, uniqueImages), images: uniqueImages, resultFile, packshot: isPackshot, logFile });
+      exit = { code: out.ok ? 0 : 1, err: out.err };
+      reply = out.ok ? { status: 'done' } : { status: 'error', reason: out.err };
+    } else {
+      exit = await spawnCodex(args, prompt, jobDir, logFile);
+      reply = fs.existsSync(lastMsg) ? parseReply(fs.readFileSync(lastMsg, 'utf8')) : {};
+    }
     let image = fs.existsSync(resultFile) ? resultFile : null;
     const note = reply.notes;
     if (isPackshot && (reply.status !== 'done' || exit.code !== 0 || (image && detectImageType(fs.readFileSync(image)) !== 'png'))) {
@@ -551,7 +574,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
           path: path.relative(projectRoot, target),
           originalName: `${title} — packshot`,
           source: 'generated' as const,
-          note: `Генеративна реконструкція (${settings.codexModel}); не доказ складу, розміру чи прихованих деталей.${note ? ` ${note}` : ''}`,
+          note: `Генеративна реконструкція (${opts.engine ? opts.engine.imageLabel : settings.codexModel}); не доказ складу, розміру чи прихованих деталей.${note ? ` ${note}` : ''}`,
           createdAt: now(),
         };
         db.photos.push(photo);
@@ -587,7 +610,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         lookVersion: j.lookVersion,
         imagePath: path.relative(projectRoot, target),
         tool: 'Codex CLI exec · built-in image generation',
-        model: settings.codexModel,
+        model: opts.engine ? opts.engine.imageLabel : settings.codexModel,
         prompt,
         sources: uniqueImages.map((p) => path.relative(projectRoot, p)),
         usedItemPhotos: refs.garments.length > 0,

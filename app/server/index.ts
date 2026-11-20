@@ -8,6 +8,7 @@ import { buildSeed } from './seed.ts';
 import { createLimiter } from './runner.ts';
 import { createTenants, type Tenant } from './tenants.ts';
 import { INVITE_COOKIE, authConfigFromEnv, createAuth } from './auth.ts';
+import { createOpenAIEngine, openAIConfigFromEnv } from './openai-engine.ts';
 import { stateView } from './state-view.ts';
 import { dispatch, upload } from './routes.ts';
 import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, thumbnail } from './media.ts';
@@ -24,7 +25,10 @@ const HOST = process.env.HOST || '127.0.0.1';
 const authConfig = authConfigFromEnv(process.env, DATA_DIR);
 const ACCOUNTS = Boolean(authConfig);
 fs.mkdirSync(DATA_DIR, { recursive: true });
-const tenants = createTenants({ projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, seed: () => buildSeed(PROJECT_ROOT, DATA_DIR), limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined });
+// Generation: the OpenAI API when configured (always in production accounts mode), else the local Codex worker.
+const openAI = openAIConfigFromEnv(process.env);
+if (ACCOUNTS && process.env.NODE_ENV === 'production' && !openAI) throw new Error('Accounts in production need OPENAI_API_KEY, OPENAI_TEXT_MODEL and OPENAI_IMAGE_MODEL.');
+const tenants = createTenants({ projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, seed: () => buildSeed(PROJECT_ROOT, DATA_DIR), limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined, engine: openAI ? createOpenAIEngine(openAI) : undefined });
 const auth = authConfig ? await createAuth(authConfig) : null;
 const localTenant = ACCOUNTS ? null : tenants.local();
 

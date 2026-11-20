@@ -1864,3 +1864,66 @@ test('accounts: config needs both Google keys and a strong secret in production;
   assert.equal(await auth.userOf({ headers: {} } as never), null);
   auth.close();
 });
+
+test('OpenAI engine: structured JSON with attached images and web search, PNG edits from references, honest errors, no guessed models', async () => {
+  const { createOpenAIEngine, openAIConfigFromEnv, apiImagePrompt, responseText } = await import('./openai-engine.ts');
+  assert.equal(openAIConfigFromEnv({}), null);
+  assert.throws(() => openAIConfigFromEnv({ OPENAI_API_KEY: 'k' }), /OPENAI_TEXT_MODEL/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-openai-'));
+  const img = path.join(dir, 'face.png');
+  fs.writeFileSync(img, SAMPLE_PNG);
+  const calls: { url: string; init: RequestInit }[] = [];
+  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  let next: Response = reply(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: '{"status":"done","looks":[]}' }] }], usage: { input_tokens: 120, output_tokens: 30 } });
+  const engine = createOpenAIEngine({ ...openAIConfigFromEnv({ OPENAI_API_KEY: 'sk-test', OPENAI_TEXT_MODEL: 'text-model', OPENAI_IMAGE_MODEL: 'image-model' })!, fetch: (async (url: string, init: RequestInit) => { calls.push({ url, init }); return next; }) as never });
+  const log = path.join(dir, 'log.jsonl');
+  const out = await engine.json({ prompt: 'Find', schema: { type: 'object' }, images: [img], webSearch: true, logFile: log });
+  assert.deepEqual(out.reply, { status: 'done', looks: [] });
+  assert.deepEqual(out.usage, { inputTokens: 120, outputTokens: 30 });
+  const body = JSON.parse(String(calls[0].init.body));
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/responses');
+  assert.equal(body.model, 'text-model');
+  assert.equal(body.text.format.type, 'json_schema');
+  assert.equal(body.text.format.strict, true);
+  assert.deepEqual(body.tools, [{ type: 'web_search' }]);
+  assert.match(body.input[0].content[1].image_url, /^data:image\/png;base64,/);
+  assert.ok(!fs.readFileSync(log, 'utf8').includes('base64'), 'the log never holds image data');
+  next = reply(429, { error: { message: 'Rate limit' } });
+  assert.deepEqual(await engine.json({ prompt: 'x', schema: {} }), { reply: null, err: 'OpenAI 429: Rate limit' });
+  // Images: an edit with the references in order writes the PNG; a fresh generation when there are none.
+  next = reply(200, { data: [{ b64_json: SAMPLE_PNG.toString('base64') }], usage: { input_tokens: 900, output_tokens: 4000 } });
+  const result = path.join(dir, 'result.png');
+  const edit = await engine.image({ prompt: 'Look', images: [img], resultFile: result, packshot: false });
+  assert.equal(edit.ok, true);
+  assert.equal(calls.at(-1)!.url, 'https://api.openai.com/v1/images/edits');
+  const form = calls.at(-1)!.init.body as FormData;
+  assert.equal(form.get('size'), '1024x1536');
+  assert.equal(form.get('quality'), 'high');
+  assert.equal(form.getAll('image[]').length, 1);
+  assert.deepEqual(fs.readFileSync(result), SAMPLE_PNG);
+  next = reply(200, { data: [{ b64_json: SAMPLE_PNG.toString('base64') }] });
+  await engine.image({ prompt: 'Concept', images: [], resultFile: result, packshot: true });
+  assert.equal(calls.at(-1)!.url, 'https://api.openai.com/v1/images/generations');
+  assert.equal(JSON.parse(String(calls.at(-1)!.init.body)).quality, 'medium');
+  next = reply(200, { data: [{ b64_json: Buffer.from('not an image').toString('base64') }] });
+  assert.equal((await engine.image({ prompt: 'x', images: [img], resultFile: path.join(dir, 'bad.png'), packshot: true })).ok, false);
+  // The worker prompt loses its Codex-only instructions and names the attached images in order.
+  const prompt = apiImagePrompt(['You are the Capsula render worker running unattended.', 'Task: create ONE photorealistic image with your built-in image generation tool and save it as a PNG file at this exact path: /x/result.png', 'When you call the image generation tool, you MUST pass…', 'Outfit: tee', 'When the PNG is saved at the path above, reply with JSON only', 'If image generation is unavailable or fails, reply'].join('\n'), ['/a/face.png', '/a/tee.png']);
+  assert.equal(prompt, 'Attached images, in order: 1) face.png; 2) tee.png.\nTask: create ONE photorealistic image.\nOutfit: tee');
+  assert.equal(responseText({ output: [{ type: 'reasoning' }, { type: 'message', content: [{ type: 'output_text', text: 'a' }, { type: 'output_text', text: 'b' }] }] }), 'ab');
+});
+
+test('the runner uses the OpenAI engine when one is configured: a search for new looks runs through it', async () => {
+  const { store, call } = setup();
+  const prompts: string[] = [];
+  const engine = {
+    label: 'text-model', imageLabel: 'image-model',
+    json: async (req: { prompt: string }) => { prompts.push(req.prompt); return { reply: { status: 'done', reason: '', looks: [] }, usage: { inputTokens: 1, outputTokens: 1 } }; },
+    image: async () => ({ ok: false, err: 'not used' }),
+  };
+  const job = await call('POST', '/api/discover', { capsuleId: 'C-1' });
+  await createRunner(store, store.dataDir, '/usr/bin/false', { engine: engine as never }).drain();
+  const done = store.read().jobs.find((j) => j.id === job.id)!;
+  assert.equal(done.state, 'done', done.stateNote ?? '');
+  assert.match(prompts[0], /Capsula stylist worker/);
+});

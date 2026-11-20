@@ -77,7 +77,8 @@ export async function createAuth(cfg: AuthConfig) {
     trustedOrigins: [cfg.baseURL],
     database: db,
     session: { expiresIn: 60 * 60 * 24 * 30 },
-    advanced: { useSecureCookies: cfg.baseURL.startsWith('https://') },
+    // No address is kept with a session; sign-in is rate-limited in front of better-auth (rate-limit.ts).
+    advanced: { useSecureCookies: cfg.baseURL.startsWith('https://'), ipAddress: { disableIpTracking: true } },
     account: { accountLinking: { enabled: false } },
     socialProviders: {
       google: {

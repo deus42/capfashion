@@ -77,6 +77,7 @@ export const en: Record<string, string> = {
   "Лише для власника": "Owner only",
   "Внутрішня помилка": "Internal error",
   "Запит завеликий": "Request too large",
+  "Забагато запитів. Спробуй трохи пізніше": "Too many requests. Please try again a little later",
   // Shared labels
   "Верхній одяг": "Outerwear",
   "Худі й трикотаж": "Hoodies and knitwear",
@@ -606,4 +607,7 @@ export const enPatterns: [RegExp, string][] = [
   [/^Оцінка агента: (.+)\.$/, 'Agent check: $1.'],
   [/^У черзі вже (\d+) примірки — дочекайся, поки вони будуть готові$/, '$1 try-ons are already queued: wait until they are ready'],
   [/^Неправильне значення: (.+)$/, 'Invalid value: $1'],
+  [/^Фото більше за (\d+) МБ$/, 'The photo is larger than $1 MB'],
+  [/^Уже (\d+) фото: більше в бета-версії не вміщається$/, '$1 photos already: the beta holds no more'],
+  [/^Місце закінчилося: (\d+) ГБ на акаунт$/, 'Out of space: $1 GB per account'],
 ];

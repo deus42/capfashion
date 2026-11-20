@@ -23,9 +23,10 @@ export function Landing() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ provider: 'google', callbackURL: '/', errorCallbackURL: '/' }),
       });
-      const data = (await res.json().catch(() => ({}))) as { url?: string };
-      if (!res.ok || !data.url) throw new Error();
-      window.location.href = data.url;
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (res.ok && data.url) return void (window.location.href = data.url);
+      setBusy(false);
+      setProblem(res.status === 429 && data.error ? t(data.error) : t('Не вдалося відкрити вхід через Google. Спробуй ще раз.'));
     } catch {
       setBusy(false);
       setProblem(t('Не вдалося відкрити вхід через Google. Спробуй ще раз.'));

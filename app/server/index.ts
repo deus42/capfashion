@@ -11,6 +11,7 @@ import { INVITE_COOKIE, authConfigFromEnv, createAuth } from './auth.ts';
 import { createOpenAIEngine, openAIConfigFromEnv } from './openai-engine.ts';
 import { createUsage, quotaConfigFromEnv } from './quota.ts';
 import { stateView } from './state-view.ts';
+import { RATE_LIMITED, RATE_RULES, clientAddress, createRateLimiter, type Rule } from './rate-limit.ts';
 import { dispatch, upload } from './routes.ts';
 import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, thumbnail } from './media.ts';
 
@@ -131,6 +132,21 @@ function sendFile(res: http.ServerResponse, file: string, cache = 'no-cache', re
 }
 
 const secureCookies = Boolean(authConfig?.baseURL.startsWith('https://'));
+// Accounts mode only: sign-in and uploads are rate-limited (spec §6.3).
+const rateLimiter = ACCOUNTS ? createRateLimiter() : null;
+const TRUST_CLOUDFLARE = process.env.TRUST_PROXY === 'cloudflare';
+
+/** Counts the request against each key; answers 429 with Retry-After when one is used up. */
+function limited(res: http.ServerResponse, checks: [string, Rule][]): boolean {
+  for (const [key, rule] of checks) {
+    const wait = rateLimiter?.take(key, rule) ?? 0;
+    if (!wait) continue;
+    res.setHeader('retry-after', String(wait));
+    send(res, 429, { error: RATE_LIMITED });
+    return true;
+  }
+  return false;
+}
 
 /**
  * Accounts mode (spec §8): the public site sends a strict CSP and the usual hardening headers; HSTS only over
@@ -148,6 +164,8 @@ const SECURITY_HEADERS: [string, string][] = [
 /** Accounts mode: sign-in, invites and the signed-in account's tenant; local mode: the owner's site. */
 async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse, url: URL, method: string): Promise<Tenant | null> {
   if (!auth) return localTenant;
+  const address = clientAddress(req, TRUST_CLOUDFLARE);
+  if ((url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/i/')) && limited(res, [[`sign-in:${address}`, RATE_RULES.signIn]])) return null;
   if (url.pathname.startsWith('/api/auth/')) {
     await auth.handler(req, res);
     return null;
@@ -189,6 +207,7 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
     else send(res, 405, { error: 'Метод не підтримується' });
     return null;
   }
+  if (method === 'POST' && url.pathname === '/api/upload' && !user.owner && limited(res, [[`upload:${user.id}`, RATE_RULES.uploadAccount], [`upload-address:${address}`, RATE_RULES.uploadAddress]])) return null;
   if (method === 'DELETE' && url.pathname === '/api/account') {
     tenants.remove(user.id);
     auth.deleteUser(user.id);

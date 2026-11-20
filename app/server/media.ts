@@ -9,6 +9,20 @@ const run = promisify(execFile);
 
 export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 
+/** Beta storage per account, the owner excepted (production spec §5). */
+export interface StorageLimits { fileBytes: number; photos: number; storageBytes: number }
+export const ACCOUNT_LIMITS: StorageLimits = { fileBytes: 15 * 1024 ** 2, photos: 300, storageBytes: 2 * 1024 ** 3 };
+
+/** Bytes in a folder and everything under it. */
+export function folderBytes(dir: string): number {
+  let total = 0;
+  for (const d of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
+    const p = path.join(dir, d.name);
+    total += d.isDirectory() ? folderBytes(p) : d.isFile() ? fs.statSync(p).size : 0;
+  }
+  return total;
+}
+
 export function detectImageType(buf: Buffer): 'jpg' | 'png' | 'heic' | 'webp' | null {
   if (buf.length < 12) return null;
   if (buf[0] === 0xff && buf[1] === 0xd8) return 'jpg';

@@ -2114,3 +2114,42 @@ test('a new account starts a capsule from the style catalogue, its brief in the 
   await assert.rejects(call('POST', '/api/capsules/from-style', { styleId: style.id }), /Така капсула вже є/);
   await assert.rejects(call('POST', '/api/capsules/from-style', { styleId: 'nope' }), /Стиль не знайдено/);
 });
+
+test('rate limits: fixed windows per key, Retry-After seconds, Cloudflare\'s address trusted only from the local tunnel', async () => {
+  const { createRateLimiter, clientAddress } = await import('./rate-limit.ts');
+  let at = 0;
+  const limiter = createRateLimiter(() => at);
+  const rule = { limit: 2, windowMs: 60_000 };
+  assert.equal(limiter.take('sign-in:1.2.3.4', rule), 0);
+  assert.equal(limiter.take('sign-in:1.2.3.4', rule), 0);
+  assert.equal(limiter.take('sign-in:1.2.3.4', rule), 60);
+  assert.equal(limiter.take('sign-in:5.6.7.8', rule), 0, 'another address has its own window');
+  at = 45_000;
+  assert.equal(limiter.take('sign-in:1.2.3.4', rule), 15);
+  at = 60_000;
+  assert.equal(limiter.take('sign-in:1.2.3.4', rule), 0, 'a new window starts after the old one ends');
+  const req = (peer: string, cf?: string) => ({ socket: { remoteAddress: peer }, headers: cf ? { 'cf-connecting-ip': cf } : {} }) as never;
+  assert.equal(clientAddress(req('::ffff:172.18.0.1', '203.0.113.9'), true), '203.0.113.9');
+  assert.equal(clientAddress(req('::ffff:172.18.0.1', '203.0.113.9'), false), '172.18.0.1', 'without TRUST_PROXY the header is ignored');
+  assert.equal(clientAddress(req('198.51.100.7', '203.0.113.9'), true), '198.51.100.7', 'a public peer cannot pick its address');
+  assert.equal(clientAddress(req('127.0.0.1', 'not-an-ip'), true), '127.0.0.1');
+});
+
+test('accounts: uploads stop at the beta\'s photo size, photo count and folder size', async () => {
+  const { store, dir } = setup();
+  const small = { fileBytes: SAMPLE_PNG.length + 10, photos: 1_000, storageBytes: 1024 ** 3 };
+  const ctx = (limits: typeof small) => ({ store, projectRoot: dir, drain: () => {}, limits });
+  const params = new URLSearchParams({ kind: 'item' });
+  await assert.rejects(upload(ctx({ ...small, fileBytes: 10 }), params, SAMPLE_PNG, 'a.png'), /Фото більше за 0 МБ/);
+  const uploads = store.read().photos.filter((p) => p.source === 'upload').length;
+  await assert.rejects(upload(ctx({ ...small, photos: uploads }), params, SAMPLE_PNG, 'a.png'), new RegExp(`Уже ${uploads} фото`));
+  await assert.rejects(upload(ctx({ ...small, storageBytes: 1 }), params, SAMPLE_PNG, 'a.png'), /Місце закінчилося/);
+  const before = store.read().photos.length;
+  await upload(ctx(small), params, SAMPLE_PNG, 'a.png');
+  assert.equal(store.read().photos.length, before + 1, 'within the limits the photo is saved');
+  const { setLanguage, t } = await import('../src/i18n.ts');
+  setLanguage('en');
+  assert.equal(t('Фото більше за 15 МБ'), 'The photo is larger than 15 MB');
+  assert.equal(t('Місце закінчилося: 2 ГБ на акаунт'), 'Out of space: 2 GB per account');
+  setLanguage('uk');
+});

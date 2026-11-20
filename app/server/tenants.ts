@@ -8,6 +8,7 @@ import { MEASURE_KEYS, SCHEMA_VERSION } from './schema.ts';
 import { createStore, now, type Store } from './store.ts';
 import { createRunner, type Limiter } from './runner.ts';
 import type { OpenAIEngine } from './openai-engine.ts';
+import { ACCOUNT_LIMITS, type StorageLimits } from './media.ts';
 import { accountQuota, meteredStore, type AccountQuota, type QuotaConfig, type QuotaKind, type Usage } from './quota.ts';
 
 export type Runner = ReturnType<typeof createRunner>;
@@ -17,7 +18,7 @@ export interface Tenant {
   root: string;
   store: Store;
   runner: Runner;
-  ctx: { store: Store; projectRoot: string; drain: () => void; admit?: (kind: QuotaKind, n?: number) => void };
+  ctx: { store: Store; projectRoot: string; drain: () => void; admit?: (kind: QuotaKind, n?: number) => void; limits?: StorageLimits };
   /** Accounts mode: this account's monthly allowances. */
   quota?: AccountQuota;
 }
@@ -70,7 +71,8 @@ export function createTenants(opts: { projectRoot: string; dataDir: string; seed
     // Accounts start try-ons themselves (spec §6.1): no automatic try-on of every new look.
     const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine, autoTryOn: !account, canStart: quota?.canStart });
     const admit = quota ? (kind: QuotaKind, n?: number) => quota.admit(store.read(), kind, n) : undefined;
-    const tenant: Tenant = { id, root, store, runner, quota, ctx: { store, projectRoot: root, drain: () => void runner.drain(), admit } };
+    const limits = account && !account.owner ? ACCOUNT_LIMITS : undefined;
+    const tenant: Tenant = { id, root, store, runner, quota, ctx: { store, projectRoot: root, drain: () => void runner.drain(), admit, limits } };
     // A run stopped by a restart continues when its account is opened again; an account's queue resumes too
     // (it may have waited for the budget). The owner's local site keeps its queue as it was left.
     void runner.recover().then((n) => (n > 0 || account ? runner.drain() : undefined)).catch(() => undefined);

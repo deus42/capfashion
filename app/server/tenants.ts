@@ -1,4 +1,4 @@
-// Tenants (production spec 2026-11-20-capsula-production.md §5): every account has its own folder with the same
+// Tenants: every account has its own folder with the same
 // locked JSON store, media and job folders the single-user site uses. Local mode keeps one tenant — the owner's
 // existing data in the project — exactly as before; accounts mode opens `<data>/users/<userId>/` per signed-in user.
 import fs from 'node:fs';
@@ -68,7 +68,7 @@ export function createTenants(opts: { projectRoot: string; dataDir: string; seed
     const quota = account && opts.quota ? accountQuota(opts.quota.cfg, opts.quota.usage, id, account.owner) : undefined;
     const store = quota ? meteredStore(raw, quota) : raw;
     const engine = quota && opts.engine ? meteredEngine(opts.engine, quota.cost) : opts.engine;
-    // Accounts start try-ons themselves (spec §6.1): no automatic try-on of every new look.
+    // Accounts start try-ons themselves: no automatic try-on of every new look.
     const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine, autoTryOn: !account, canStart: quota?.canStart });
     const admit = quota ? (kind: QuotaKind, n?: number) => quota.admit(store.read(), kind, n) : undefined;
     const limits = account && !account.owner ? ACCOUNT_LIMITS : undefined;

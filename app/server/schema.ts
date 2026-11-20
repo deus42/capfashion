@@ -38,7 +38,7 @@ export type MeasureKey = (typeof MEASURE_KEYS)[number];
 export interface StorePlace {
   key: string;
   name: string;
-  /** Mall or street and city, e.g. «Tower Center, Rijeka»; empty when online only. */
+  /** Mall or street and city, e.g. «Arkadia, Warsaw»; empty when online only. */
   place: string;
   /** Approximate road distance from the owner's shopping place. */
   km?: number;
@@ -398,13 +398,13 @@ export interface Profile {
   /** «Відстань»: how far physical stores may be, in km; 0 = online only; unset = any distance. */
   radiusKm?: number;
   preferences: { comfort: string; materials: string; fit: string; branding: string };
-  /** Interface and reply language (production spec §7); unset = the browser's, then Ukrainian. */
+  /** Interface and reply language; unset = the browser's, then Ukrainian. */
   language?: Language;
-  /** «Який одяг підбирати?» (spec §3, §7): what the stylist, searches and try-ons dress the person in; unset = any. */
+  /** «Який одяг підбирати?»: what the stylist, searches and try-ons dress the person in; unset = any. */
   wardrobeFocus?: WardrobeFocus;
-  /** First sign-in (spec §3): «На фото я або людина, яка дала згоду. Мені 18+». */
+  /** First sign-in: «На фото я або людина, яка дала згоду. Мені 18+». */
   consentAt?: string;
-  /** Weather periods follow the hemisphere (spec §7); unset = northern. */
+  /** Weather periods follow the hemisphere; unset = northern. */
   hemisphere?: 'north' | 'south';
 }
 

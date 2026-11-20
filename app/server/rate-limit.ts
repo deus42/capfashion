@@ -1,4 +1,4 @@
-// Request limiter (production spec §6.3): sign-in is limited per address, uploads per account and per address.
+// Request limiter: sign-in is limited per address, uploads per account and per address.
 // Fixed windows held in memory only; nothing about a request is stored. Behind Cloudflare Tunnel the client's
 // address is CF-Connecting-IP, trusted only with TRUST_PROXY=cloudflare and only when the connection itself
 // comes from a private address (the tunnel on the same host); the container publishes no public port.

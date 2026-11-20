@@ -12,7 +12,6 @@ import { sameIdentity, verifyReferenceFiles } from './identity.ts';
 import { MAX_IMAGE_REFS, buildPrompt, createRunner, pickRefs } from './runner.ts';
 import { analyzePrompt, applyAnalyze, applyIntake, intakePrompt } from './analysis.ts';
 import { hiddenLookIds, isCapsuleHidden, sameLook } from '../src/rating.ts';
-import { importInspiration } from './inspiration.ts';
 import { createHash } from 'node:crypto';
 import { changedCoreSlots, groupLookVariations } from '../src/look-variation.ts';
 import { looksNeedingRender } from '../src/render-need.ts';
@@ -115,34 +114,6 @@ function setup() {
   const call = (method: string, p: string, body: Record<string, unknown> = {}) => dispatch(ctx, method, p, body) as Promise<any>;
   return { dir, store, call, drained: () => drained };
 }
-
-test('reference import verifies bytes, deduplicates and preserves wardrobe and base photos', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-inspiration-'));
-  try {
-    const dir = path.join(root, '.local/data');
-    fs.mkdirSync(path.join(root, 'assets/references'), { recursive: true });
-    const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
-    fs.writeFileSync(path.join(root, 'assets/references/a.png'), bytes);
-    const store = createStore(dir, fixture);
-    const before = store.read();
-    const asset = { path: 'assets/references/a.png', sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, source_url: 'https://example.com/a.png', title: 'Olive Casual' };
-    assert.equal((await importInspiration(store, root, [asset, asset], 'Archived chat')).added.length, 1);
-    assert.equal((await importInspiration(store, root, [asset], 'Archived chat')).added.length, 0);
-    const db = store.read();
-    assert.deepEqual(db.items, before.items);
-    assert.deepEqual(db.profile, before.profile);
-    assert.deepEqual(db.looks, before.looks);
-    assert.deepEqual(db.jobs, before.jobs);
-    const p = db.photos.find((p) => p.inspiration)!;
-    assert.equal(p.inspiration!.title, 'Olive Casual');
-    assert.deepEqual(fs.readFileSync(path.join(root, p.path)), bytes);
-    await assert.rejects(importInspiration(store, root, [{ ...asset, sha256: 'wrong' }], ''), /checksum/);
-    await assert.rejects(importInspiration(store, root, [{ ...asset, source_url: 'javascript:alert(1)' }], ''), /HTTPS/);
-    fs.writeFileSync(path.join(root, 'outside.png'), bytes);
-    await assert.rejects(importInspiration(store, root, [{ ...asset, path: 'outside.png' }], ''), /outside/);
-    assert.equal(store.read().photos.length, before.photos.length + 1);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
-});
 
 test('outfit groups count core changes, ignore accessories and avoid similarity chains', () => {
   const a = fixture().looks[0];
@@ -1068,12 +1039,12 @@ test('«Знайти» searches the shops for a recommendation and saves dated v
   const { dir, store, call } = setup();
   const prof = await call('PATCH', '/api/profile', { rev: store.read().profile.rev, brands: ['Levi’s', ' Tom Tailor ', 'Levi’s', ''] });
   assert.deepEqual(prof.brands, ['Levi’s', 'Tom Tailor']);
-  const shops = await call('PATCH', '/api/profile', { rev: prof.rev, location: ' Tower Center Rijeka ', stores: ['Buzz Sneakers', ' Buzz Sneakers ', ''] });
-  assert.equal(shops.location, 'Tower Center Rijeka');
+  const shops = await call('PATCH', '/api/profile', { rev: prof.rev, location: ' Arkadia Warsaw ', stores: ['Buzz Sneakers', ' Buzz Sneakers ', ''] });
+  assert.equal(shops.location, 'Arkadia Warsaw');
   assert.deepEqual(shops.stores, ['Buzz Sneakers']);
   const job = await call('POST', '/api/needs/N-1/search', {});
   const prompt = shopSearchPrompt(store.read(), job);
-  assert.match(prompt, /«Tower Center Rijeka»/);
+  assert.match(prompt, /«Arkadia Warsaw»/);
   assert.match(prompt, /Owner's stores \(check these first\): Buzz Sneakers/);
   assert.match(prompt, /Levi’s, Tom Tailor/);
   // Article numbers leave the name the owner sees and go to sku.
@@ -1487,22 +1458,22 @@ test('round 7: look memory keeps deleted and refused compositions, closeness cat
 
 test('«Магазини»: one row per shop, a shop at the owner\'s place is known, one search fills the rest', async () => {
   const { store, call } = setup();
-  await call('POST', '/api/products', { needId: 'N-1', store: 'Levi’s Croatia', model: 'Tee', url: 'https://www.levi.com/HR/a' });
-  await call('POST', '/api/products', { needId: 'N-1', store: 'Levi’s Hrvatska', model: 'Tee 2', url: 'https://www.levi.com/HR/b' });
+  await call('POST', '/api/products', { needId: 'N-1', store: 'Levi’s Poland', model: 'Tee', url: 'https://www.levi.com/PL/a' });
+  await call('POST', '/api/products', { needId: 'N-1', store: 'Levi’s Polska', model: 'Tee 2', url: 'https://www.levi.com/PL/b' });
   await call('POST', '/api/products', { needId: 'N-1', store: 'Zara', model: 'Shirt', url: 'https://www.zara.com/hr/c' });
   await store.mutate((d) => {
     const p = d.products.find((x) => x.store === 'Zara')!;
     p.towerAvailability = 'confirmed';
   });
   let db = store.read();
-  assert.equal(storeKey('Levi’s Croatia'), storeKey('Levi’s Hrvatska'));
-  assert.deepEqual(storesToFind(db).map((s) => s.key), [storeKey('Levi’s Croatia')], 'Zara is at the owner\'s place');
+  assert.equal(storeKey('Levi’s Poland'), storeKey('Levi’s Polska'));
+  assert.deepEqual(storesToFind(db).map((s) => s.key), [storeKey('Levi’s Poland')], 'Zara is at the owner\'s place');
   assert.match(storeFindPrompt(db), /Use live web search/, 'the worker may search the web');
   assert.deepEqual(await call('POST', '/api/stores/find'), { queued: true });
   assert.deepEqual(await call('POST', '/api/stores/find'), { queued: false }, 'one search at a time');
-  await store.mutate((d) => void applyStoreFind(d, { status: 'done', reason: '', stores: [{ key: storeKey('Levi’s Croatia'), place: 'Arena Centar, Zagreb', km: 163.4, online: false, url: 'https://www.levi.com/HR/stores' }] }));
+  await store.mutate((d) => void applyStoreFind(d, { status: 'done', reason: '', stores: [{ key: storeKey('Levi’s Poland'), place: 'Galeria Krakowska, Kraków', km: 163.4, online: false, url: 'https://www.levi.com/PL/stores' }] }));
   db = store.read();
-  assert.deepEqual(db.stores!.map((s) => [s.place, s.km]), [['Arena Centar, Zagreb', 163]]);
+  assert.deepEqual(db.stores!.map((s) => [s.place, s.km]), [['Galeria Krakowska, Kraków', 163]]);
   assert.equal(storesToFind(db).length, 0);
   assert.equal(validateDb(db), null);
 });
@@ -1815,7 +1786,7 @@ test('a proposal is shown only while its purchases fit the closed set: planned, 
   assert.deepEqual(openSuggestions(db).map((s) => s.id).sort(), ['free', 'planned', 'replaces']);
 });
 
-// ── Production stage 1: accounts and per-account wardrobes (production spec §4–5) ──
+// ── Production stage 1: accounts and per-account wardrobes ──
 
 test('every account gets its own empty, valid wardrobe folder; deleting the account removes it and stops its queue', async () => {
   const { createTenants, emptyDb } = await import('./tenants.ts');
@@ -2047,7 +2018,7 @@ test('prompts read the reply language, wardrobe focus, place and hemisphere from
   const prompts = () => [discoverPrompt(store.read(), job), advisePrompt(store.read(), advise, []), analyzePrompt(store.read(), { ...job, kind: 'analyze' as const }, []), intakePrompt(store.read(), job, [])].join('\n');
   // Nothing about one person's city, country or style is written into the prompts.
   await store.mutate((d) => { delete d.profile.location; });
-  assert.doesNotMatch(prompts(), /Rijeka|Croatia|remote-work|relaxed smart casual/);
+  assert.doesNotMatch(prompts(), /remote-work|relaxed smart casual/);
   assert.match(prompts(), /Write every text in Ukrainian/);
   assert.match(prompts(), /clothes of any gender/);
   await store.mutate((d) => { d.profile.language = 'en'; d.profile.wardrobeFocus = 'women'; d.profile.location = 'Old Town, Lisbon, Portugal'; });

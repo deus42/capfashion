@@ -1,7 +1,7 @@
-// Accounts (production spec 2026-11-20-capsula-production.md §4): Google sign-in only, through better-auth with
+// Accounts: Google sign-in only, through better-auth with
 // Node's built-in SQLite. Sign-up needs an invite link while the beta is closed (`SIGNUP=open` opens it); the
-// owner, named by `OWNER_EMAIL`, needs none. Google tokens are never stored. Patterns follow AllCheck's setup,
-// without passwords, emails or account linking.
+// owner, named by `OWNER_EMAIL`, needs none. Google tokens are never stored, and there are no
+// passwords, emails or account linking.
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';

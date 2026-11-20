@@ -10,7 +10,7 @@
 [capsula.fit](https://capsula.fit) · [Підтримати](#підтримати) · [English](README.md)
 
 [![Ліцензія: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-black)](LICENSE)
-[![Підтримати на Ko-fi](https://img.shields.io/badge/Ko--fi-підтримати-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/KOFI_USERNAME)
+[![Підтримати на Ko-fi](https://img.shields.io/badge/Ko--fi-підтримати-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/deus42)
 
 </div>
 
@@ -51,6 +51,19 @@ Capsula робить із цього щоденний інструмент:
 
 Capsula активно розробляється. На **[capsula.fit](https://capsula.fit)** готується закрита бета за запрошеннями: вхід через Google, українська та англійська, капсули для будь-якого гардероба.
 
+## Запустити в себе
+
+Потрібен Node.js 24 або новіший.
+
+```sh
+git clone https://github.com/deus42/capsula.git
+cd capsula/app
+npm install
+npm start
+```
+
+Далі відкрий http://127.0.0.1:4317. Без облікових даних Google Capsula працює як один локальний гардероб, а AI-функції використовують локальний [Codex CLI](https://github.com/openai/codex). Обидва режими описано в [нотатках застосунку](app/README.md) (англійською), розгортання з акаунтами, квотами й бекапами — у [посібнику з розгортання](deploy/README.md). Як долучитися: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Технології
 
 React · TypeScript · Vite · Node.js та AI-моделі для розпізнавання, стилю й примірок.
@@ -61,7 +74,7 @@ React · TypeScript · Vite · Node.js та AI-моделі для розпіз�
 
 Capsula безкоштовна й незалежна. Примірки генерують платні AI-моделі, тож кожен внесок дає змогу відкрити бету для більшої кількості людей.
 
-<a href="https://ko-fi.com/KOFI_USERNAME"><img src="https://img.shields.io/badge/Підтримати%20на%20Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Підтримати Capsula на Ko-fi"></a>
+<a href="https://ko-fi.com/deus42"><img src="https://img.shields.io/badge/Підтримати%20на%20Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Підтримати Capsula на Ko-fi"></a>
 
 Зірки, ідеї й повідомлення про помилки теж допомагають: [створи issue](https://github.com/deus42/capsula/issues).
 

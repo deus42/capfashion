@@ -52,7 +52,7 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
 }
 
 /**
- * «Капсули для тебе» (spec §3): while there are fewer than three capsules, styles from the catalogue that are not
+ * «Капсули для тебе»: while there are fewer than three capsules, styles from the catalogue that are not
  * added yet — the current weather period first. «Додати» starts the capsule; «Нові» then finds its looks.
  */
 function catalogueStyles(db: DB, have: number): CatalogueStyle[] {

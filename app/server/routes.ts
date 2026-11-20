@@ -1019,7 +1019,7 @@ on('PATCH', '/api/settings', (ctx, _p, b) =>
 // ── Delete endpoints ───────────────────────────────────────────────────────
 on('DELETE', '/api/capsules/:id', (ctx, [id]) => ctx.store.mutate((db) => deleteCapsule(db, id)));
 
-// «Капсули для тебе» (spec §3, §7): a capsule started from a catalogue style, its brief in the person's language and wardrobe.
+// «Капсули для тебе»: a capsule started from a catalogue style, its brief in the person's language and wardrobe.
 on('POST', '/api/capsules/from-style', (ctx, _p, b) =>
   ctx.store.mutate((db) => {
     const style = STYLE_CATALOGUE.find((s) => s.id === str(b.styleId));

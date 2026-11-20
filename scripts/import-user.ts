@@ -1,4 +1,4 @@
-// One-time move of the owner's local site into their production account (production spec §11).
+// One-time move of the owner's local site into their production account.
 //
 //   node scripts/import-user.ts pack <out-dir>
 //     On the Mac, from the project: refuses while a job is queued or running, then lays out <out-dir> as an
@@ -12,7 +12,7 @@
 //     copy, keeps any previous folder as users/<id>.before-import-<time> and moves the import into place.
 //     An account that already has photos, pieces or looks is left alone unless --replace is given.
 //
-// Uploading the staged folder to the server is a separate step the owner approves at the time (spec §11).
+// Uploading the staged folder to the server is a separate step the owner approves at the time.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';

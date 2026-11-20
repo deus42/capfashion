@@ -142,7 +142,7 @@ const cleanName = (s: string) => s.replace(/\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9 /.-]
 type Where = { line: string; href?: string };
 function storePlaces(db: ReturnType<typeof useDb>): Map<string, Where> {
   const here = shopLocation(db);
-  // The city of the shopping place («Tower Center Rijeka, Rijeka, Croatia» → «Rijeka») is left out of store lines there.
+  // The city of the shopping place («Arkadia, Warsaw, Poland» → «Warsaw») is left out of store lines there.
   const parts = here.split(',').map((x) => x.trim()).filter(Boolean);
   const city = parts.length > 2 ? parts.at(-2)! : parts.length === 2 ? parts[1] : '';
   const esc = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

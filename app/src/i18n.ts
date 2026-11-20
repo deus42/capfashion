@@ -1,5 +1,5 @@
 /**
- * Interface languages (production spec §7): Ukrainian, the language the interface is written in, and English.
+ * Interface languages: Ukrainian, the language the interface is written in, and English.
  * `t()` takes the Ukrainian text itself as the key, so a screen reads as it always did and a missing English line
  * falls back to Ukrainian instead of a blank; `{name}` placeholders are filled from `vars`. The test suite checks
  * that every literal `t('…')` in src has an English line. No external library.

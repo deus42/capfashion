@@ -48,7 +48,7 @@ export default function App() {
   const intake = useIntake();
   const section = parts[0] ?? 'home';
 
-  // Language (spec §7): the profile's choice; accounts fall back to the browser, the owner's local site stays Ukrainian.
+  // Language: the profile's choice; accounts fall back to the browser, the owner's local site stays Ukrainian.
   setLanguage(state?.db.profile.language ?? (session?.mode === 'accounts' ? pickLanguage() : 'uk'));
   // The legal pages open for everyone, signed in or not.
   if (section === 'privacy' || section === 'terms') return <LegalPage kind={section} />;
@@ -69,7 +69,7 @@ export default function App() {
     );
   }
 
-  // First sign-in (spec §3): what to dress the person in and the consent, before anything else.
+  // First sign-in: what to dress the person in and the consent, before anything else.
   if (session?.mode === 'accounts' && !state.db.profile.consentAt) return <Welcome />;
   const { db } = state;
   // The thin bar means work is happening now; queued work waiting for its turn shows nothing.

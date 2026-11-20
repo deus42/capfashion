@@ -1,7 +1,6 @@
 # Running Capsula
 
-The production setup from the [production spec](../docs/superpowers/specs/2026-11-20-capsula-production.md) §8 and §11:
-one container on an existing Linux host, reached only through a Cloudflare Tunnel, with nightly snapshots that a
+How the hosted Capsula runs: one container on an existing Linux host, reached only through a Cloudflare Tunnel, with nightly snapshots that a
 separate Mac pulls and encrypts. `user@server` below stands for an SSH login over Tailscale with passwordless
 `sudo` for Docker.
 
@@ -73,7 +72,7 @@ scripts/install-mac-backup.sh user@server
 Every hour it pulls the newest nightly snapshot once, encrypts it with age, checks it by decrypting, and keeps 7 daily and 4 weekly copies in `~/Library/Application Support/Capsula/Backups`. Keep a second copy of
 `Recovery/identity.txt` somewhere safe.
 
-To check a restore (acceptance A10):
+To check a restore:
 
 ```sh
 scripts/restore-backup.sh <copy>.tar.age "$HOME/Library/Application Support/Capsula/Recovery/identity.txt" <empty-dir>

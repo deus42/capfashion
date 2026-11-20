@@ -97,7 +97,7 @@ export function storeFindPrompt(db: DB) {
     // Worded like the shop search: the unattended worker refused a "store-finder" task as outside its sources (19.11).
     'You are the Capsula shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
     `Find where the owner can buy in person. Measure from: ${origin}.`,
-    `For each shop below, find the NEAREST place to that point where its clothes can be bought in person — the shop's own store or an official retailer that sells the brand, whichever is nearer. place: for a retailer its name first, then the mall or street and city, e.g. "Europa 92, Tower Center, Rijeka"; for an own store the mall or street and city, e.g. "Arena Centar, Zagreb". km: approximate road distance from that point, 0 if unknown. url: the store locator or store page you used. online: true when there is no such place within about ${limit} km (then place empty). Only facts you verified on the web; never invent a store.`,
+    `For each shop below, find the NEAREST place to that point where its clothes can be bought in person — the shop's own store or an official retailer that sells the brand, whichever is nearer. place: for a retailer its name first, then the mall or street and city, e.g. "Foot Locker, Westfield, London"; for an own store the mall or street and city, e.g. "Westfield Stratford, London". km: approximate road distance from that point, 0 if unknown. url: the store locator or store page you used. online: true when there is no such place within about ${limit} km (then place empty). Only facts you verified on the web; never invent a store.`,
     'Shops (key | name | website):',
     storesToFind(db).map((s) => `${s.key} | ${s.name} | ${s.host || '—'}`).join('\n'),
   ].join('\n');
@@ -231,7 +231,7 @@ export function applyShopSearch(db: DB, job: Job, reply: ShopReply) {
   return { created, images, note };
 }
 
-const PRIVATE_HOST = /^(localhost|0\.)|\.local$|\.internal$|\.exmachina$|\.ts\.net$/i;
+const PRIVATE_HOST = /^(localhost|0\.)|\.local$|\.internal$|\.ts\.net$/i;
 
 /** Loopback, private, link-local, carrier-grade NAT (tailnet) and unique-local addresses are never fetched. */
 function privateAddress(ip: string): boolean {

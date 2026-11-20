@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { t } from '../i18n.ts';
 
 /**
- * The page before sign-in (production spec §3): the wordmark, one line and «Продовжити з Google».
+ * The page before sign-in: the wordmark, one line and «Продовжити з Google».
  * The beta is by invitation: an invite link opens this page with ?invite=1; without one a quiet line says so.
  */
 export function Landing() {

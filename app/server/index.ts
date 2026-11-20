@@ -4,9 +4,8 @@ import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HttpError } from './store.ts';
-import { buildSeed } from './seed.ts';
 import { createLimiter } from './runner.ts';
-import { createTenants, type Tenant } from './tenants.ts';
+import { createTenants, emptyDb, type Tenant } from './tenants.ts';
 import { INVITE_COOKIE, authConfigFromEnv, createAuth } from './auth.ts';
 import { createOpenAIEngine, openAIConfigFromEnv } from './openai-engine.ts';
 import { createUsage, quotaConfigFromEnv } from './quota.ts';
@@ -22,7 +21,7 @@ const DIST = path.join(APP_DIR, 'dist');
 const PORT = Number(process.env.PORT || 4317);
 const HOST = process.env.HOST || '127.0.0.1';
 
-// Two modes (production spec §4–5): without Google credentials the owner's single local site runs exactly as before;
+// Two modes: without Google credentials the owner's single local site runs exactly as before;
 // with them, every signed-in account gets its own wardrobe folder and the queue shares a cap on running jobs.
 const authConfig = authConfigFromEnv(process.env, DATA_DIR);
 const ACCOUNTS = Boolean(authConfig);
@@ -31,7 +30,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const openAI = openAIConfigFromEnv(process.env);
 const PRODUCTION = process.env.NODE_ENV === 'production';
 if (ACCOUNTS && PRODUCTION && !openAI) throw new Error('Accounts in production need OPENAI_API_KEY, OPENAI_TEXT_MODEL and OPENAI_IMAGE_MODEL.');
-// Accounts have monthly allowances (spec §6.2); production also needs the budget and the prices it is counted with.
+// Accounts have monthly allowances; production also needs the budget and the prices it is counted with.
 const quotaConfig = ACCOUNTS ? quotaConfigFromEnv(process.env) : null;
 if (ACCOUNTS && PRODUCTION && (quotaConfig!.budgetUsd === null || !openAI?.prices)) throw new Error('Accounts in production need MONTHLY_BUDGET_USD and OPENAI_PRICES.');
 const usage = ACCOUNTS ? createUsage(path.join(DATA_DIR, 'usage.sqlite')) : null;
@@ -40,7 +39,7 @@ const SUPPORT_URL = process.env.SUPPORT_URL?.trim() || null;
 const tenants = createTenants({
   projectRoot: PROJECT_ROOT,
   dataDir: DATA_DIR,
-  seed: () => buildSeed(PROJECT_ROOT, DATA_DIR),
+  seed: emptyDb,
   limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined,
   engine: openAI ? createOpenAIEngine(openAI) : undefined,
   quota: quotaConfig && usage ? { cfg: quotaConfig, usage } : undefined,
@@ -58,11 +57,10 @@ const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
 const PROXY_HEADERS = ['tailscale-user-login', 'tailscale-headers-info', 'x-forwarded-for', 'forwarded'];
 
 /**
- * Trusted without a login: plain loopback requests, and requests from the
- * private exmachina gateway (https://capsula.exmachina), which verifies the
- * owner's Tailscale identity itself and forwards with a loopback Host and
- * X-Forwarded-Host. `tailscale serve` requests carry the tailnet hostname and
- * identity headers and are checked below.
+ * Trusted without a login: plain loopback requests, and requests from a
+ * reverse proxy on the same machine that checks the owner's identity itself
+ * and forwards with a loopback Host and X-Forwarded-Host. `tailscale serve`
+ * requests carry the tailnet hostname and identity headers and are checked below.
  */
 function authorize(req: http.IncomingMessage): string | null {
   const host = req.headers.host ?? '';
@@ -132,7 +130,7 @@ function sendFile(res: http.ServerResponse, file: string, cache = 'no-cache', re
 }
 
 const secureCookies = Boolean(authConfig?.baseURL.startsWith('https://'));
-// Accounts mode only: sign-in and uploads are rate-limited (spec §6.3).
+// Accounts mode only: sign-in and uploads are rate-limited.
 const rateLimiter = ACCOUNTS ? createRateLimiter() : null;
 const TRUST_CLOUDFLARE = process.env.TRUST_PROXY === 'cloudflare';
 
@@ -149,7 +147,7 @@ function limited(res: http.ServerResponse, checks: [string, Rule][]): boolean {
 }
 
 /**
- * Accounts mode (spec §8): the public site sends a strict CSP and the usual hardening headers; HSTS only over
+ * Accounts mode: the public site sends a strict CSP and the usual hardening headers; HSTS only over
  * HTTPS. The owner's local site is left as it was.
  */
 const SECURITY_HEADERS: [string, string][] = [

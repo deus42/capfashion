@@ -20,7 +20,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 
 export const SEASON_LABEL: Record<Season, string> = { all: 'Усі сезони', warm: 'Тепло', transitional: 'Міжсезоння', cold: 'Холод' };
 
-/** The five weather periods (owner, 19.11), temperate months of the northern hemisphere: Mar–May spring, Jun–Aug summer, Sep–Oct early autumn, Nov late autumn, Dec–Feb winter (spec §7). */
+/** The five weather periods (owner, 19.11), temperate months of the northern hemisphere: Mar–May spring, Jun–Aug summer, Sep–Oct early autumn, Nov late autumn, Dec–Feb winter. */
 export const PERIOD_LABEL: Record<Period, string> = { spring: 'Весна', summer: 'Літо', 'early-autumn': 'Рання осінь', 'late-autumn': 'Пізня осінь', winter: 'Зима' };
 export const PERIOD_TEMP: Record<Period, string> = { spring: '10–20 °C', summer: 'від 20 °C', 'early-autumn': '12–20 °C', 'late-autumn': '5–12 °C', winter: '0–10 °C, дощ' };
 export function currentPeriod(date = new Date(), hemisphere: 'north' | 'south' = 'north'): Period {
@@ -399,12 +399,12 @@ export function openSuggestions(db: DB) {
 export const shopLocation = (db: DB) => db.profile.location ?? '';
 
 // «Магазини» (owner, 19.11): the shops of the found products and where their nearest store is.
-/** Country and region words shops add to their names («Levi’s Croatia», «Levi’s Hrvatska», «Levi’s DE»); generic, not anyone's place. */
+/** Country and region words shops add to their names («Levi’s Poland», «Levi’s Polska», «Levi’s DE»); generic, not anyone's place. */
 const COUNTRY_WORDS = 'croatia|hrvatska|slovenia|slovenija|serbia|srbija|bosnia|montenegro|ukraine|україна|ukraina|poland|polska|czech|česko|slovakia|hungary|magyarország|romania|bulgaria|greece|germany|deutschland|austria|österreich|switzerland|schweiz|italy|italia|france|spain|españa|portugal|netherlands|nederland|belgium|ireland|denmark|sweden|norway|finland|lithuania|latvia|estonia|uk|usa|us|eu|hr|si|rs|ua|pl|cz|sk|hu|ro|bg|gr|de|at|ch|it|fr|es|pt|nl|be|ie|dk|se|no|fi|lt|lv|ee';
 const COUNTRY_SUFFIX = new RegExp(`\\s+(${COUNTRY_WORDS})$`, 'i');
 /** A shop's plain name: no «(…)» notes and no trailing country word. */
 export const plainShopName = (name: string) => name.replace(/\s*\([^)]*\)/g, '').trim().replace(COUNTRY_SUFFIX, '').trim();
-/** One key per shop: «Levi’s Croatia» and «Levi’s Hrvatska» are the same shop. */
+/** One key per shop: «Levi’s Poland» and «Levi’s Polska» are the same shop. */
 const KEY_NOISE = new RegExp(`\\b(${COUNTRY_WORDS}|online|shop|store)\\b`, 'g');
 export const storeKey = (name: string) => name.replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(KEY_NOISE, ' ').replace(/\s+/g, ' ').trim();
 

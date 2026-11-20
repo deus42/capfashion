@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run on the recovery Mac (production spec §8, after AllCheck's encrypted off-host copy): pulls the newest server
+# Run on the recovery Mac: pulls the newest server
 # snapshot over SSH, encrypts it with age as it arrives, decrypts it back through a SHA-256 check and keeps
 # 7 daily and 4 weekly copies. Neither plaintext nor the age identity reaches the server; the previous copies stay
 # untouched when anything fails. Requires age, ssh, shasum and Python 3.

@@ -1,4 +1,4 @@
-# Capsula for production (spec docs/superpowers/specs/2026-11-20-capsula-production.md §8): accounts mode with
+# Capsula for production: accounts mode with
 # the OpenAI engine, run as a non-root user on a read-only root filesystem; everything written lives in /data.
 # Pin the base image by digest at deploy time.
 

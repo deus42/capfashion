@@ -1,4 +1,4 @@
-// Quotas and the monthly budget (production spec 2026-11-20-capsula-production.md §6.2), accounts mode only.
+// Quotas and the monthly budget, accounts mode only.
 // Every account has a monthly allowance per kind of AI work; finished jobs are counted in a small SQLite ledger
 // (jobs can be deleted from a wardrobe, the ledger keeps the count). Every API call's cost is recorded too: once
 // the accounts' total reaches MONTHLY_BUDGET_USD, generation pauses for everyone but the owner until the 1st.

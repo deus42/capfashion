@@ -873,7 +873,7 @@ button.wtile { border: 0; background: none; padding: 0; font: inherit; color: in
 .quiet-toggle:disabled { opacity: 0.35; cursor: default; }
 .set-note { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin: 0; font-size: 12.5px; color: var(--ink-2); }
 
-/* Landing before sign-in (production spec §3): the wordmark, one line, one quiet Google button. */
+/* Landing before sign-in: the wordmark, one line, one quiet Google button. */
 .landing { min-height: 100%; display: grid; grid-template-rows: 1fr auto; background: var(--bg); }
 .landing-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 48px 16px; text-align: center; }
 .landing-mark { margin: 0; font-family: var(--font-display); font-weight: 420; font-variation-settings: 'wdth' 92; font-size: clamp(44px, 9vw, 76px); letter-spacing: 0.01em; }

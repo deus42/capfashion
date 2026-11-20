@@ -1,4 +1,4 @@
-// OpenAI API engine (production spec 2026-11-20-capsula-production.md §6.1): the same JSON-schema answers and
+// OpenAI API engine: the same JSON-schema answers and
 // images the local Codex worker produces, through the Responses API (structured outputs, optional web search)
 // and the Images API (edits with reference images: identity first, then garments). Models come only from the
 // environment — no guessed defaults — and every call is logged without image data.

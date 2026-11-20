@@ -1,5 +1,5 @@
 #!/bin/sh
-# Nightly snapshot on the server (production spec §8), installed as /usr/local/sbin/capsula-backup and run by
+# Nightly snapshot on the server, installed as /usr/local/sbin/capsula-backup and run by
 # capsula-backup.timer: both SQLite databases through SQLite's backup API plus every account folder, in one tar
 # with its SHA-256. The recovery Mac pulls and encrypts it (scripts/pull-backup.sh). The server keeps only the
 # newest completed snapshot and never removes it before its replacement is complete.

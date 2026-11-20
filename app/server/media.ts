@@ -9,7 +9,7 @@ const run = promisify(execFile);
 
 export const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 
-/** Beta storage per account, the owner excepted (production spec §5). */
+/** Beta storage per account, the owner excepted. */
 export interface StorageLimits { fileBytes: number; photos: number; storageBytes: number }
 export const ACCOUNT_LIMITS: StorageLimits = { fileBytes: 15 * 1024 ** 2, photos: 300, storageBytes: 2 * 1024 ** 3 };
 

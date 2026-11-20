@@ -200,7 +200,7 @@ function Measurements() {
   );
 }
 
-/** Brand and shop names written once: «Levi’s Croatia», «LEVI'S» and «Levi's» are one choice. */
+/** Brand and shop names written once: «Levi’s Poland», «LEVI'S» and «Levi's» are one choice. */
 const cleanShop = plainShopName;
 const nameKey = (s: string) => s.toLowerCase().replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function uniqueNames(list: string[]) {
@@ -339,7 +339,7 @@ function Preferences() {
   );
 }
 
-/** Accounts mode (production spec §4): who is signed in, sign out, delete the account; the owner makes invite links. */
+/** Accounts mode: who is signed in, sign out, delete the account; the owner makes invite links. */
 function Account() {
   const { session, act, toast } = useApp();
   const [invites, setInvites] = useState<{ code: string; expiresAt: string; usedBy: string | null; disabled: number }[]>([]);

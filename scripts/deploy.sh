@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploys the committed HEAD to the server (production spec §8): builds the linux/amd64 image, pushes
+# Deploys the committed HEAD to the server: builds the linux/amd64 image, pushes
 # ghcr.io/deus42/capsula:sha-<commit>, then on the server installs compose.yaml and the backup script, pulls that
 # exact image, restarts and waits for /health. A failed health check brings the previous tag back.
 # Needs a clean tree, `docker login ghcr.io` with a token that can write packages, and SSH (over Tailscale) to a

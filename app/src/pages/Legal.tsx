@@ -1,7 +1,7 @@
 /**
- * /privacy and /terms (production spec §12): one quiet page each, Ukrainian and English, open without signing in.
+ * /privacy and /terms: one quiet page each, Ukrainian and English, open without signing in.
  * Facts here must match the running service: cookies (auth.ts, index.ts), processors (openai-engine.ts), deletion
- * (DELETE /api/account) and the backup retention set at deployment (spec §8: 7 daily and 4 weekly copies).
+ * (DELETE /api/account) and the backup retention set at deployment (7 daily and 4 weekly copies).
  */
 type Lang = 'uk' | 'en';
 interface Section { title: string; body: string[] }

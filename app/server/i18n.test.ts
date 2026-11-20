@@ -1,4 +1,4 @@
-// Every Ukrainian line the interface can show has an English one (production spec §7, acceptance A6).
+// Every Ukrainian line the interface can show has an English one.
 // The check reads the sources: each quoted Ukrainian string and each piece of Ukrainian JSX text in src must be
 // a key of src/i18n/en.ts. Files with their own bilingual text, and data that is matched rather than shown
 // (colour and accessory patterns, country words), are left out.

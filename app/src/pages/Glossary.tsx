@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { t } from '../i18n.ts';
 
-// Five-part legend from the specification (§3): what it is, how to recognise
+// Five-part legend: what it is, how to recognise
 // it, why it is proposed, what fit to check, what to reject in a store.
 interface Term {
   id: string;

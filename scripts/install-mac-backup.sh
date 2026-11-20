@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the hourly encrypted backup pull on the recovery Mac (production spec §8): an age identity kept outside
+# Installs the hourly encrypted backup pull on the recovery Mac: an age identity kept outside
 # the repository, the pull script, and a LaunchAgent that runs it every hour (a snapshot is pulled once).
 set -euo pipefail
 umask 077

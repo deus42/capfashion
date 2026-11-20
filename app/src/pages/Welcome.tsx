@@ -7,7 +7,7 @@ import { currentLanguage, t } from '../i18n.ts';
 const FOCUS: [WardrobeFocus, string][] = [['men', 'Чоловічий'], ['women', 'Жіночий'], ['any', 'Будь-який']];
 
 /**
- * First sign-in (production spec §3), one short step per screen: what clothes to dress the person in, then the
+ * First sign-in, one short step per screen: what clothes to dress the person in, then the
  * consent. The language comes from the browser and is saved with them; it changes in «Профіль → Побажання».
  */
 export function Welcome() {

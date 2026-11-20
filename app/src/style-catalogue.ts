@@ -1,7 +1,7 @@
 /**
- * The capsule style catalogue (production spec §7): a public starter set of clearly different fashion styles with
+ * The capsule style catalogue: a public starter set of clearly different fashion styles with
  * names that suit anyone. Each style has its idea, palette, materials, weather periods and key pieces for a men's
- * and a women's wardrobe; «Будь-який» shows both. A new account starts its capsules from here (spec §3).
+ * and a women's wardrobe; «Будь-який» shows both. A new account starts its capsules from here.
  * Reviewed by the fashion-stylist role on 20.11.2026 (Sport Casual replaced Active Casual; Outdoor, Heritage and Urban
  * were set apart by fabric and palette; dated sources in the worklog); the owner has the final word before launch.
  */

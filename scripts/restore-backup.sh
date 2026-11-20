@@ -1,5 +1,5 @@
 #!/bin/bash
-# Restores one encrypted copy from pull-backup.sh into an empty folder and checks it (production spec §8, A10):
+# Restores one encrypted copy from pull-backup.sh into an empty folder and checks it:
 # the SHA-256 recorded when it was pulled, SQLite integrity, and every account's db.json. Point the app at the
 # folder with CAPSULA_DATA_DIR to look inside (deploy/README.md). Requires age, shasum, sqlite3 and Node.
 set -euo pipefail

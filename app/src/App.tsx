@@ -23,14 +23,11 @@ function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: Re
   );
 }
 
-/** The logo (owner, 20.11): a tailor's mannequin silhouette — a dress form on its stand. */
+/** The logo (owner, 20.11): simply the letter C, in the site's display serif. */
 function CapsuleMark({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="capsule-mark">
-      <rect x="14.2" y="2.6" width="3.6" height="2.4" rx="1" fill="currentColor" />
-      <path d="M9.6 7.4C11.4 5.7 20.6 5.7 22.4 7.4C23.6 9.4 22.9 12.4 21.2 14.6C20.2 16 21.3 18.3 22 20C18.8 21.7 13.2 21.7 10 20C10.7 18.3 11.8 16 10.8 14.6C9.1 12.4 8.4 9.4 9.6 7.4Z" fill="currentColor" />
-      <rect x="15.3" y="21" width="1.4" height="7" fill="currentColor" />
-      <path d="M11.5 30.2L16 27.6L20.5 30.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <text x="16" y="25" textAnchor="middle" fontFamily="'Noto Serif Display Variable', 'Noto Serif Display', Georgia, serif" fontSize="28" fill="currentColor">C</text>
     </svg>
   );
 }
@@ -112,7 +109,7 @@ export default function App() {
       <div className="frame">
         {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
-          <a href="/home" className="wordmark m-only" aria-label="Capsula — Головна" aria-current={section === 'home' ? 'page' : undefined}><CapsuleMark size={22} />Capsula</a>
+          <a href="/home" className="wordmark m-only" aria-label="Capsula — Головна" aria-current={section === 'home' ? 'page' : undefined}>Capsula</a>
           <div className="grow" />
           <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}

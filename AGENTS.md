@@ -99,6 +99,12 @@
 
 ## Project-Specific Rules
 
+### Personal fashion stylist
+
+- Use the `fashion-stylist` role on request and before creating or changing a look or capsule in a Codex/Claude task. Give it the draft and the relevant current catalogue context. Return the review in the same chat. Discuss significant replacements, mergers or changes of direction with the owner before applying them. Routine software changes do not need a style review.
+- Follow the [stylist specification](docs/superpowers/specs/2026-11-20-fashion-stylist.md). From the project root, run `node app/server/stylist-context.ts` and supply the relevant rows alongside the draft. Project definitions are in [Codex](.codex/agents/fashion-stylist.toml) and [Claude](.claude/agents/fashion-stylist.md). The owner's request explicitly authorizes this stylist review in the above workflow. Use one read-only reviewer, with no nested delegation. If the client cannot delegate, apply the same role in the current chat and disclose the fallback.
+- Review proposed changes against current public menswear evidence, existing owned pieces, previously declined advice and the shopping list. Before handing off, give the owner the concrete change, its rationale, a fit or styling check and dated source links. Keep personal inputs local and preserve the owner's decision on any wardrobe change.
+
 ### Interface — owner rules, 17 November 2026
 
 - ALWAYS minimal design: the fewest elements that do the job; no explanatory text, duplicate buttons/selectors, history, IDs or debug data on owner screens; editing and secondary actions behind one pencil modal. Before shipping a screen, remove everything that does not block the main task.

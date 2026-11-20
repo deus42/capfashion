@@ -21,6 +21,7 @@ import { applyShopSearch, applyStoreFind, shopSearchPrompt, storeFindPrompt, sto
 import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, sameTitle, adviceDue, advisePrompt, applyAdvice, itemsToRate, looksToScore, seenRevs } from './advisor.ts';
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
 import { applyDiscover, discoverPrompt } from './discover.ts';
+import { stylistContext } from './stylist-context.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
@@ -82,6 +83,27 @@ function fixture(): DB {
     settings: { codexModel: 'test-model', reasoningEffort: 'medium', tailscaleLogin: '' },
   };
 }
+
+test('chat stylist sees current catalogue roles and owner decisions without personal media or profile records', () => {
+  const db = fixture();
+  db.items[1].status = 'inactive';
+  db.looks[0].favorite = true;
+  db.capsules.push({ ...db.capsules[0], id: 'C-old', redirectCapsuleIds: ['C-1'] });
+  db.items[0].rating = { score: 5, note: '', kept: true, rev: 1, at };
+  db.profile.measurements.height.value = 184;
+  db.settings.tailscaleLogin = 'private-login';
+  const before = JSON.stringify(db);
+  const brief = stylistContext(db);
+  assert.deepEqual(brief.capsules.map(c => c.id), ['C-1']);
+  assert.deepEqual(brief.items.map(i => [i.id, i.status, i.ownerKeeps]), [['W-1', 'needs_confirmation', true]]);
+  assert.equal(brief.looks[0].ownerLiked, true);
+  assert.equal(brief.looks[0].slots.top[0].kind, 'need');
+  assert.equal(brief.needs[0].status, 'open');
+  assert.deepEqual(brief.repeatedlyRefusedItems, []); // Older catalogues have no refusal memory.
+  assert.deepEqual(brief.seenCompositions[0], db.looks[0].slots);
+  assert.doesNotMatch(JSON.stringify(brief), /private-login|assets\/photos|basePhoto|measurements|knownSizes|P-1/);
+  assert.equal(JSON.stringify(db), before);
+});
 
 function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capfashion-test-'));

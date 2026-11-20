@@ -47,6 +47,11 @@ function NewCard({ s }: { s: Suggestion }) {
   const look = s.looks[0];
   const capsule = db.capsules.find((c) => c.id === s.capsuleId);
   const buy = s.looks.flatMap((l) => l.buy ?? []);
+  // A purchase that replaces a piece of the capsule's set (owner, 20.11) says which one.
+  const replacedTitle = (key: string) => {
+    const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+    return (kind === 'item' ? db.items.find((i) => i.id === id)?.title : db.needs.find((n) => n.id === id)?.title) ?? id;
+  };
   const add = async () => {
     const r = await act(() => api<{ href: string }>('POST', `/api/suggestions/${s.id}/accept`), 'Додано');
     if (r?.href) go(r.href);
@@ -58,7 +63,7 @@ function NewCard({ s }: { s: Suggestion }) {
         <span className="eyebrow-sm best-mark">{s.kind === 'capsule' ? `Нова капсула · ${s.looks.length} образів` : capsule?.name ?? 'Новий образ'}</span>
         <h4>{s.name}</h4>
         {s.why && <span className="miss">{s.why}</span>}
-        {buy.length > 0 && <span className="miss">докупити: {buy.map((b) => b.title).join(', ')}</span>}
+        {buy.length > 0 && <span className="miss">докупити: {buy.map((b) => b.replaces ? `${b.title} замість «${replacedTitle(b.replaces)}»` : b.title).join(', ')}</span>}
       </div>
       <div className="card-foot">
         <button className="btn sm" onClick={() => void act(() => api('POST', `/api/suggestions/${s.id}/reject`))}>Ні</button>

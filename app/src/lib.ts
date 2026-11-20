@@ -2,6 +2,7 @@ import type { Capsule, Category, DB, Item, Job, Look, MeasureKey, Need, Period, 
 import { hiddenLookIds, isCapsuleHidden } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
 import { tooClose, withBuys } from './look-memory.ts';
+import { buysFitSet, capsulePieceRefs, combinationGains, fashionCapsules, inSavedSet } from './capsule-pieces.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   outerwear: 'Верхній одяг',
@@ -382,7 +383,12 @@ export function openSuggestions(db: DB) {
   const active = new Set(db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto && !isEyewear(i.title) && !weakPiece(i)).map((i) => i.id));
   const parents = new Set(db.capsules.filter((c) => !isCapsuleHidden(db, c)).map((c) => c.id));
   // A proposal that a look made meanwhile already covers is not shown (look memory, owner 19.11).
-  return (db.suggestions ?? []).filter((s) => s.status === 'open' && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))) && !s.looks.some((l) => db.looks.some((x) => tooClose(db, withBuys(l.slots, l.buy), x.slots))));
+  // A proposal for a capsule with a closed set shows only while its owned pieces are in that set (owner, 20.11).
+  const fitsSet = (s: NonNullable<DB['suggestions']>[number]) => {
+    const c = s.kind === 'look' && s.capsuleId ? db.capsules.find((x) => x.id === s.capsuleId) : undefined;
+    return !c?.pieces || s.looks.every((l) => Object.values(l.slots).flat().every((r) => inSavedSet(db, c, r)) && buysFitSet(db, c, l.buy));
+  };
+  return (db.suggestions ?? []).filter((s) => s.status === 'open' && fitsSet(s) && (s.kind === 'capsule' || Boolean(s.capsuleId && parents.has(s.capsuleId))) && s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind !== 'item' || active.has(r.id))) && !s.looks.some((l) => db.looks.some((x) => tooClose(db, withBuys(l.slots, l.buy), x.slots))));
 }
 
 /** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */
@@ -451,6 +457,10 @@ export function siteLooks(db: DB): Look[] {
 export function purchaseRanking(db: DB) {
   const open = db.needs.filter((n) => n.status === 'open');
   const visible = siteLooks(db);
+  // Capsule sets (owner, 20.11): a purchase in a capsule's set comes first; on equal score, the one adding more combinations.
+  const capsules = fashionCapsules(db);
+  const inSets = new Set(capsules.flatMap((c) => capsulePieceRefs(db, c)).filter((r) => r.kind === 'need').map((r) => r.id));
+  const gains = combinationGains(db, capsules);
   return open
     .map((n) => {
       // Same cards as everywhere else: the visible looks with near-copies folded once for the whole site.
@@ -465,9 +475,9 @@ export function purchaseRanking(db: DB) {
         if (l.favorite) liked += 1;
       }
       const looksIn = looks.length;
-      return { need: n, looksIn, completes, score: completes * 3 + closer + liked + (n.priority === 'core' ? 0.5 : 0) };
+      return { need: n, looksIn, completes, inSet: inSets.has(n.id), combos: gains.get(n.id) ?? 0, score: completes * 3 + closer + liked + (n.priority === 'core' ? 0.5 : 0) };
     })
-    .sort((a, b) => b.score - a.score || b.looksIn - a.looksIn);
+    .sort((a, b) => Number(b.inSet) - Number(a.inSet) || b.score - a.score || b.combos - a.combos || b.looksIn - a.looksIn);
 }
 
 /**

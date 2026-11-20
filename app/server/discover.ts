@@ -9,6 +9,7 @@ import { CATEGORY_UK, ownedItems } from './analysis.ts';
 import { PERIOD_LABEL, PERIOD_TEMP, SLOT_CATEGORIES, currentPeriod, isEyewear, weakPiece } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../src/rating.ts';
 import { alreadySeen, refusedPieces, seenCompositions, withBuys } from '../src/look-memory.ts';
+import { freePlaces, normalizePiece, pieceCategory, pieceGroup, pieceKey, sameTitle } from '../src/capsule-pieces.ts';
 
 const SLOT_KEYS = ['top', 'layer', 'bottom', 'shoes', 'accessories'] as const;
 const str = { type: 'string' } as const;
@@ -30,14 +31,14 @@ export const DISCOVER_SCHEMA = {
         required: ['capsuleId', 'name', 'why', ...SLOT_KEYS, 'buy'],
         properties: {
           capsuleId: str, name: str, why: str, top: ids, layer: ids, bottom: ids, shoes: ids, accessories: ids,
-          buy: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['slot', 'title', 'category'], properties: { slot: { type: 'string', enum: [...SLOT_KEYS] }, title: str, category: { type: 'string', enum: [...CATEGORIES] } } } },
+          buy: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['slot', 'title', 'category', 'replaces'], properties: { slot: { type: 'string', enum: [...SLOT_KEYS] }, title: str, category: { type: 'string', enum: [...CATEGORIES] }, replaces: str } } },
         },
       },
     },
   },
 };
 
-type Outfit = { capsuleId: string; name: string; why: string; buy: { slot: string; title: string; category: string }[] } & Record<(typeof SLOT_KEYS)[number], string[]>;
+type Outfit = { capsuleId: string; name: string; why: string; buy: { slot: string; title: string; category: string; replaces?: string }[] } & Record<(typeof SLOT_KEYS)[number], string[]>;
 export interface DiscoverReply {
   status: string;
   reason: string;
@@ -95,6 +96,7 @@ export function discoverPrompt(db: DB, job: Job) {
     '',
     'Capsules (id | name | periods | brief):',
     caps.map((c) => `${c.id} | ${c.name} | ${(c.periods ?? []).map((p) => PERIOD_LABEL[p]).join(', ') || '—'} | ${c.description.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n'),
+    ...setRules(db, caps),
     '',
     'Owned pieces (id | kind | title | colour):',
     items.map((i) => `${i.id} | ${CATEGORY_UK[i.category]} | ${i.title}${i.color ? ` | ${i.color}` : ''}`).join('\n'),
@@ -109,6 +111,23 @@ export function discoverPrompt(db: DB, job: Job) {
     'Existing looks (do not repeat or near-copy):',
     db.looks.filter((l) => !hiddenLookIds(db).has(l.id)).slice(-60).map((l) => `- ${line(db, l.slots)}`).join('\n') || '—',
   ].filter((x) => x !== '').join('\n');
+}
+
+/**
+ * A capsule with a saved set (owner, 20.11) takes looks made of its set only: owned pieces of the set, its planned
+ * purchases by exact name, a new purchase only into a free place, or one that replaces a piece of the set.
+ */
+function setRules(db: DB, caps: DB['capsules']): string[] {
+  const withSets = caps.filter((c) => c.pieces);
+  if (!withSets.length) return [];
+  const out = ['', 'Closed sets — a look for one of these capsules uses ONLY its set. Owned ids must be from the set; a planned purchase of the set goes into buy with its exact name and replaces "". A NEW piece to buy is allowed only into a free place (replaces ""), or with replaces = the id of the set piece of the same kind it replaces (then it takes that piece\'s place in the whole capsule). Otherwise use replaces "".'];
+  for (const c of withSets) {
+    const free = freePlaces(db, c)!;
+    const owned = c.pieces!.filter((r) => r.kind === 'item').map((r) => r.id);
+    const planned = c.pieces!.filter((r) => r.kind === 'need').map((r) => `${r.id} «${db.needs.find((n) => n.id === r.id)?.title ?? r.id}»`);
+    out.push(`${c.id} set — owned: ${owned.join(', ') || '—'}; planned purchases: ${planned.join('; ') || '—'}; free places: garments ${free.garments}, shoes ${free.shoes}, accessories ${free.accessories}.`);
+  }
+  return out;
 }
 
 /** Saves a search: up to six new cards; the previous search's unanswered cards make room. */
@@ -129,21 +148,44 @@ export function applyDiscover(db: DB, job: Job, reply: DiscoverReply) {
     if (!capsule || (job.capsuleId && capsule.id !== job.capsuleId)) continue;
     const slots = emptySlots();
     let bad = false;
+    const setKeys = capsule.pieces ? new Set(capsule.pieces.map((r) => pieceKey(normalizePiece(db, r)))) : null;
     for (const k of SLOT_KEYS) {
       const list = [...new Set(o[k] ?? [])];
       if (list.some((id) => !owned.has(id) || !SLOT_CATEGORIES[k].includes(owned.get(id)!.category) || avoid.has(id))) bad = true;
+      if (setKeys && list.some((id) => !setKeys.has(`item:${id}`))) bad = true;
       slots[k] = list.slice(0, k === 'accessories' ? 2 : 1).map((id) => ({ kind: 'item' as const, id }));
     }
     if (bad || required.some((id) => !Object.values(slots).flat().some((r) => r.id === id))) continue;
     const buy: NonNullable<Suggestion['looks'][number]['buy']> = [];
+    const free = freePlaces(db, capsule);
+    const replaced = new Set<string>();
     for (const b of (o.buy ?? []).slice(0, 2)) {
       const slot = b.slot as SlotKey;
       const category = b.category as Category;
       const title = text(b.title, 80);
       if (!title || !(SLOT_KEYS as readonly string[]).includes(slot) || !SLOT_CATEGORIES[slot].includes(category)) continue;
       if (slot !== 'accessories' && slots[slot].length) continue;
+      if (free && setKeys) {
+        // A closed set: a planned purchase of the set, a free place, or a named piece of the set it replaces.
+        const planned = capsule.pieces!.some((r) => r.kind === 'need' && db.needs.some((n) => n.id === r.id && n.category === category && sameTitle(n.title, title)));
+        const group = pieceGroup(category);
+        const rep = text(b.replaces, 80);
+        const target = rep ? capsule.pieces!.find((r) => pieceKey(r) === rep || r.id === rep) : undefined;
+        if (planned) buy.push({ slot, title, category });
+        else if (target && !replaced.has(pieceKey(target)) && pieceCategory(db, target) && pieceGroup(pieceCategory(db, target)!) === group) {
+          replaced.add(pieceKey(target));
+          buy.push({ slot, title, category, replaces: pieceKey(target) });
+        } else if (free[group] > 0) {
+          free[group] -= 1;
+          buy.push({ slot, title, category });
+        } else bad = true;
+        continue;
+      }
       buy.push({ slot, title, category });
     }
+    if (bad) continue;
+    // A replaced piece cannot stay in the same look.
+    if ([...replaced].some((key) => Object.values(slots).flat().some((r) => pieceKey(r) === key))) continue;
     const has = (k: SlotKey) => slots[k].length > 0 || buy.some((b) => b.slot === k);
     if (!(has('top') || has('layer')) || !has('bottom') || !has('shoes')) continue;
     const check = withBuys(slots, buy);

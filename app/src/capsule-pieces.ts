@@ -1,5 +1,5 @@
 import type { Capsule, Category, DB, Look, SlotKey, SlotRef, Slots } from '../server/schema.ts';
-import { hiddenLookIds } from './rating.ts';
+import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from './rating.ts';
 
 /**
  * A capsule is a fashion style plus a closed set of pieces (owner, 20.11; spec
@@ -163,4 +163,70 @@ export function piecesOutsideSet(db: DB, c: Capsule, slots: Slots): SlotRef[] {
   if (!c.pieces) return [];
   const inSet = new Set(c.pieces.map((r) => pieceKey(normalizePiece(db, r))));
   return uniquePieces(db, slotPieces(slots)).filter((r) => !inSet.has(pieceKey(r)));
+}
+
+/** The fashion capsules shown on the site (selections, hidden and moved capsules are not). */
+export const fashionCapsules = (db: DB) => db.capsules.filter((c) => c.kind !== 'selection' && !isCapsuleArchived(c) && !isCapsuleHidden(db, c));
+
+/** Free places of a saved set per group; null while the set is still read from the looks. */
+export function freePlaces(db: PieceDb, c: Capsule): Record<PieceGroup, number> | null {
+  if (!c.pieces) return null;
+  const free: Record<PieceGroup, number> = { ...CAPSULE_LIMITS };
+  for (const r of c.pieces) {
+    const category = pieceCategory(db, r);
+    if (category) free[pieceGroup(category)] -= 1;
+  }
+  return free;
+}
+
+export const inSavedSet = (db: Pick<DB, 'products'>, c: Capsule, ref: SlotRef) =>
+  Boolean(c.pieces?.some((r) => pieceKey(normalizePiece(db, r)) === pieceKey(normalizePiece(db, ref))));
+
+/**
+ * How many new combinations each purchase adds to what can be worn today (owner, 20.11: the next purchase is the
+ * one that completes the most looks, then the one that adds the most combinations), summed over the capsules
+ * whose set holds it. Pieces already owned count; purchases still to buy do not.
+ */
+export function combinationGains(db: DB, capsules = fashionCapsules(db)): Map<string, number> {
+  const gains = new Map<string, number>();
+  for (const c of capsules) {
+    const set = capsuleSet(db, c);
+    const owned: Record<PieceRole, number> = { top: 0, layer: 0, bottom: 0, shoes: 0, accessories: 0 };
+    for (const p of set.pieces) if (p.owned) owned[p.role] += 1;
+    const before = capsuleCombinations(owned);
+    for (const p of set.pieces) {
+      if (p.ref.kind !== 'need') continue;
+      const after = capsuleCombinations({ ...owned, [p.role]: owned[p.role] + 1 });
+      gains.set(p.ref.id, (gains.get(p.ref.id) ?? 0) + after - before);
+    }
+  }
+  return gains;
+}
+
+const normTitle = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+/** Two purchase names for the same piece: equal, or sharing most of their words. */
+export function sameTitle(a: string, b: string) {
+  const wa = new Set(normTitle(a).split(' ').filter((w) => w.length > 2));
+  const wb = new Set(normTitle(b).split(' ').filter((w) => w.length > 2));
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  return normTitle(a) === normTitle(b) || (shared >= 2 && shared / Math.min(wa.size, wb.size) >= 0.75);
+}
+
+/**
+ * Whether a proposed look's purchases fit a capsule's closed set: each is a planned purchase of the set, replaces
+ * a piece of the set of the same kind, or takes a free place. A capsule without a saved set takes any.
+ */
+export function buysFitSet(db: PieceDb, c: Capsule, buys: { title: string; category: Category; replaces?: string }[] = []): boolean {
+  const free = freePlaces(db, c);
+  if (!free || !c.pieces) return true;
+  for (const b of buys) {
+    const group = pieceGroup(b.category);
+    if (c.pieces.some((r) => r.kind === 'need' && db.needs.some((n) => n.id === r.id && n.category === b.category && sameTitle(n.title, b.title)))) continue;
+    const target = b.replaces ? c.pieces.find((r) => pieceKey(r) === b.replaces) : undefined;
+    const targetCategory = target ? pieceCategory(db, target) : undefined;
+    if (targetCategory && pieceGroup(targetCategory) === group) continue;
+    if (free[group] <= 0) return false;
+    free[group] -= 1;
+  }
+  return true;
 }

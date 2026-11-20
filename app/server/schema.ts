@@ -417,7 +417,7 @@ export interface Suggestion {
   capsuleId?: string | null;
   season?: Season;
   /** `buy`: pieces to buy for the look (search for new looks, owner 19.11) — they become purchases only on «Додати». */
-  looks: { name: string; why: string; slots: Slots; buy?: { slot: SlotKey; title: string; category: Category }[] }[];
+  looks: { name: string; why: string; slots: Slots; buy?: { slot: SlotKey; title: string; category: Category; /** A piece of the capsule's closed set this purchase replaces (owner, 20.11). */ replaces?: string }[] }[];
   /** «search»: a result of «Нові» (owner, 19.11); otherwise an advisor proposal. */
   source?: 'search';
   jobId: string;

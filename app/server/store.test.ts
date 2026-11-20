@@ -22,7 +22,7 @@ import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, sameTitle, adviceDue, advisePrompt,
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
 import { applyDiscover, discoverPrompt } from './discover.ts';
 import { stylistContext } from './stylist-context.ts';
-import { CAPSULE_LIMITS, capsuleCombinations, capsuleSet } from '../src/capsule-pieces.ts';
+import { CAPSULE_LIMITS, capsuleCombinations, capsuleSet, combinationGains } from '../src/capsule-pieces.ts';
 import { capsuleSetsReport } from './capsule-sets.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
@@ -1705,4 +1705,112 @@ test('the capsule sets report reads every fashion capsule, flags limits and neve
   assert.deepEqual(report.capsules[0].over, ['accessories']);
   assert.equal(report.capsules[0].limits.garments, CAPSULE_LIMITS.garments);
   assert.equal(report.capsules[0].toBuy, 1);
+});
+
+// ── Stage 3: the next purchase, «Нові» and the advisor follow the closed sets (owner, 20.11) ──
+
+const owned = (id: string, category: DB['items'][number]['category'], title: string) =>
+  ({ id, rev: 1, category, title, status: 'confirmed' as const, photoIds: [], origin: 'manual' as const, history: [], createdAt: at, updatedAt: at, rating: { score: 7, note: 'x', rev: 1, at, scale: SCORE_SCALE } });
+
+test('the next purchase is one of a capsule set; on an equal score the one adding more combinations comes first', () => {
+  const db = fixture();
+  db.items[0].status = 'confirmed';
+  db.items.push(owned('W-3', 'shoes', 'Sneakers'), owned('W-4', 'tees', 'Tee'));
+  db.needs.push({ ...db.needs[0], id: 'N-2', title: 'Сорочка', category: 'shirts' }, { ...db.needs[0], id: 'N-3', title: 'Шорти поза набором', category: 'shorts' });
+  db.looks[0].slots.shoes = [{ kind: 'item', id: 'W-3' }];
+  db.capsules[0].pieces = [{ kind: 'item', id: 'W-1' }, { kind: 'item', id: 'W-3' }, { kind: 'item', id: 'W-4' }, { kind: 'need', id: 'N-1' }, { kind: 'need', id: 'N-2' }];
+  const gains = combinationGains(db);
+  assert.equal(gains.get('N-1'), 1, 'one more top with one bottom and one pair of shoes: one more combination');
+  assert.equal(gains.get('N-3'), undefined);
+  const ranking = purchaseRanking(db);
+  assert.equal(ranking[0].need.id, 'N-1', 'the purchase that completes a look comes first');
+  assert.deepEqual(ranking.map((r) => r.inSet), [true, true, false], 'a purchase outside every set comes last');
+});
+
+test('«Нові» for a closed set: only its pieces, new purchases into free places or replacing a named piece; «Додати» updates the set and its looks', async () => {
+  const { store, call } = setup();
+  await store.mutate((d) => {
+    d.items.push(owned('W-K', 'knitwear', 'Бордовий джемпер'), owned('W-P', 'trousers', 'Вовняні штани'), owned('W-P2', 'trousers', 'Чіноси'), owned('W-S', 'shoes', 'Черевики'), owned('W-OUT', 'tees', 'Футболка поза набором'));
+    for (let i = 0; i < 7; i++) d.items.push(owned(`G-${i}`, 'tees', `Tee ${i}`));
+    d.looks[0].slots = { ...emptySlots(), top: [{ kind: 'item', id: 'W-K' }], bottom: [{ kind: 'item', id: 'W-P' }], shoes: [{ kind: 'item', id: 'W-S' }] };
+    d.capsules[0].pieces = [{ kind: 'item', id: 'W-K' }, { kind: 'item', id: 'W-P' }, { kind: 'item', id: 'W-P2' }, { kind: 'item', id: 'W-S' }, ...Array.from({ length: 7 }, (_, i) => ({ kind: 'item' as const, id: `G-${i}` }))];
+  });
+  assert.equal(validateDb(store.read()), null, 'ten garments: the set is full');
+  const job = await call('POST', '/api/discover', { capsuleId: 'C-1' });
+  let db = store.read();
+  assert.match(discoverPrompt(db, db.jobs.find((j) => j.id === job.id)!), /C-1 set — owned: W-K, W-P, W-P2, W-S[\s\S]*free places: garments 0, shoes 2, accessories 3/);
+  const o = (name: string, top: string[], bottom: string[], buy: { slot: string; title: string; category: string; replaces: string }[] = []) => ({ capsuleId: 'C-1', name, why: 'x', top, layer: [], bottom, shoes: ['W-S'], accessories: [], buy });
+  await store.mutate((d) => void applyDiscover(d, d.jobs.find((j) => j.id === job.id)!, { status: 'done', reason: '', looks: [
+    o('Річ поза набором', ['W-OUT'], ['W-P']),
+    o('Нова покупка без місця', ['G-1'], [], [{ slot: 'bottom', title: 'Лляні штани', category: 'trousers', replaces: '' }]),
+    o('Пальто замість футболки', ['G-2'], ['W-P'], [{ slot: 'layer', title: 'Вовняне пальто кемел', category: 'outerwear', replaces: 'item:G-0' }]),
+    o('Замінює річ, яка в образі', ['G-3'], ['W-P'], [{ slot: 'layer', title: 'Куртка', category: 'outerwear', replaces: 'item:G-3' }]),
+    o('Ремінь на вільне місце', ['G-4'], ['W-P2'], [{ slot: 'accessories', title: 'Плетений ремінь', category: 'accessories', replaces: '' }]),
+  ] }));
+  db = store.read();
+  const open = db.suggestions!.filter((s) => s.status === 'open');
+  assert.deepEqual(open.map((s) => s.name), ['Пальто замість футболки', 'Ремінь на вільне місце']);
+  assert.deepEqual(open[0].looks[0].buy, [{ slot: 'layer', title: 'Вовняне пальто кемел', category: 'outerwear', replaces: 'item:G-0' }]);
+  // A look using the replaced piece gets the purchase in its place.
+  await store.mutate((d) => {
+    const slots = { ...emptySlots(), top: [{ kind: 'item' as const, id: 'G-0' }], bottom: [{ kind: 'item' as const, id: 'W-P' }], shoes: [{ kind: 'item' as const, id: 'W-S' }] };
+    d.looks.push({ ...d.looks[0], id: 'L-G0', name: 'Tee look', slots, versions: [{ version: 1, slots, at }] });
+    d.capsules[0].lookIds.push('L-G0');
+  });
+  await call('POST', `/api/suggestions/${open[0].id}/accept`, {});
+  db = store.read();
+  const coat = db.needs.find((n) => n.title === 'Вовняне пальто кемел')!;
+  const c = db.capsules[0];
+  assert.ok(c.pieces!.some((r) => r.kind === 'need' && r.id === coat.id) && !c.pieces!.some((r) => r.id === 'G-0'), 'the coat took the tee\'s place in the set');
+  const teeLook = db.looks.find((l) => l.id === 'L-G0')!;
+  assert.deepEqual(teeLook.slots.top, [{ kind: 'need', id: coat.id }]);
+  assert.equal(teeLook.version, 2);
+  await call('POST', `/api/suggestions/${open[1].id}/accept`, {});
+  db = store.read();
+  assert.ok(db.capsules[0].pieces!.some((r) => r.kind === 'need' && db.needs.find((n) => n.id === r.id)?.title === 'Плетений ремінь'), 'the belt filled a free place');
+  assert.equal(validateDb(db), null);
+});
+
+test('the advisor keeps new looks, swaps and capsule purchases inside a closed set; stale proposals outside it are hidden', async () => {
+  const { store } = setup();
+  await store.mutate((d) => {
+    d.items[0].status = 'confirmed';
+    d.items.push(owned('W-T', 'tees', 'Tee in set'), owned('W-X', 'tees', 'Tee outside'), owned('W-S', 'shoes', 'Shoes'));
+    d.looks[0].slots = { ...emptySlots(), top: [{ kind: 'item', id: 'W-T' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] };
+    for (let i = 0; i < 2; i++) d.items.push(owned(`SH-${i}`, 'shoes', `Shoes ${i}`));
+    d.capsules[0].pieces = (['W-T', 'W-1', 'W-S', 'SH-0', 'SH-1'] as const).map((id) => ({ kind: 'item' as const, id }));
+    d.suggestions = [{ id: 'A-old', kind: 'look', status: 'open', name: 'Old', why: '', capsuleId: 'C-1', looks: [{ name: 'Old', why: '', slots: { ...emptySlots(), top: [{ kind: 'item', id: 'W-X' }], bottom: [{ kind: 'item', id: 'W-1' }], shoes: [{ kind: 'item', id: 'W-S' }] } }], jobId: 'J-x', createdAt: at }];
+  });
+  assert.equal(openSuggestions(store.read()).length, 0, 'a proposal with a piece outside the set is not shown');
+  const advise = { id: 'J-adv', kind: 'advise' as const, lookVersion: 0, snapshot: { lookName: 'Порадник', slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'running' as const, origin: 'site' as const, createdAt: at };
+  const db0 = store.read();
+  assert.match(advisePrompt(db0, advise as never, []), /C-1 set: item:W-T \(top/);
+  await store.mutate((d) => void applyAdvice(d, advise as never, {
+    status: 'done', reason: '', items: [],
+    looks: [{ id: 'L-1', score: 7, weakItem: 'W-T', swapTo: 'W-X', why: 'x' }],
+    newLooks: [{ capsuleId: 'C-1', name: 'Outside', why: 'x', top: ['W-X'], layer: [], bottom: ['W-1'], shoes: ['SH-0'], accessories: [] }],
+    newCapsules: [],
+    newNeeds: [{ capsuleId: 'C-1', title: 'Ще одні кеди', category: 'shoes', why: 'x' }, { capsuleId: 'C-1', title: 'Ремінь', category: 'accessories', why: 'x' }],
+  }));
+  const db = store.read();
+  assert.equal(db.looks[0].advice?.swap, undefined, 'a swap to a piece outside the set is not offered');
+  assert.ok(!db.suggestions!.some((s) => s.name === 'Outside'), 'a new look outside the set is dropped');
+  assert.ok(!db.needs.some((n) => n.title === 'Ще одні кеди'), 'no free place for shoes: no purchase');
+  assert.ok(db.needs.some((n) => n.title === 'Ремінь' && n.forCapsule === 'C-1'), 'a free accessory place takes a purchase');
+});
+
+test('a proposal is shown only while its purchases fit the closed set: planned, replacing a piece, or into a free place', () => {
+  const db = fixture();
+  db.items[0].status = 'confirmed';
+  db.items.push(owned('W-S', 'shoes', 'Shoes'), owned('SH-1', 'shoes', 'Shoes 1'), owned('SH-2', 'shoes', 'Shoes 2'));
+  db.capsules[0].pieces = [{ kind: 'item', id: 'W-1' }, { kind: 'need', id: 'N-1' }, { kind: 'item', id: 'W-S' }, { kind: 'item', id: 'SH-1' }, { kind: 'item', id: 'SH-2' }];
+  const slots = { ...emptySlots(), bottom: [{ kind: 'item' as const, id: 'W-1' }], shoes: [{ kind: 'item' as const, id: 'W-S' }] };
+  const card = (id: string, buy: NonNullable<DB['suggestions']>[number]['looks'][number]['buy']) => ({ id, kind: 'look' as const, status: 'open' as const, name: id, why: '', capsuleId: 'C-1', looks: [{ name: id, why: '', slots, buy }], jobId: 'J', createdAt: at });
+  db.suggestions = [
+    card('planned', [{ slot: 'top', title: 'Молочна футболка', category: 'tees' }]),
+    card('no-place', [{ slot: 'top', title: 'Футболка', category: 'tees' }, { slot: 'shoes', title: 'Челсі', category: 'shoes' }]),
+    card('replaces', [{ slot: 'shoes', title: 'Челсі', category: 'shoes', replaces: 'item:SH-2' }]),
+    card('free', [{ slot: 'accessories', title: 'Ремінь', category: 'accessories' }]),
+  ];
+  assert.deepEqual(openSuggestions(db).map((s) => s.id).sort(), ['free', 'planned', 'replaces']);
 });

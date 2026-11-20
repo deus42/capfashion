@@ -1,6 +1,7 @@
 import type { Capsule, DB, Look, SlotRef, Slots } from './schema.ts';
-import { bump, findOr404, HttpError } from './store.ts';
-import { normalizePiece, pieceKey, pieceSetError, piecesOutsideSet, visibleCapsuleLooks } from '../src/capsule-pieces.ts';
+import { SLOT_KEYS } from './schema.ts';
+import { bump, findOr404, HttpError, now } from './store.ts';
+import { freePlaces, inSavedSet, normalizePiece, pieceCategory, pieceGroup, pieceKey, pieceSetError, piecesOutsideSet, visibleCapsuleLooks } from '../src/capsule-pieces.ts';
 
 export function requireParentCapsule(db: DB, id: string | undefined): Capsule {
   if (!id) throw new HttpError(400, 'Вибери капсулу для образу');
@@ -107,4 +108,36 @@ export function stripFromSets(db: DB, kind: SlotRef['kind'], id: string) {
     }
     bump(c, undefined);
   }
+}
+
+/**
+ * A purchase accepted with a proposed look (owner, 20.11): it fills a free place of the capsule's set, or takes the
+ * place of the set piece it replaces — in the set, its base and the capsule's visible looks (each gets a new version).
+ */
+export function placePurchaseInSet(db: DB, capsule: Capsule, purchase: SlotRef, replaces?: string) {
+  if (!capsule.pieces || inSavedSet(db, capsule, purchase)) return;
+  if (replaces) {
+    const from = capsule.pieces.find((r) => pieceKey(r) === replaces);
+    if (!from) throw new HttpError(409, 'Річ, яку замінює покупка, уже не в наборі капсули');
+    const swap = (r: SlotRef) => (pieceKey(normalizePiece(db, r)) === replaces ? purchase : r);
+    capsule.pieces = unique(db, capsule.pieces.map(swap));
+    if (capsule.base) capsule.base = unique(db, capsule.base.map(swap));
+    const at = now();
+    const title = pieceTitle(db, from);
+    for (const look of visibleCapsuleLooks(db, capsule)) {
+      if (!SLOT_KEYS.some((k) => look.slots[k].some((r) => pieceKey(normalizePiece(db, r)) === replaces))) continue;
+      const slots = Object.fromEntries(SLOT_KEYS.map((k) => [k, unique(db, look.slots[k].map(swap))])) as Slots;
+      look.version += 1;
+      look.slots = slots;
+      look.versions.push({ version: look.version, slots, at, note: `Набір капсули: покупка замість «${title}»` });
+      look.rev += 1;
+      look.updatedAt = at;
+    }
+  } else {
+    const category = pieceCategory(db, purchase);
+    const free = freePlaces(db, capsule)!;
+    if (!category || free[pieceGroup(category)] <= 0) throw new HttpError(409, `У наборі капсули «${capsule.name}» немає місця для «${pieceTitle(db, purchase)}». Що замінити?`);
+    capsule.pieces = [...capsule.pieces, normalizePiece(db, purchase)];
+  }
+  bump(capsule, undefined);
 }

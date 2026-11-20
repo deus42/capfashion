@@ -42,7 +42,7 @@ The site runs as the user LaunchAgent `ai.deus.capsula` (`~/Library/LaunchAgents
 
 ## Capsule sets
 
-A capsule is a style plus a closed set ([spec](../docs/superpowers/specs/2026-11-20-capsule-system-design.md)): up to 10 garments, 3 pairs of shoes and 3 accessories (`src/capsule-pieces.ts`). `PATCH /api/capsules/:id {pieces, base}` saves a set; `pieces: null` clears it. Once a set is saved, looks outside it are refused (409). Merges, purchases and deletions update the set too. `node app/server/capsule-sets.ts` (`--json`) prints the current sets read-only, with limits, roles, look counts and combinations.
+A capsule is a style plus a closed set ([spec](../docs/superpowers/specs/2026-11-20-capsule-system-design.md)): up to 10 garments, 3 pairs of shoes and 3 accessories (`src/capsule-pieces.ts`). `PATCH /api/capsules/:id {pieces, base}` saves a set; `pieces: null` clears it. Once a set is saved, looks outside it are refused (409). Merges, purchases and deletions update the set too. `node app/server/capsule-sets.ts` (`--json`) prints the current sets read-only, with limits, roles, look counts and combinations. The next purchase ranks purchases of a set first, then by the new combinations they add. «Нові» and the advisor build looks only from a saved set. A new purchase takes a free place or replaces a named set piece (`buy[].replaces`); on «Додати» the purchase takes that piece's place in the set and in the capsule's looks.
 
 ## Editing and deleting
 

@@ -8,8 +8,9 @@ import { newId, now } from './store.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
 import { SCORE_SCALE, SLOT_CATEGORIES, currentPeriod, hasPieces, isComplete, isEyewear, itemUsage, openSuggestions, siteLooks, weakPiece } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../src/rating.ts';
-import { placeLook, requireParentCapsule } from './capsule-membership.ts';
+import { placeLook, placePurchaseInSet, requireParentCapsule } from './capsule-membership.ts';
 import { alreadySeen, refusedPieces } from '../src/look-memory.ts';
+import { buysFitSet, capsuleSet, freePlaces, inSavedSet, pieceGroup, pieceKey, sameTitle } from '../src/capsule-pieces.ts';
 
 const str = { type: 'string' } as const;
 const ids = { type: 'array', items: str } as const;
@@ -77,12 +78,7 @@ export const ownerChosen = (i: Item) => i.origin === 'manual' || i.origin === 'p
 
 const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 /** Two names for the same piece: «Пряме вовняне пальто кольору кемел» ≈ «Вовняне пальто кольору кемел» (most words shared). */
-export function sameTitle(a: string, b: string) {
-  const wa = new Set(norm(a).split(' ').filter((w) => w.length > 2));
-  const wb = new Set(norm(b).split(' ').filter((w) => w.length > 2));
-  const shared = [...wa].filter((w) => wb.has(w)).length;
-  return norm(a) === norm(b) || (shared >= 2 && shared / Math.min(wa.size, wb.size) >= 0.75);
-}
+export { sameTitle };
 /** Titles already planned, bought, found or declined by the owner: a new advisor purchase never repeats them. */
 const plannedTitles = (db: DB) => new Set([...db.needs.filter((n) => n.status === 'open' || n.status === 'covered').map((n) => norm(n.title)), ...(db.declinedNeeds ?? []).map(norm)]);
 
@@ -147,6 +143,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     'Capsules are distinct FASHION capsules (owner, 19.11): every new outfit must fit its capsule\'s aesthetic, palette and weather periods in the brief.',
     'Capsules (id | name | season | periods | kind | brief):',
     capsules.map((c) => `${c.id} | ${c.name} | ${c.season} | ${(c.periods ?? []).join('+') || '—'} | ${c.kind ?? 'capsule'} | ${c.description.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n'),
+    ...closedSets(db, capsules),
     '',
     'Looks shown on the site (id | capsule | name | pieces):',
     looks.map((l) => `${l.id} | ${l.capsuleId ?? '—'} | ${l.name}${l.favorite ? ' | LIKED' : ''}${currentLookScore(l) !== null ? ` | score ${currentLookScore(l)}` : ''} | ${piecesLine(db, l.slots)}`).join('\n'),
@@ -235,7 +232,9 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
     const rejected = look.advice?.rejected ?? [];
     const slot = SLOT_KEYS.find((k) => look.slots[k].some((x) => x.kind === 'item' && x.id === r.weakItem));
     const inLook = Object.values(look.slots).flat().some((x) => x.kind === 'item' && x.id === r.swapTo);
-    const swap = slot && owned.has(r.swapTo) && !inLook && !rejected.includes(`${r.weakItem}>${r.swapTo}`) ? { from: r.weakItem, to: r.swapTo } : undefined;
+    const lookCapsule = look.capsuleId ? db.capsules.find((c) => c.id === look.capsuleId) : undefined;
+    const inSet = !lookCapsule?.pieces || inSavedSet(db, lookCapsule, { kind: 'item', id: r.swapTo });
+    const swap = slot && owned.has(r.swapTo) && inSet && !inLook && !rejected.includes(`${r.weakItem}>${r.swapTo}`) ? { from: r.weakItem, to: r.swapTo } : undefined;
     // A look with a piece to buy is at most 8 (owner, 19.11): ideas never outrank what can be worn today.
     const score = isComplete(db, look) ? lookScore(r.score) : Math.min(8, lookScore(r.score));
     look.advice = { score, why: text(r.why, 200), version: seen?.get(look.id) ?? look.version, swap, rejected: rejected.length ? rejected : undefined, scale: SCORE_SCALE };
@@ -244,7 +243,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
   const ownedIds = new Set(owned.keys());
   const valid = (s: Suggestion) =>
     s.looks.every((l) => Object.values(l.slots).flat().every((r) => r.kind === 'item' && ownedIds.has(r.id) && !weakPiece(owned.get(r.id)!))) &&
-    (s.kind === 'capsule' || Boolean(db.capsules.find((c) => c.id === s.capsuleId && !isCapsuleHidden(db, c))));
+    (s.kind === 'capsule' || Boolean(db.capsules.find((c) => c.id === s.capsuleId && !isCapsuleHidden(db, c) && (!c.pieces || s.looks.every((l) => Object.values(l.slots).flat().every((r) => inSavedSet(db, c, r)) && buysFitSet(db, c, l.buy))))));
   const keep = (db.suggestions ?? []).filter((s) => s.status !== 'open' || valid(s));
   // Look memory (owner, 19.11): never a composition that already was — looks, older versions, any proposal, deleted looks —
   // or anything within the closeness rule; never built around pieces the owner keeps refusing.
@@ -266,6 +265,7 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
     if (!capsule || isCapsuleHidden(db, capsule)) continue;
     const look = take(o);
     if (!look) continue;
+    if (capsule.pieces && Object.values(look.slots).flat().some((r) => !inSavedSet(db, capsule, r))) continue;
     fresh.push({ id: newId('A'), kind: 'look', status: 'open', name: look.name, why: look.why, capsuleId: capsule.id, looks: [look], jobId: job.id, createdAt: at });
   }
   for (const c of (reply.newCapsules ?? []).slice(0, 1)) {
@@ -297,6 +297,8 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
     const category = (CATEGORIES as readonly string[]).includes(g.category) ? (g.category as Need['category']) : null;
     const title = text(g.title, 80);
     if (!capsule || isCapsuleHidden(db, capsule) || !category || !title) continue;
+    const free = freePlaces(db, capsule);
+    if (free && free[pieceGroup(category)] <= 0) continue;
     if (db.needs.filter((n) => n.status === 'open' && n.forCapsule).length >= 3) break;
     if (planned.has(norm(title))) continue;
     planned.add(norm(title));
@@ -305,6 +307,22 @@ export function applyAdvice(db: DB, job: Job, reply: AdviseReply, seen?: Map<str
   }
   const parts = [`Оцінено речей: ${rated}`, added ? `пропозицій: ${added}` : '', replaced ? `замінити: ${replaced}` : '', gaps ? `для капсул: ${gaps}` : ''].filter(Boolean);
   return parts.join(' · ');
+}
+
+/**
+ * Closed capsule sets (owner, 20.11): new outfits and swaps for such a capsule use only its set; a purchase for it
+ * («newNeeds») only fills a free place. The set piece making the fewest looks is named so a replacement can target it.
+ */
+function closedSets(db: DB, capsules: DB['capsules']): string[] {
+  const withSets = capsules.filter((c) => c.pieces);
+  if (!withSets.length) return [];
+  return ['', 'Closed sets — for these capsules newLooks and swapTo use ONLY item ids of the set; newNeeds only when the set has a free place of that kind:',
+    ...withSets.map((c) => {
+      const set = capsuleSet(db, c);
+      const free = freePlaces(db, c)!;
+      const weakest = set.pieces.filter((p) => p.owned).sort((a, b) => a.looks - b.looks)[0];
+      return `${c.id} set: ${set.pieces.map((p) => `${pieceKey(p.ref)} (${p.role}, ${p.looks} looks${p.base ? ', base' : ''})`).join('; ')}. Free places: garments ${free.garments}, shoes ${free.shoes}, accessories ${free.accessories}.${weakest ? ` Fewest looks: ${weakest.ref.id}.` : ''}`;
+    })];
 }
 
 /** Removes the advisor's own open replacement purchase for an item (nothing bought from it yet). */
@@ -364,13 +382,17 @@ export function acceptSuggestion(db: DB, s: Suggestion) {
   const make = (l: Suggestion['looks'][number], capsuleId: string) => {
     // Pieces to buy (search, owner 19.11) become purchases only now; an open purchase of the same name is reused.
     const slots = JSON.parse(JSON.stringify(l.slots)) as Slots;
+    const capsule = db.capsules.find((c) => c.id === capsuleId);
     for (const b of l.buy ?? []) {
-      let need = db.needs.find((n) => n.status === 'open' && n.category === b.category && sameTitle(n.title, b.title));
+      // A planned purchase of the capsule's set is reused first (owner, 20.11), then any open purchase of the same name.
+      const same = (n: Need) => n.status === 'open' && n.category === b.category && sameTitle(n.title, b.title);
+      let need = db.needs.find((n) => same(n) && capsule?.pieces?.some((r) => r.kind === 'need' && r.id === n.id)) ?? db.needs.find(same);
       if (!need) {
         need = { id: newId('N'), rev: 1, title: b.title, category: b.category, priority: 'optional', description: '', why: `Для образу «${l.name}»`, fitCheck: '', status: 'open', origin: 'agent', sourceNote: `Пошук нових образів, додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
         db.needs.push(need);
       }
       slots[b.slot] = [...slots[b.slot], { kind: 'need', id: need.id }];
+      if (capsule) placePurchaseInSet(db, capsule, { kind: 'need', id: need.id }, b.replaces);
     }
     const look = { id: newId('L'), rev: 1, capsuleId, name: l.name, note: l.why, slots, version: 1, versions: [{ version: 1, slots, at }], favorite: false, origin: 'agent' as const, sourceNote: `Порадник (${s.jobId}), додано власником ${at.slice(0, 10)}`, createdAt: at, updatedAt: at };
     db.looks.push(look);

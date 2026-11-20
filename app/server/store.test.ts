@@ -2037,3 +2037,80 @@ test('quotas: allowances per account and month, background work trimmed, finishe
   tenants.forUser('user-qqqqqq').runner.stop();
   usage.close();
 });
+
+test('prompts read the reply language, wardrobe focus, place and hemisphere from the profile, with no fixed personal values', async () => {
+  const { store, call } = setup();
+  const discover = await call('POST', '/api/discover', { capsuleId: 'C-1' });
+  const db = store.read();
+  const job = db.jobs.find((j) => j.id === discover.id)!;
+  const advise = { ...job, kind: 'advise' as const };
+  const prompts = () => [discoverPrompt(store.read(), job), advisePrompt(store.read(), advise, []), analyzePrompt(store.read(), { ...job, kind: 'analyze' as const }, []), intakePrompt(store.read(), job, [])].join('\n');
+  // Nothing about one person's city, country or style is written into the prompts.
+  await store.mutate((d) => { delete d.profile.location; });
+  assert.doesNotMatch(prompts(), /Rijeka|Croatia|remote-work|relaxed smart casual/);
+  assert.match(prompts(), /Write every text in Ukrainian/);
+  assert.match(prompts(), /clothes of any gender/);
+  await store.mutate((d) => { d.profile.language = 'en'; d.profile.wardrobeFocus = 'women'; d.profile.location = 'Old Town, Lisbon, Portugal'; });
+  const english = prompts();
+  assert.doesNotMatch(english, /Ukrainian/);
+  assert.match(english, /Write every text in English/);
+  assert.match(english, /womenswear/);
+  assert.match(english, /near Old Town, Lisbon, Portugal/);
+  // The southern hemisphere has the same weather periods six months later.
+  assert.equal(currentPeriod(new Date('2026-07-10T12:00:00Z'), 'north'), 'summer');
+  assert.equal(currentPeriod(new Date('2026-07-10T12:00:00Z'), 'south'), 'winter');
+  assert.equal(currentPeriod(new Date('2026-01-10T12:00:00Z'), 'south'), 'summer');
+});
+
+test('profile: language, wardrobe focus, consent and hemisphere are validated and saved; dresses fill a whole outfit', async () => {
+  const { store, call } = setup();
+  const rev = () => store.read().profile.rev;
+  await assert.rejects(call('PATCH', '/api/profile', { rev: rev(), language: 'de' }), /Невідома мова/);
+  await assert.rejects(call('PATCH', '/api/profile', { rev: rev(), wardrobeFocus: 'kids' }), /Невідомий гардероб/);
+  await call('PATCH', '/api/profile', { rev: rev(), language: 'en', wardrobeFocus: 'women', consent: true, hemisphere: 'south' });
+  const p = store.read().profile;
+  assert.equal(p.language, 'en');
+  assert.equal(p.wardrobeFocus, 'women');
+  assert.equal(p.hemisphere, 'south');
+  assert.ok(p.consentAt);
+  const first = p.consentAt;
+  await call('PATCH', '/api/profile', { rev: rev(), consent: true });
+  assert.equal(store.read().profile.consentAt, first, 'the consent keeps its first date');
+  // A dress counts on its own in the combinations: (tops × bottoms + dresses) × (layers + 1) × shoes.
+  await store.mutate((d) => {
+    d.items.push({ ...d.items[0], id: 'W-DRESS', title: 'Сукня-сорочка', category: 'dresses', history: [] });
+    const c = d.capsules[0];
+    const look = d.looks.find((l) => c.lookIds.includes(l.id))!;
+    look.slots.top = [{ kind: 'item', id: 'W-DRESS' }];
+    look.slots.bottom = [];
+  });
+  const db = store.read();
+  const set = capsuleSet(db, db.capsules[0]);
+  const dress = set.pieces.find((x) => x.ref.id === 'W-DRESS')!;
+  assert.equal(dress.role, 'top');
+  assert.equal(set.combinations, capsuleCombinations({ top: set.roles.top - 1, layer: set.roles.layer, bottom: set.roles.bottom, shoes: set.roles.shoes, dresses: 1 }));
+});
+
+test('a new account starts a capsule from the style catalogue, its brief in the person\'s language and wardrobe', async () => {
+  const { STYLE_CATALOGUE, stylePieces } = await import('../src/style-catalogue.ts');
+  assert.equal(new Set(STYLE_CATALOGUE.map((s) => s.name)).size, STYLE_CATALOGUE.length, 'style names are distinct');
+  for (const s of STYLE_CATALOGUE) {
+    assert.equal(s.pieces.men.length, 6);
+    assert.equal(s.pieces.women.length, 6);
+    assert.ok(s.periods.length > 0);
+    assert.doesNotMatch(s.name, /refined modern/i);
+  }
+  const both = stylePieces(STYLE_CATALOGUE[0], 'any');
+  assert.equal(new Set(both.map((x) => x.en)).size, both.length, '«Будь-який» shows no piece twice');
+  const { store, call } = setup();
+  await store.mutate((d) => { d.profile.language = 'en'; d.profile.wardrobeFocus = 'women'; });
+  const style = STYLE_CATALOGUE.find((s) => s.id === 'mediterranean-casual')!;
+  const capsule = await call('POST', '/api/capsules/from-style', { styleId: style.id });
+  assert.equal(capsule.name, 'Mediterranean Casual');
+  assert.deepEqual(capsule.periods, style.periods);
+  assert.match(capsule.description, /Key pieces: .*midi shirt dress/);
+  assert.doesNotMatch(capsule.description, /Ключові|Опорні/);
+  assert.equal(capsule.lookIds.length, 0);
+  await assert.rejects(call('POST', '/api/capsules/from-style', { styleId: style.id }), /Така капсула вже є/);
+  await assert.rejects(call('POST', '/api/capsules/from-style', { styleId: 'nope' }), /Стиль не знайдено/);
+});

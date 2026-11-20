@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EyeOff, ImageOff, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
@@ -24,7 +24,8 @@ export function CapsulesPage() {
   const list = tab === 'capsules' ? capsules : selections;
   const covers = tileCovers(db, list);
   // Each capsule's lead look first, then the rest of the catalogue.
-  const orderedLooks = capsuleLooks(db, [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]);
+  // Each capsule's own order comes before the rest, so a group of variants keeps the same main look as on its capsule page.
+  const orderedLooks = capsuleLooks(db, [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.capsules.flatMap((c) => c.lookIds), ...db.looks.map((l) => l.id)])]);
   const allLooks = distinctLooks(db, orderedLooks);
   // Two quick filters of «Усі образи»: «Найкращі» (owner, 20.11: a filter, not a capsule) and «З моїх речей».
   const readyOnly = tab === 'looks' && query.get('owned') === '1';
@@ -38,6 +39,8 @@ export function CapsulesPage() {
   // With a filter on, the title stays «Усі образи»: the active button already says it.
   const title = { capsules: 'Капсули', new: 'Нові', selections: 'Підбірки', looks: 'Усі образи', hidden: 'Приховані' }[tab];
   const newCount = openSuggestions(db).length;
+  // On a phone the tabs scroll sideways: the active one is always brought into view.
+  useEffect(() => { document.querySelector('.page-head .seg-scroll button.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [tab]);
 
   return (
     <div className="page">
@@ -70,6 +73,12 @@ export function CapsulesPage() {
       )}
     </div>
   );
+}
+
+/** An old capsule address that now lives elsewhere. */
+function MovedTo({ href }: { href: string }) {
+  useEffect(() => go(href, true), [href]);
+  return null;
 }
 
 /** A quiet text filter (owner, 20.11: elegant, not a heavy button): the active one is ink with a fine underline. */
@@ -218,11 +227,24 @@ export function CapsuleDetail({ id }: { id: string }) {
   const allLooks = useMemo(() => capsuleLooks(db, capsule?.lookIds ?? []), [capsule, db]);
   if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
   if (capsule.redirectCapsuleIds) {
-    const targets = db.capsules.filter((c) => capsule.redirectCapsuleIds!.includes(c.id));
+    // A merged or dissolved capsule (owner, 20.11): one destination opens directly; several are shown without the old name.
+    // Follow chains of moves (an old capsule moved into one that moved again) to the live, shown capsules.
+    const seen = new Set<string>();
+    const queue = [...capsule.redirectCapsuleIds];
+    const targets: Capsule[] = [];
+    while (queue.length) {
+      const next = queue.shift();
+      const c = db.capsules.find((x) => x.id === next);
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      if (c.redirectCapsuleIds) queue.push(...c.redirectCapsuleIds);
+      else if (!isCapsuleHidden(db, c)) targets.push(c);
+    }
+    if (targets.length === 1) return <MovedTo href={`/capsules/${targets[0].id}`} />;
     return <div className="page">
       <div className="crumb"><a href="/capsules">Капсули</a></div>
-      <div className="page-head"><h1>{capsule.name}</h1></div>
-      {targets.length ? <div className="capsule-grid">{targets.map((c) => <CapsuleTile key={c.id} c={c} />)}</div> : <Empty icon={<ImageOff />} title="Капсулу перенесено" />}
+      <div className="page-head"><h1>Капсулу перенесено</h1></div>
+      {targets.length > 0 && <div className="capsule-grid">{targets.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
     </div>;
   }
   const hidden = isCapsuleHidden(db, capsule);

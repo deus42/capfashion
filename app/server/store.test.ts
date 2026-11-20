@@ -850,6 +850,17 @@ test('dislike hides the look, its near-copies and a disliked capsule\'s looks; a
   assert.ok(isCapsuleHidden(db, db.capsules[0]));
 });
 
+test('a hidden capsule hides all its looks, liked ones too (owner, 20.11)', () => {
+  const db = fixture();
+  const liked = lookWith('L-fav', { top: ['W-1'], bottom: ['W-2'], shoes: ['W-1'] }, { favorite: true });
+  db.looks.push(liked);
+  db.capsules[0].lookIds.push('L-fav');
+  assert.ok(!hiddenLookIds(db).has('L-fav'), 'visible while the capsule is shown');
+  db.capsules[0].disliked = true;
+  db.looks = [...db.looks];
+  assert.ok(hiddenLookIds(db).has('L-fav'), 'hidden with its capsule');
+});
+
 test('rating route: like, dislike and clear are exclusive; invalid values are refused', async () => {
   const { store, call } = setup();
   const liked = await call('POST', '/api/looks/L-1/rating', { rating: 'like' });

@@ -40,8 +40,11 @@ export function hiddenLookIds(db: RatedDb): Set<string> {
   if (cached) return cached;
   const hidden = new Set<string>();
   for (const c of db.capsules) if (c.disliked) for (const id of c.lookIds) hidden.add(id);
+  // A hidden capsule takes all its looks along, liked ones too (owner, 20.11: «Сховати з образами»).
+  const inHiddenCapsule = new Set(hidden);
   const rejected = db.looks.filter((l) => l.disliked).map(lookKeys);
   for (const l of db.looks) {
+    if (inHiddenCapsule.has(l.id)) continue;
     if (l.favorite) hidden.delete(l.id);
     else if (l.disliked || rejected.some((r) => sameLookKeys(r, lookKeys(l)))) hidden.add(l.id);
   }

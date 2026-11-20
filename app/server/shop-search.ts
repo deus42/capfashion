@@ -72,7 +72,8 @@ export function ownerWhere(db: DB) {
   const place = shopLocation(db);
   const origin = c ? `the owner's shared location ${c.lat}, ${c.lon} (rounded to about 1 km)${place && !/моє місце/i.test(place) ? `, near «${place}»` : ''}` : `the owner's shopping place «${place || 'Rijeka, Croatia'}»`;
   const radius = db.profile.radiusKm;
-  return { origin, radius, onlineOnly: radius === 0 };
+  // An emptied place (and no shared location) still means online only, as before the distance choice existed.
+  return { origin, radius, onlineOnly: radius === 0 || (!c && !place) };
 }
 
 /** The owner's sizes, kept under the hood (owner, 20.11): wardrobe labels, bought products and any saved by hand. */

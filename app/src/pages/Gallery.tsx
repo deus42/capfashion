@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Download, ExternalLink, Images, RotateCcw, ThumbsUp, Trash2, X } from 'lucide-react';
 import type { DB, Photo, Result } from '../api.ts';
 import { api, media, thumb } from '../api.ts';
@@ -97,6 +97,8 @@ export function GalleryPage() {
   const db = useDb();
   const { query } = useRoute();
   const [type, setType] = useState<'tryon' | 'packshot' | 'inspiration' | 'original' | 'face'>(query.get('type') === 'face' ? 'face' : query.get('type') === 'original' ? 'original' : query.get('type') === 'inspiration' ? 'inspiration' : query.get('type') === 'packshot' ? 'packshot' : 'tryon');
+  // On a phone the tabs scroll sideways: the active one is always brought into view.
+  useEffect(() => { document.querySelector('.toolbar .seg-scroll button.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [type]);
   const [tag, setTag] = useState('');
   const [filter, setFilter] = useState<'any' | 'fav'>('any');
   const [open, setOpen] = useState<Entry | null>(null);
@@ -132,26 +134,20 @@ export function GalleryPage() {
           <button className={type === 'face' ? 'on' : ''} onClick={() => setType('face')}>Обличчя <span className="faint">{counts.face}</span></button>
           <button className={type === 'inspiration' ? 'on' : ''} onClick={() => setType('inspiration')}>Натхнення <span className="faint">{counts.inspiration}</span></button>
         </div>
-        <span className="grow" />
-        {type === 'inspiration' && (
-          <div className="chips" role="group" aria-label="Тема натхнення">
-            <button className={`chip${tag === '' ? ' active' : ''}`} onClick={() => setTag('')}>Усі теми</button>
-            {tags.map((t) => <button key={t} className={`chip${tag === t ? ' active' : ''}`} onClick={() => setTag(t)}>{t}</button>)}
-          </div>
-        )}
-        {type === 'tryon' && (
-          <div className="chips">
-            {(
-              [
-                ['any', 'Усі'],
-                ['fav', <ThumbsUp key="fav" size={14} aria-label="Подобаються" />],
-              ] as const
-            ).map(([k, l]) => (
-              <button key={k} className={`chip${filter === k ? ' active' : ''}`} onClick={() => setFilter(k)}>{l}</button>
-            ))}
-          </div>
-        )}
       </div>
+      {/* Quiet text filters on their own row under the tabs (owner, 20.11: elegant, and the tabs never move). */}
+      {type === 'inspiration' && tags.length > 0 && (
+        <div className="filters" role="group" aria-label="Тема натхнення">
+          <button className={tag === '' ? 'on' : ''} aria-pressed={tag === ''} onClick={() => setTag('')}>Усі теми</button>
+          {tags.map((t) => <button key={t} className={tag === t ? 'on' : ''} aria-pressed={tag === t} onClick={() => setTag(t)}>{t}</button>)}
+        </div>
+      )}
+      {type === 'tryon' && (
+        <div className="filters" role="group" aria-label="Які примірки">
+          <button className={filter === 'any' ? 'on' : ''} aria-pressed={filter === 'any'} onClick={() => setFilter('any')}>Усі</button>
+          <button className={filter === 'fav' ? 'on' : ''} aria-pressed={filter === 'fav'} onClick={() => setFilter('fav')}>Подобаються</button>
+        </div>
+      )}
       {groups.length === 0 ? (
         <Empty icon={<Images />} title="Поки порожньо" />
       ) : (

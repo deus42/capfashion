@@ -1,46 +1,72 @@
+<div align="center">
+
 # Capsula
 
-Personal fashion and capsule-wardrobe workspace, initialized 15 November 2026.
+**A few pieces. Many looks. Seen on you.**
 
-The source chat is **“Нагадай чорну п’ятницю”**, dated 14 November 2026. All 14 visible user/assistant turns and all 25 listed photo uploads are now local. The original three capsule choices, later variants and shopping notes are preserved with source attribution. See [source status](docs/source-status.md).
+A capsule-wardrobe stylist: each capsule is a distinct style built on a closed set of pieces,
+and every look comes with a try-on made from your own photos.
 
-## Start here
+[capsula.fit](https://capsula.fit) · [Support](#support) · [Українською](README.uk.md)
 
-- **Персональний стиліст у Codex і Claude.** Напиши «Стилісте, переглянь Smart Casual. Що залишити, що замінити й чому?» Цей самий агент перевіряє чернетки під час створення та зміни образів і капсул. [Як працює стиліст](docs/superpowers/specs/2026-11-20-fashion-stylist.md)
-- **Local site:** `cd app && npm start` → http://127.0.0.1:4317 ([app README](app/README.md))
-- [Capsula v1 — functional specification](docs/superpowers/specs/2026-11-15-cap-fashion-design.md) (accepted as the implementation basis, 17 November)
-- [Project brief](docs/project.md)
-- [Source recovery and coverage](docs/source-status.md)
-- [Capsule plans](docs/capsules/README.md)
-- [Recovered wardrobe notes](docs/wardrobe.md)
-- [Shopping notes](docs/shopping-list.md)
-- [Local photo index](output/source-gallery.html)
-- [Archived reference illustrations](output/reference-gallery.html)
-- [Original documents](sources/README.md)
-- [Photo handling](assets/README.md)
-- [Agent instructions](AGENTS.md); [Claude entrypoint](CLAUDE.md)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-black)](LICENSE)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/KOFI_USERNAME)
 
-## Structure
+</div>
 
-```text
-app/                  Local site: React + Vite UI, Node server, Codex try-on runner
-docs/                 Curated project and capsule notes
-sources/chatgpt/      Local chat exports (ignored)
-sources/documents/    Local original documents (ignored)
-assets/photos/        Local original photos (ignored)
-assets/derived/       Working copies (ignored)
-output/               Generated reports/previews (ignored)
-tasks/worklogs/       Local execution checkpoints (ignored)
-```
+---
 
-This workspace contains source material, the accepted functional specification, a candidate wardrobe catalogue and the local Capsula site (`app/`). Site data lives in ignored `.local/app-data/`. There is no deployment or public hosting; iPhone access is tailnet-only and opt-in. Original personal material and generated personal images stay outside Git.
+## The idea
 
-## Vault
+Most wardrobe apps catalogue what you already own. Capsula starts from **style**.
 
-Run from this directory before work:
+It follows the capsule tradition: from Claire McCardell's interchangeable separates in the 1930s, through Susie Faux's *Wardrobe* in 1970s London, to the systems of dressing of the 1980s. A capsule is a small, closed set of pieces built around a base, with one palette, in which almost every top goes with every bottom. New looks come from combinations, not from new purchases.
 
-```sh
-node /Users/deus/Projects/Vault-Tec/scripts/vault-preflight.mjs
-```
+Capsula turns that into something you can use every day:
 
-The shared project record is [Capsula Current State](/Users/deus/Projects/Vault-Tec/35%20Context/Projects/Capsula%20Current%20State.md). Vault holds the project map and workflow context; source photos and raw chats remain here locally.
+| | |
+|---|---|
+| **Capsules** | Distinct styles such as Smart Casual, Mediterranean Casual or Outdoor Casual, each with its own palette, materials and weather. |
+| **A closed set** | Ten garments, up to three pairs of shoes and three accessories, from what you own and what is worth buying. One or two base pieces hold it together. |
+| **Looks** | Outfits made only from the set, rated honestly. Near-copies are folded together, and Capsula remembers what you have already turned down. |
+| **Try-on** | See a look on yourself. Your face and build come only from your own photos, and every result waits for your answer to *«Is this me?»*. |
+| **Next purchase** | The piece that completes the most looks and adds the most combinations, with real shop options and a fit check. |
+
+## How it works
+
+1. **Add photos** of yourself and your clothes. Each piece is recognised and gets a clean catalogue image.
+2. **Choose your capsules** and their weather periods.
+3. **Shape the set**: keep the strongest pieces, mark the base and leave out what makes too few looks.
+4. **Wear the looks** and try them on. New looks for a capsule stay inside its set. A new piece only takes a free place, or replaces a named one.
+5. **Buy what matters**: the next purchase is ranked by what it actually adds.
+
+## Principles
+
+- **Fashion first.** A capsule is judged as a style (distinct, current, refined), not by what is already in the wardrobe.
+- **Calm design.** Few elements, quiet type, everything visible. No clutter.
+- **Your photos are yours.** They are used only for your wardrobe and your try-ons. They are never sold, shared or used for training, and deleting your account deletes them.
+- **Honest scores.** Ideas never outrank what you can wear today.
+
+## Status
+
+Capsula is in active development. A private beta by invitation is being prepared at **[capsula.fit](https://capsula.fit)**, with Google sign-in, Ukrainian and English, and capsules for any wardrobe.
+
+## Built with
+
+React · TypeScript · Vite · Node.js, with AI models for recognition, styling and try-ons.
+
+Background reading: [capsule design notes](docs/capsule-design.md) (in Ukrainian).
+
+## Support
+
+Capsula is free and independent. Try-ons are generated by paid AI models, so every contribution keeps the beta open for more people.
+
+<a href="https://ko-fi.com/KOFI_USERNAME"><img src="https://img.shields.io/badge/Buy%20a%20coffee%20on%20Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support Capsula on Ko-fi"></a>
+
+Stars, ideas and bug reports help too: [open an issue](https://github.com/deus42/capsula/issues).
+
+## License
+
+[GNU AGPL-3.0](LICENSE). You may use, study, change and share the code. If you run a modified version as a web service, you must offer its source to the people who use it.
+
+The **Capsula** name and logo are not covered by the license. Forks need their own name.

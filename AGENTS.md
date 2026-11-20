@@ -61,7 +61,7 @@
 ## Docs Source Of Truth
 
 - `docs/superpowers/specs/2026-11-15-cap-fashion-design.md`: functional v1 specification and acceptance criteria, accepted as the implementation basis on 17 November; later identity decisions retain their explicit review/input status.
-- `README.md`: project entrypoint, layout and current scope.
+- `README.md` (with `README.uk.md`): the public product overview for GitHub — no local workspace details. Workspace layout and commands live in this file.
 - `docs/project.md`: project purpose, boundaries and working method.
 - `docs/source-status.md`: import provenance, coverage and missing material.
 - `docs/wardrobe.md`: source history and stable candidate groups from the 25-photo review; `.local/wardrobe-candidates.json` contains private machine-readable observations. Neither is an owner-verified physical inventory.

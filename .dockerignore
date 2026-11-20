@@ -1,0 +1,11 @@
+# Only the app's sources enter the image: no photos, chats, local data, outputs or secrets.
+*
+!app/package.json
+!app/package-lock.json
+!app/index.html
+!app/vite.config.ts
+!app/tsconfig.json
+!app/server/
+!app/src/
+app/server/*.test.ts
+app/server/*.swift

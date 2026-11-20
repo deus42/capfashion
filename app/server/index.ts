@@ -132,6 +132,19 @@ function sendFile(res: http.ServerResponse, file: string, cache = 'no-cache', re
 
 const secureCookies = Boolean(authConfig?.baseURL.startsWith('https://'));
 
+/**
+ * Accounts mode (spec §8): the public site sends a strict CSP and the usual hardening headers; HSTS only over
+ * HTTPS. The owner's local site is left as it was.
+ */
+const SECURITY_HEADERS: [string, string][] = [
+  ['content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"],
+  ['x-frame-options', 'DENY'],
+  ['referrer-policy', 'same-origin'],
+  ['x-content-type-options', 'nosniff'],
+  ['permissions-policy', 'camera=(), microphone=(), geolocation=(self)'],
+  ...(secureCookies ? [['strict-transport-security', 'max-age=31536000'] as [string, string]] : []),
+];
+
 /** Accounts mode: sign-in, invites and the signed-in account's tenant; local mode: the owner's site. */
 async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse, url: URL, method: string): Promise<Tenant | null> {
   if (!auth) return localTenant;
@@ -188,6 +201,9 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://local');
   const method = req.method ?? 'GET';
+  if (ACCOUNTS) for (const [name, value] of SECURITY_HEADERS) res.setHeader(name, value);
+  // Uptime checks and the container health check: no data, no sign-in.
+  if (url.pathname === '/health') return send(res, 200, { ok: true });
   if (!ACCOUNTS) {
     const denied = authorize(req);
     if (denied) return send(res, 403, { error: denied });

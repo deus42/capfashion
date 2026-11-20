@@ -13,6 +13,7 @@ import { GalleryPage } from './pages/Gallery.tsx';
 import { ShoppingPage } from './pages/Shopping.tsx';
 import { ProfilePage } from './pages/Profile.tsx';
 import { Landing } from './pages/Landing.tsx';
+import { LegalPage } from './pages/Legal.tsx';
 
 function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: number; desk?: boolean }) {
   return (
@@ -45,6 +46,8 @@ export default function App() {
   const intake = useIntake();
   const section = parts[0] ?? 'home';
 
+  // The legal pages open for everyone, signed in or not.
+  if (section === 'privacy' || section === 'terms') return <LegalPage kind={section} />;
   if (signedOut) return <Landing />;
   if (!state) {
     return (

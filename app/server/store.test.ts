@@ -1885,6 +1885,7 @@ test('OpenAI engine: structured JSON with attached images and web search, PNG ed
   assert.equal(body.model, 'text-model');
   assert.equal(body.text.format.type, 'json_schema');
   assert.equal(body.text.format.strict, true);
+  assert.equal(body.store, false, 'responses are not stored for later turns');
   assert.deepEqual(body.tools, [{ type: 'web_search' }]);
   assert.match(body.input[0].content[1].image_url, /^data:image\/png;base64,/);
   assert.ok(!fs.readFileSync(log, 'utf8').includes('base64'), 'the log never holds image data');

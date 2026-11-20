@@ -125,6 +125,8 @@ export function createOpenAIEngine(cfg: OpenAIConfig) {
       }
       const body = {
         model: cfg.textModel,
+        // Nothing is kept on OpenAI's side for later turns: every call stands alone.
+        store: false,
         input: [{ role: 'user', content }],
         text: { format: { type: 'json_schema', name: 'reply', schema: req.schema, strict: true } },
         ...(req.webSearch ? { tools: [{ type: 'web_search' }] } : {}),

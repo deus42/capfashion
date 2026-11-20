@@ -1,0 +1,19 @@
+# Capsula on the existing host (spec §8). No port is published to the outside: the container listens on the
+# host's loopback only, and the Cloudflare Tunnel ingress rule sends capsula.fit to http://127.0.0.1:4317.
+# Secrets live in /srv/capsula/capsula.env (mode 600), never in this file or the image.
+services:
+  capsula:
+    image: ghcr.io/deus42/capsula:${CAPSULA_TAG:?set CAPSULA_TAG to the image tag}
+    restart: unless-stopped
+    env_file: /srv/capsula/capsula.env
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    # /srv/capsula/data must belong to uid 1000 (the image's `node` user).
+    volumes:
+      - /srv/capsula/data:/data
+    ports:
+      - 127.0.0.1:4317:4317

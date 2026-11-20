@@ -8,6 +8,7 @@ import { MEASURE_KEYS, SCHEMA_VERSION } from './schema.ts';
 import { createStore, now, type Store } from './store.ts';
 import { createRunner, type Limiter } from './runner.ts';
 import type { OpenAIEngine } from './openai-engine.ts';
+import { accountQuota, meteredStore, type AccountQuota, type QuotaConfig, type QuotaKind, type Usage } from './quota.ts';
 
 export type Runner = ReturnType<typeof createRunner>;
 export interface Tenant {
@@ -16,8 +17,25 @@ export interface Tenant {
   root: string;
   store: Store;
   runner: Runner;
-  ctx: { store: Store; projectRoot: string; drain: () => void };
+  ctx: { store: Store; projectRoot: string; drain: () => void; admit?: (kind: QuotaKind, n?: number) => void };
+  /** Accounts mode: this account's monthly allowances. */
+  quota?: AccountQuota;
 }
+
+/** Every API call's cost goes to the account's ledger. */
+export const meteredEngine = (engine: OpenAIEngine, cost: (usd: number) => void): OpenAIEngine => ({
+  ...engine,
+  async json(req) {
+    const out = await engine.json(req);
+    if (out.usage) cost(out.usage.costUsd);
+    return out;
+  },
+  async image(req) {
+    const out = await engine.image(req);
+    if (out.usage) cost(out.usage.costUsd);
+    return out;
+  },
+});
 
 /** A new account's wardrobe: empty, valid, nothing seeded from anyone else's data. */
 export function emptyDb(): DB {
@@ -41,15 +59,21 @@ export function emptyDb(): DB {
 /** Account ids come from the auth database; anything else is refused before it can name a folder. */
 const SAFE_ID = /^[A-Za-z0-9_-]{6,64}$/;
 
-export function createTenants(opts: { projectRoot: string; dataDir: string; seed: () => DB; limiter?: Limiter; codexBin?: string; engine?: OpenAIEngine }) {
+export function createTenants(opts: { projectRoot: string; dataDir: string; seed: () => DB; limiter?: Limiter; codexBin?: string; engine?: OpenAIEngine; quota?: { cfg: QuotaConfig; usage: Usage } }) {
   const cache = new Map<string, Tenant>();
 
-  function open(id: string, root: string, dataDir: string, seed: () => DB): Tenant {
-    const store = createStore(dataDir, seed);
-    const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine: opts.engine });
-    const tenant: Tenant = { id, root, store, runner, ctx: { store, projectRoot: root, drain: () => void runner.drain() } };
-    // A run stopped by a restart continues when its account is opened again.
-    void runner.recover().then((n) => (n > 0 ? runner.drain() : undefined)).catch(() => undefined);
+  function open(id: string, root: string, dataDir: string, seed: () => DB, account?: { owner: boolean }): Tenant {
+    const raw = createStore(dataDir, seed);
+    const quota = account && opts.quota ? accountQuota(opts.quota.cfg, opts.quota.usage, id, account.owner) : undefined;
+    const store = quota ? meteredStore(raw, quota) : raw;
+    const engine = quota && opts.engine ? meteredEngine(opts.engine, quota.cost) : opts.engine;
+    // Accounts start try-ons themselves (spec §6.1): no automatic try-on of every new look.
+    const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine, autoTryOn: !account, canStart: quota?.canStart });
+    const admit = quota ? (kind: QuotaKind, n?: number) => quota.admit(store.read(), kind, n) : undefined;
+    const tenant: Tenant = { id, root, store, runner, quota, ctx: { store, projectRoot: root, drain: () => void runner.drain(), admit } };
+    // A run stopped by a restart continues when its account is opened again; an account's queue resumes too
+    // (it may have waited for the budget). The owner's local site keeps its queue as it was left.
+    void runner.recover().then((n) => (n > 0 || account ? runner.drain() : undefined)).catch(() => undefined);
     return tenant;
   }
 
@@ -65,21 +89,22 @@ export function createTenants(opts: { projectRoot: string; dataDir: string; seed
     return path.join(opts.dataDir, 'users', userId);
   };
 
-  function forUser(userId: string): Tenant {
+  function forUser(userId: string, owner = false): Tenant {
     let t = cache.get(userId);
     if (!t) {
       const root = userRoot(userId);
-      cache.set(userId, (t = open(userId, root, root, emptyDb)));
+      cache.set(userId, (t = open(userId, root, root, emptyDb, { owner })));
     }
     return t;
   }
 
-  /** Account deletion: the queue stops and the whole folder goes. */
+  /** Account deletion: the queue stops, the whole folder goes and its counts are forgotten. */
   function remove(userId: string) {
     const root = userRoot(userId);
     cache.get(userId)?.runner.stop();
     cache.delete(userId);
     fs.rmSync(root, { recursive: true, force: true });
+    opts.quota?.usage.forget(userId);
   }
 
   return { local, forUser, remove, userRoot };

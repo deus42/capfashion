@@ -14,10 +14,31 @@ export interface OpenAIConfig {
   tryonQuality: string;
   packshotQuality: string;
   baseURL: string;
+  /** USD per 1M tokens (search: per call), for the monthly budget; without prices nothing is costed. */
+  prices?: Prices;
   fetch?: typeof fetch;
 }
 
-export interface Usage { inputTokens: number; outputTokens: number }
+export interface Prices { textIn: number; textOut: number; imageIn: number; imageOut: number; searchCall: number }
+export interface Usage { inputTokens: number; outputTokens: number; costUsd: number }
+
+const PRICE_KEYS: Record<string, keyof Prices> = { text_in: 'textIn', text_out: 'textOut', image_in: 'imageIn', image_out: 'imageOut', search_call: 'searchCall' };
+
+/** `OPENAI_PRICES=text_in:…,text_out:…,image_in:…,image_out:…,search_call:…` from the official price list (no guessed defaults). */
+export function pricesFromEnv(value: string | undefined): Prices | undefined {
+  if (!value?.trim()) return undefined;
+  const out: Partial<Prices> = {};
+  for (const part of value.split(',')) {
+    const [k, v] = part.split(':').map((x) => x.trim());
+    const key = PRICE_KEYS[k];
+    const n = Number(v);
+    if (!key || !Number.isFinite(n) || n < 0) throw new Error(`OPENAI_PRICES: cannot read "${part.trim()}"`);
+    out[key] = n;
+  }
+  const missing = Object.entries(PRICE_KEYS).filter(([, key]) => out[key] === undefined).map(([k]) => k);
+  if (missing.length) throw new Error(`OPENAI_PRICES is missing ${missing.join(', ')}`);
+  return out as Prices;
+}
 
 export function openAIConfigFromEnv(env: NodeJS.ProcessEnv): OpenAIConfig | null {
   const apiKey = env.OPENAI_API_KEY?.trim();
@@ -32,6 +53,7 @@ export function openAIConfigFromEnv(env: NodeJS.ProcessEnv): OpenAIConfig | null
     tryonQuality: env.OPENAI_TRYON_QUALITY?.trim() || 'high',
     packshotQuality: env.OPENAI_PACKSHOT_QUALITY?.trim() || 'medium',
     baseURL: (env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/$/, ''),
+    prices: pricesFromEnv(env.OPENAI_PRICES),
   };
 }
 
@@ -74,6 +96,10 @@ export function apiImagePrompt(workerPrompt: string, images: string[]): string {
 export function createOpenAIEngine(cfg: OpenAIConfig) {
   const doFetch = cfg.fetch ?? fetch;
   const headers = { authorization: `Bearer ${cfg.apiKey}` };
+  const p = cfg.prices;
+  // All image-model input is priced as image input: a little above the real bill, never below it.
+  const textCost = (i: number, o: number, searches: number) => (p ? (i * p.textIn + o * p.textOut) / 1e6 + searches * p.searchCall : 0);
+  const imageCost = (i: number, o: number) => (p ? (i * p.imageIn + o * p.imageOut) / 1e6 : 0);
 
   async function failure(res: Response) {
     const text = await res.text().catch(() => '');
@@ -116,8 +142,11 @@ export function createOpenAIEngine(cfg: OpenAIConfig) {
         log(req.logFile, { status: res.status, error: err });
         return { reply: null, err };
       }
-      const data = (await res.json()) as { usage?: { input_tokens?: number; output_tokens?: number } };
-      const usage = { inputTokens: data.usage?.input_tokens ?? 0, outputTokens: data.usage?.output_tokens ?? 0 };
+      const data = (await res.json()) as { usage?: { input_tokens?: number; output_tokens?: number }; output?: { type?: string }[] };
+      const inputTokens = data.usage?.input_tokens ?? 0;
+      const outputTokens = data.usage?.output_tokens ?? 0;
+      const searches = (data.output ?? []).filter((o) => o.type === 'web_search_call').length;
+      const usage = { inputTokens, outputTokens, costUsd: textCost(inputTokens, outputTokens, searches) };
       log(req.logFile, { status: res.status, usage });
       try {
         return { reply: JSON.parse(responseText(data)), usage };
@@ -158,7 +187,9 @@ export function createOpenAIEngine(cfg: OpenAIConfig) {
         return { ok: false, err };
       }
       const data = (await res.json()) as { data?: { b64_json?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
-      const usage = { inputTokens: data.usage?.input_tokens ?? 0, outputTokens: data.usage?.output_tokens ?? 0 };
+      const inputTokens = data.usage?.input_tokens ?? 0;
+      const outputTokens = data.usage?.output_tokens ?? 0;
+      const usage = { inputTokens, outputTokens, costUsd: imageCost(inputTokens, outputTokens) };
       const b64 = data.data?.[0]?.b64_json;
       log(req.logFile, { status: res.status, usage, image: Boolean(b64) });
       if (!b64) return { ok: false, err: 'OpenAI не повернув зображення', usage };

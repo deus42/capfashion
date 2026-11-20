@@ -9,6 +9,7 @@ import { createLimiter } from './runner.ts';
 import { createTenants, type Tenant } from './tenants.ts';
 import { INVITE_COOKIE, authConfigFromEnv, createAuth } from './auth.ts';
 import { createOpenAIEngine, openAIConfigFromEnv } from './openai-engine.ts';
+import { createUsage, quotaConfigFromEnv } from './quota.ts';
 import { stateView } from './state-view.ts';
 import { dispatch, upload } from './routes.ts';
 import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, thumbnail } from './media.ts';
@@ -27,8 +28,22 @@ const ACCOUNTS = Boolean(authConfig);
 fs.mkdirSync(DATA_DIR, { recursive: true });
 // Generation: the OpenAI API when configured (always in production accounts mode), else the local Codex worker.
 const openAI = openAIConfigFromEnv(process.env);
-if (ACCOUNTS && process.env.NODE_ENV === 'production' && !openAI) throw new Error('Accounts in production need OPENAI_API_KEY, OPENAI_TEXT_MODEL and OPENAI_IMAGE_MODEL.');
-const tenants = createTenants({ projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, seed: () => buildSeed(PROJECT_ROOT, DATA_DIR), limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined, engine: openAI ? createOpenAIEngine(openAI) : undefined });
+const PRODUCTION = process.env.NODE_ENV === 'production';
+if (ACCOUNTS && PRODUCTION && !openAI) throw new Error('Accounts in production need OPENAI_API_KEY, OPENAI_TEXT_MODEL and OPENAI_IMAGE_MODEL.');
+// Accounts have monthly allowances (spec §6.2); production also needs the budget and the prices it is counted with.
+const quotaConfig = ACCOUNTS ? quotaConfigFromEnv(process.env) : null;
+if (ACCOUNTS && PRODUCTION && (quotaConfig!.budgetUsd === null || !openAI?.prices)) throw new Error('Accounts in production need MONTHLY_BUDGET_USD and OPENAI_PRICES.');
+const usage = ACCOUNTS ? createUsage(path.join(DATA_DIR, 'usage.sqlite')) : null;
+/** Ko-fi or another page for «Підтримати»; shown when an allowance runs out. */
+const SUPPORT_URL = process.env.SUPPORT_URL?.trim() || null;
+const tenants = createTenants({
+  projectRoot: PROJECT_ROOT,
+  dataDir: DATA_DIR,
+  seed: () => buildSeed(PROJECT_ROOT, DATA_DIR),
+  limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined,
+  engine: openAI ? createOpenAIEngine(openAI) : undefined,
+  quota: quotaConfig && usage ? { cfg: quotaConfig, usage } : undefined,
+});
 const auth = authConfig ? await createAuth(authConfig) : null;
 const localTenant = ACCOUNTS ? null : tenants.local();
 
@@ -140,7 +155,8 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
   if (!needsAccount) return null;
   const user = await auth.userOf(req);
   if (method === 'GET' && url.pathname === '/api/session') {
-    send(res, 200, { mode: 'accounts', user });
+    const tenant = user ? tenants.forUser(user.id, user.owner) : null;
+    send(res, 200, { mode: 'accounts', user, quota: tenant?.quota?.status(tenant.store.read()) ?? null, support: SUPPORT_URL });
     return null;
   }
   if (!user) {
@@ -166,7 +182,7 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
     send(res, 200, { ok: true });
     return null;
   }
-  return tenants.forUser(user.id);
+  return tenants.forUser(user.id, user.owner);
 }
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {

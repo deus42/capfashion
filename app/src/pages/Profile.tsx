@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Camera, Check, CircleCheck, Copy, Heart, Loader2, LocateFixed, MapPin, Minus, Plus, Ruler, Store, Trash2, TriangleAlert, UserRound, X } from 'lucide-react';
-import type { MeasureKey } from '../api.ts';
+import type { MeasureKey, QuotaKind, QuotaStatus } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, ConfirmButton, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
@@ -346,6 +346,7 @@ function Account() {
         </div>
         <button className="quiet-toggle" onClick={() => void signOut()}>Вийти</button>
       </section>
+      {session.quota && <MonthUsage quota={session.quota} support={session.support ?? null} />}
       {owner && (
         <section className="stack" style={{ gap: 10 }}>
           <div className="section-head" style={{ margin: 0 }}>
@@ -377,6 +378,27 @@ function Account() {
         </ConfirmButton>
       </section>
     </div>
+  );
+}
+
+const USAGE_LABEL: [QuotaKind, string][] = [['tryon', 'Примірки'], ['packshot', 'Фото речей'], ['intake', 'Розпізнавання'], ['styling', 'Підбори']];
+const usd = (n: number) => `$${n.toFixed(2)}`;
+
+/** One quiet line: this month's allowances for an account; for the owner, the accounts' spending against the budget. */
+function MonthUsage({ quota, support }: { quota: QuotaStatus; support: string | null }) {
+  const line = USAGE_LABEL.map(([k, label]) => {
+    const { used, limit } = quota.kinds[k];
+    return `${label} ${limit === null ? used : Math.min(used, limit)} з ${limit ?? '—'}`;
+  }).join(' · ');
+  return (
+    <section className="stack" style={{ gap: 6 }}>
+      <h2 className="h2">Цього місяця</h2>
+      {quota.owner
+        ? <p className="small muted">Акаунти: {usd(quota.spentUsd ?? 0)}{quota.budgetUsd != null && <> з {usd(quota.budgetUsd)}</>} · твої: {usd(quota.ownSpentUsd ?? 0)}</p>
+        : <p className="small muted">{line}</p>}
+      {quota.paused && <p className="small muted">Генерацію призупинено до 1-го числа.</p>}
+      {!quota.owner && support && <p className="small"><a href={support} target="_blank" rel="noreferrer">Підтримати Capsula</a></p>}
+    </section>
   );
 }
 

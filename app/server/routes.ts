@@ -9,6 +9,7 @@ import { acceptSuggestion, dropReplacementsFor, keepItem, queueAdvice, rememberD
 import { looksNeedingRender } from '../src/render-need.ts';
 import { isEyewear } from '../src/lib.ts';
 import { productKey, queueStoreFind } from './shop-search.ts';
+import { quotaKind, type QuotaKind } from './quota.ts';
 import { tooClose, withBuys } from '../src/look-memory.ts';
 import { queueDiscover } from './discover.ts';
 import { sameIdentity } from './identity.ts';
@@ -19,7 +20,15 @@ export interface Ctx {
   store: Store;
   projectRoot: string;
   drain: () => void;
+  /** Accounts mode: refuses AI work beyond this month's allowance or while the budget is spent (429). */
+  admit?: (kind: QuotaKind, n?: number) => void;
 }
+
+/** Jobs a write returned that the allowances let through (accounts drop the rest inside the write). */
+const kept = (ctx: Ctx, ids: string[]) => {
+  const live = new Set(ctx.store.read().jobs.map((j) => j.id));
+  return ids.filter((id) => live.has(id));
+};
 
 const str = (v: unknown, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : undefined);
 const SLOT_TEXT: Record<SlotKey, string> = { top: 'Верх', layer: 'Верхній шар', bottom: 'Низ', shoes: 'Взуття', accessories: 'Аксесуари' };
@@ -261,6 +270,7 @@ export async function upload(ctx: Ctx, query: URLSearchParams, buf: Buffer, file
   const intake = query.get('kind') === 'intake';
   const kind = (intake ? 'item' : (query.get('kind') ?? 'item')) as PhotoKind;
   if (!PHOTO_KINDS.includes(kind) || kind === 'source' || kind === 'packshot') throw new HttpError(400, 'Невідомий тип фото');
+  if (intake) ctx.admit?.('intake');
   const id = newId('P');
   const saved = await saveUpload(ctx.projectRoot, ctx.store.dataDir, id, buf);
   prewarm(ctx.projectRoot, ctx.store.dataDir, [saved.path]);
@@ -620,6 +630,7 @@ on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
 
 // ── Try-on queue ───────────────────────────────────────────────────────────
 on('POST', '/api/jobs', async (ctx, _p, b) => {
+  ctx.admit?.('tryon');
   const job = await ctx.store.mutate((db) => {
     const look = findOr404(db.looks, str(b.lookId) ?? '', 'Образ');
     const base = Array.isArray(b.basePhotoIds) ? (b.basePhotoIds as string[]) : db.profile.basePhotoIds;
@@ -630,6 +641,8 @@ on('POST', '/api/jobs', async (ctx, _p, b) => {
 });
 
 on('POST', '/api/jobs/:id/retry', async (ctx, [id], b) => {
+  const earlier = ctx.store.read().jobs.find((j) => j.id === id);
+  if (earlier) ctx.admit?.(quotaKind(earlier));
   const job = await ctx.store.mutate((db) => {
     const prev = findOr404(db.jobs, id, 'Завдання');
     if (prev.state === 'queued' || prev.state === 'running') throw new HttpError(409, 'Завдання ще виконується');
@@ -649,6 +662,7 @@ on('POST', '/api/jobs/:id/retry', async (ctx, [id], b) => {
 });
 
 on('POST', '/api/packshots', async (ctx, _p, b) => {
+  ctx.admit?.('packshot');
   const out = await ctx.store.mutate((db) => {
     const pending = new Set(db.jobs.filter((j) => j.kind === 'packshot' && (j.state === 'queued' || j.state === 'running')).map((j) => j.itemId ?? j.needId));
     const itemIds = b.all ? db.items.filter((i) => i.status !== 'inactive' && !i.packshotId).map((i) => i.id) : Array.isArray(b.itemIds) ? (b.itemIds as string[]) : [];
@@ -658,11 +672,16 @@ on('POST', '/api/packshots', async (ctx, _p, b) => {
     for (const id of needIds) if (!pending.has(id)) jobs.push(packshotJob(db, { needId: id }, str(b.instructions)));
     return { created: jobs.length, jobIds: jobs.map((j) => j.id) };
   });
+  if (ctx.admit) {
+    out.jobIds = kept(ctx, out.jobIds);
+    out.created = out.jobIds.length;
+  }
   if (b.run) ctx.drain();
   return out;
 });
 
 on('POST', '/api/analyze', async (ctx, _p, b) => {
+  ctx.admit?.('styling');
   const job = await ctx.store.mutate((db) => {
     if (db.jobs.some((j) => j.kind === 'analyze' && (j.state === 'queued' || j.state === 'running'))) throw new HttpError(409, 'Аналізатор уже працює — зачекай на поточну підбірку');
     const asked = str(b.prompt, 600) ?? '';
@@ -683,9 +702,10 @@ on('POST', '/api/analyze', async (ctx, _p, b) => {
 export const queueMissingRenders = (db: DB, lookIds?: string[]) => renderLooks(db, lookIds).filter((j) => j.state === 'queued');
 
 on('POST', '/api/renders/missing', async (ctx) => {
+  ctx.admit?.('tryon');
   const jobs = await ctx.store.mutate((db) => queueMissingRenders(db));
   ctx.drain();
-  return { queued: jobs.length };
+  return { queued: kept(ctx, jobs.map((j) => j.id)).length };
 });
 
 on('POST', '/api/runner/run', (ctx) => {
@@ -725,6 +745,8 @@ on('POST', '/api/results/:id/review', async (ctx, [id], b) => {
     }
     return { result: r, retry };
   });
+  // Accounts: a rework beyond the month's try-ons is recorded without a new attempt.
+  if (out.retry && !kept(ctx, [out.retry.id]).length) out.retry = undefined;
   if (out.retry && b.run) ctx.drain();
   return out;
 });
@@ -786,6 +808,7 @@ on('PATCH', '/api/needs/:id', (ctx, [id], b) =>
 
 // «Знайти»: search the shops (the owner's place and stores, then the owner's brands) for this recommendation.
 on('POST', '/api/needs/:id/search', async (ctx, [id], b) => {
+  ctx.admit?.('styling');
   const job = await ctx.store.mutate((db) => {
     const need = findOr404(db.needs, id, 'Потреба');
     if (need.status !== 'open') throw new HttpError(409, 'Ця покупка вже закрита');
@@ -1041,6 +1064,7 @@ on('POST', '/api/products/:id/unpurchase', async (ctx, [id]) => {
 
 // «Нові» (owner, 19.11): one search for new looks — the owner's words, a capsule and picked pieces are optional.
 on('POST', '/api/discover', async (ctx, _p, b) => {
+  ctx.admit?.('styling');
   const job = await ctx.store.mutate((db) => queueDiscover(db, { prompt: str(b.prompt, 400), capsuleId: str(b.capsuleId), itemIds: Array.isArray(b.itemIds) ? (b.itemIds as string[]) : [] }));
   ctx.drain();
   return job;
@@ -1048,9 +1072,10 @@ on('POST', '/api/discover', async (ctx, _p, b) => {
 
 // «Магазини» (owner, 19.11): one web search for the shops whose nearest store is not known yet.
 on('POST', '/api/stores/find', async (ctx) => {
+  ctx.admit?.('styling');
   const job = await ctx.store.mutate((db) => queueStoreFind(db));
   ctx.drain();
-  return { queued: Boolean(job) };
+  return { queued: Boolean(job && kept(ctx, [job.id]).length) };
 });
 
 on('DELETE', '/api/products/:id', (ctx, [id]) =>

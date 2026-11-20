@@ -1,5 +1,7 @@
 import type { DB } from '../server/schema.ts';
+import type { QuotaKind, QuotaStatus } from '../server/quota.ts';
 export type * from '../server/schema.ts';
+export type { QuotaKind, QuotaStatus };
 
 export interface RunnerState {
   running: boolean;
@@ -31,7 +33,24 @@ async function parse<T>(res: Response): Promise<T> {
 
 /** Accounts mode signs people in with Google; the owner's local site has no accounts. */
 export interface SessionUser { id: string; name: string; email: string; image: string | null; owner: boolean }
-export interface Session { mode: 'local' | 'accounts'; user: SessionUser | null }
+export interface Session { mode: 'local' | 'accounts'; user: SessionUser | null; quota?: QuotaStatus | null; support?: string | null }
+
+const QUOTA_OUT: Record<QuotaKind, string> = {
+  tryon: 'Ліміт примірок на цей місяць вичерпано',
+  packshot: 'Ліміт фото речей на цей місяць вичерпано',
+  intake: 'Ліміт розпізнавання фото на цей місяць вичерпано',
+  styling: 'Ліміт підборів на цей місяць вичерпано',
+  advice: 'Ліміт порадника на цей місяць вичерпано',
+};
+
+/** Accounts mode: why this kind of AI work cannot start now (allowance used up or the budget paused), else null. */
+export function quotaNote(session: Session | null, kind: QuotaKind): string | null {
+  const q = session?.quota;
+  if (!q || q.owner) return null;
+  if (q.paused) return 'Генерацію призупинено до 1-го числа';
+  const k = q.kinds[kind];
+  return k.limit !== null && k.used >= k.limit ? QUOTA_OUT[kind] : null;
+}
 export async function getSession(): Promise<Session> {
   return parse(await fetch('/api/session', { cache: 'no-store' }));
 }

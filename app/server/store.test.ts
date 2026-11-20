@@ -1879,7 +1879,7 @@ test('OpenAI engine: structured JSON with attached images and web search, PNG ed
   const log = path.join(dir, 'log.jsonl');
   const out = await engine.json({ prompt: 'Find', schema: { type: 'object' }, images: [img], webSearch: true, logFile: log });
   assert.deepEqual(out.reply, { status: 'done', looks: [] });
-  assert.deepEqual(out.usage, { inputTokens: 120, outputTokens: 30 });
+  assert.deepEqual(out.usage, { inputTokens: 120, outputTokens: 30, costUsd: 0 }, 'without prices nothing is costed');
   const body = JSON.parse(String(calls[0].init.body));
   assert.equal(calls[0].url, 'https://api.openai.com/v1/responses');
   assert.equal(body.model, 'text-model');
@@ -1947,4 +1947,92 @@ test('without macOS Vision: upright previews, crops kept only when the face chec
   assert.deepEqual(await sharpImaging('crop', [{ ...entry(3), box: { x: 0.9, y: 0.9, width: 0.05, height: 0.05 } }], async () => [false]), [], 'a tiny rectangle is skipped');
   await sharpImaging('sheet', { sources: [path.join(dir, 'c2.png'), src, src], destination: path.join(dir, 'sheet.png') });
   assert.equal((await sharp(path.join(dir, 'sheet.png')).metadata()).width, 1024);
+});
+
+test('OpenAI prices: read only from OPENAI_PRICES, every call costed from its real tokens and searches', async () => {
+  const { createOpenAIEngine, openAIConfigFromEnv, pricesFromEnv } = await import('./openai-engine.ts');
+  assert.equal(pricesFromEnv(undefined), undefined);
+  assert.throws(() => pricesFromEnv('text_in:1'), /missing text_out/);
+  assert.throws(() => pricesFromEnv('text_in:abc,text_out:1,image_in:1,image_out:1,search_call:1'), /cannot read/);
+  const env = { OPENAI_API_KEY: 'sk-test', OPENAI_TEXT_MODEL: 't', OPENAI_IMAGE_MODEL: 'i', OPENAI_PRICES: 'text_in:2, text_out:8, image_in:10, image_out:40, search_call:0.01' };
+  const cfg = openAIConfigFromEnv(env)!;
+  assert.deepEqual(cfg.prices, { textIn: 2, textOut: 8, imageIn: 10, imageOut: 40, searchCall: 0.01 });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-prices-'));
+  const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  let next = reply({ output: [{ type: 'web_search_call' }, { type: 'web_search_call' }, { type: 'message', content: [{ type: 'output_text', text: '{}' }] }], usage: { input_tokens: 1_000_000, output_tokens: 500_000 } });
+  const engine = createOpenAIEngine({ ...cfg, fetch: (async () => next) as never });
+  const text = await engine.json({ prompt: 'x', schema: {}, webSearch: true });
+  assert.ok(Math.abs(text.usage!.costUsd - (2 + 4 + 0.02)) < 1e-9, String(text.usage!.costUsd));
+  next = reply({ data: [{ b64_json: SAMPLE_PNG.toString('base64') }], usage: { input_tokens: 100_000, output_tokens: 50_000 } });
+  const image = await engine.image({ prompt: 'x', images: [], resultFile: path.join(dir, 'r.png'), packshot: true });
+  assert.ok(Math.abs(image.usage!.costUsd - (1 + 2)) < 1e-9, String(image.usage!.costUsd));
+});
+
+test('quotas: allowances per account and month, background work trimmed, finished jobs counted once, the budget pauses everyone but the owner', async () => {
+  const { createTenants, emptyDb, meteredEngine } = await import('./tenants.ts');
+  const { createUsage, quotaConfigFromEnv, quotaKind, monthOf } = await import('./quota.ts');
+  const defaults = quotaConfigFromEnv({});
+  assert.deepEqual(defaults.limits, { tryon: 10, packshot: 60, intake: 100, styling: 30, advice: 30 });
+  assert.equal(defaults.budgetUsd, null);
+  assert.throws(() => quotaConfigFromEnv({ QUOTA_TRYON: '-1' }), /whole numbers/);
+  assert.throws(() => quotaConfigFromEnv({ MONTHLY_BUDGET_USD: 'lots' }), /MONTHLY_BUDGET_USD/);
+  assert.equal(quotaKind({}), 'tryon', 'a job without a kind is a try-on');
+  assert.equal(quotaKind({ kind: 'shopsearch' }), 'styling');
+  assert.equal(quotaKind({ kind: 'advise' }), 'advice');
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-quota-'));
+  const usage = createUsage(path.join(dir, 'usage.sqlite'));
+  const cfg = quotaConfigFromEnv({ QUOTA_STYLING: '1', QUOTA_ADVICE: '1', MONTHLY_BUDGET_USD: '1' });
+  const tenants = createTenants({ projectRoot: dir, dataDir: dir, seed: emptyDb, codexBin: '/usr/bin/false', quota: { cfg, usage } });
+  const user = tenants.forUser('user-qqqqqq');
+  const job = (id: string, kind: 'analyze' | 'advise') => ({ id, kind, lookVersion: 0, snapshot: { lookName: kind, slots: [], basePhotoIds: [], basePhotoPaths: [] }, instructions: '', state: 'queued' as const, origin: 'site' as const, createdAt: at });
+
+  user.ctx.admit!('styling');
+  await user.store.mutate((d) => void d.jobs.push(job('J-a1', 'analyze')));
+  assert.throws(() => user.ctx.admit!('styling'), (e: { status?: number; message: string }) => e.status === 429 && /Ліміт підборів/.test(e.message));
+  // What slips past a request (the advisor, covers after a photo) is dropped inside the write.
+  await user.store.mutate((d) => void d.jobs.push(job('J-a2', 'analyze'), job('J-v1', 'advise'), job('J-v2', 'advise')));
+  assert.deepEqual(user.store.read().jobs.map((j) => j.id), ['J-a1', 'J-v1']);
+  // A finished job is counted in the ledger; deleting it from the wardrobe does not give the allowance back.
+  await user.store.mutate((d) => { const j = d.jobs.find((x) => x.id === 'J-a1')!; j.state = 'done'; j.finishedAt = at; });
+  await user.store.mutate((d) => { d.jobs[0].stateNote = 'touched again'; });
+  assert.equal(usage.done('user-qqqqqq').styling, 1, 'counted once');
+  await user.store.mutate((d) => { d.jobs = d.jobs.filter((j) => j.id !== 'J-a1'); });
+  assert.throws(() => user.ctx.admit!('styling'), /Ліміт підборів/);
+  assert.deepEqual(usage.done('user-qqqqqq', '2099-01'), { tryon: 0, packshot: 0, intake: 0, styling: 0, advice: 0 }, 'a new month starts fresh');
+  assert.deepEqual(user.quota!.status(user.store.read()).kinds.styling, { used: 1, limit: 1 });
+
+  // Every API call's cost goes to the ledger; the accounts' total reaching the budget pauses them.
+  const fake = { label: 't', imageLabel: 'i', json: async () => ({ reply: {}, usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.6 } }), image: async () => ({ ok: true, usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.6 } }) };
+  const metered = meteredEngine(fake as never, user.quota!.cost);
+  await metered.json({ prompt: 'x', schema: {} });
+  assert.equal(user.quota!.paused(), false);
+  await metered.image({ prompt: 'x', images: [], resultFile: path.join(dir, 'x.png'), packshot: true });
+  assert.ok(Math.abs(usage.budgetSpent() - 1.2) < 1e-9);
+  assert.equal(user.quota!.paused(), true);
+  assert.throws(() => user.ctx.admit!('intake'), /призупинено до 1-го числа/);
+  assert.equal(user.quota!.status(user.store.read()).paused, true);
+  // While paused a queued job waits instead of running.
+  await user.runner.drain();
+  assert.equal(user.store.read().jobs.find((j) => j.id === 'J-v1')!.state, 'queued');
+
+  // The owner has no allowance, is never paused, and their spending stays out of the budget.
+  const owner = tenants.forUser('owner-oooooo', true);
+  owner.ctx.admit!('styling', 50);
+  owner.quota!.cost(5);
+  assert.ok(Math.abs(usage.budgetSpent() - 1.2) < 1e-9);
+  const ownerView = owner.quota!.status(owner.store.read());
+  assert.equal(ownerView.owner, true);
+  assert.equal(ownerView.kinds.tryon.limit, null);
+  assert.equal(ownerView.ownSpentUsd, 5);
+  assert.equal(ownerView.spentUsd, 1.2);
+  assert.equal(ownerView.month, monthOf());
+
+  // A deleted account loses its counts; its spending stays in the month's total.
+  tenants.remove('user-qqqqqq');
+  assert.equal(usage.done('user-qqqqqq').styling, 0);
+  assert.ok(Math.abs(usage.budgetSpent() - 1.2) < 1e-9);
+  owner.runner.stop();
+  tenants.forUser('user-qqqqqq').runner.stop();
+  usage.close();
 });

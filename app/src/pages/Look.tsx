@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { ArrowLeftRight, ImageOff, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { DB, Job, Look, SlotKey, SlotRef } from '../api.ts';
-import { api, media, thumb } from '../api.ts';
+import { api, media, quotaNote, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, Empty, LookArt, Missing, Modal, RateButtons } from '../components/ui.tsx';
 import type { ResolvedRef } from '../lib.ts';
@@ -63,7 +63,7 @@ function accessoryOptions(db: DB, look: Look) {
  */
 export function LookPage({ id }: { id: string }) {
   const db = useDb();
-  const { act, toast } = useApp();
+  const { act, toast, session } = useApp();
   const [editing, setEditing] = useState(false);
   const [swap, setSwap] = useState<{ slot?: SlotKey; current?: SlotRef } | null>(null);
   const [keptNow, setKeptNow] = useState('');
@@ -91,9 +91,11 @@ export function LookPage({ id }: { id: string }) {
   const latest = lookJobs.filter((j) => j.lookVersion === look.version).at(-1);
   const missingPhotos = latest?.state === 'needs_data' && latest.stateNote?.startsWith('Потрібні окремі фото речей:') ? latest.stateNote : undefined;
   const paused = rendersPaused(db);
+  // Accounts: the month's try-ons are used up (or the budget paused generation).
+  const limit = quotaNote(session, 'tryon');
   const kept = look.keptVersion === look.version;
   // After pieces change, ask once whether to update the picture (owner, 17.11): never automatic.
-  const askUpdate = Boolean(stale) && !busy && !paused && !kept && keptNow !== `${look.id}:${look.version}`;
+  const askUpdate = Boolean(stale) && !busy && !paused && !limit && !kept && keptNow !== `${look.id}:${look.version}`;
   const options = accessoryOptions(db, look);
   // The advisor's one better owned piece for this version of the look.
   const sw = look.advice?.version === look.version ? look.advice.swap : undefined;
@@ -159,12 +161,13 @@ export function LookPage({ id }: { id: string }) {
               <LookArt look={look} w={960} busy={busy} label />
             </a>
             {!paused && (
-              <button className="refresh-btn" disabled={busy} onClick={() => void update()} aria-label="Оновити картинку" title="Оновити картинку">
+              <button className="refresh-btn" disabled={busy || Boolean(limit)} onClick={() => void update()} aria-label="Оновити картинку" title={limit ?? 'Оновити картинку'}>
                 <RefreshCw size={15} />
               </button>
             )}
           </div>
           {!busy && missingPhotos && <p className="miss" role="status" style={{ marginTop: 8 }}>{missingPhotos}</p>}
+          {limit && <p className="miss" role="status" style={{ marginTop: 8 }}>{limit}{session?.support && <> · <a href={session.support} target="_blank" rel="noreferrer">Підтримати</a></>}</p>}
           {askUpdate && (
             <div className="update-ask">
               <span>Речі змінено</span>

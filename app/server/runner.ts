@@ -189,7 +189,11 @@ export function createLimiter(max: number): Limiter {
   };
 }
 
-export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter; engine?: OpenAIEngine } = {}) {
+/**
+ * `autoTryOn: false` (accounts) leaves a new selection's looks without automatic try-ons; `canStart` holds queued
+ * jobs back (an account whose month's budget is spent).
+ */
+export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter; engine?: OpenAIEngine; autoTryOn?: boolean; canStart?: (job: Job) => boolean } = {}) {
   const active = new Set<string>();
   // Item revisions each advise run saw when its prompt was built (see seenRevs).
   const adviseRevs = new Map<string, Map<string, number>>();
@@ -409,8 +413,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         return;
       }
       j.capsuleId = capsuleId;
-      // Every look of a new selection gets the owner's try-on straight away.
-      const renders = queueMissingRenders(db, db.capsules.find((c) => c.id === capsuleId)?.lookIds ?? []);
+      // Every look of a new selection gets the owner's try-on straight away (accounts start try-ons themselves).
+      const renders = opts.autoTryOn === false ? [] : queueMissingRenders(db, db.capsules.find((c) => c.id === capsuleId)?.lookIds ?? []);
       j.state = 'done';
       j.stateNote = `Підбірка готова: ${db.capsules.find((c) => c.id === capsuleId)?.lookIds.length ?? 0} образів${renders.length ? ` — примірки в черзі: ${renders.length}` : ''}`;
     });
@@ -663,7 +667,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
         // The advisor is background text work: after try-ons, alongside packshots.
         const batch = (k?: string) => (k === 'intake' || k === 'analyze' || k === 'discover' ? 0 : k === 'shopsearch' || k === 'storefind' ? 0.5 : k === 'packshot' || k === 'advise' ? 2 : 1);
         const queued = db.jobs
-          .filter((j) => j.state === 'queued' && !active.has(j.id))
+          .filter((j) => j.state === 'queued' && !active.has(j.id) && (!opts.canStart || opts.canStart(j)))
           // Within try-ons the newest request goes first, so a picture the owner just asked for does not wait behind a batch.
           .sort((a, b) => batch(a.kind) - batch(b.kind) || (batch(a.kind) === 1 ? b.createdAt.localeCompare(a.createdAt) : a.createdAt.localeCompare(b.createdAt)));
         if (!queued.length && active.size === 0) break;

@@ -25,6 +25,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [signedOut, setSignedOut] = useState(false);
   const [toastMsg, setToast] = useState<{ msg: string; bad: boolean; href?: string } | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  // Accounts mode: the allowances in the session change as work is queued and finishes.
+  const accounts = useRef(false);
 
   const toast = useCallback((msg: string, bad = false, href?: string) => {
     setToast({ msg, bad, href });
@@ -34,7 +36,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      setState(await getState());
+      const [next, s] = await Promise.all([getState(), accounts.current ? getSession().catch(() => null) : null]);
+      setState(next);
+      if (s) setSession(s);
       setError(null);
       setSignedOut(false);
     } catch (e) {
@@ -43,7 +47,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
   useEffect(() => {
-    void getSession().then((s) => { setUploadConversion(s.mode === 'accounts'); setSession(s); }).catch(() => setSession({ mode: 'local', user: null }));
+    void getSession().then((s) => { accounts.current = s.mode === 'accounts'; setUploadConversion(accounts.current); setSession(s); }).catch(() => setSession({ mode: 'local', user: null }));
   }, []);
 
   const act = useCallback(
@@ -54,7 +58,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (okMessage) toast(okMessage);
         return out;
       } catch (e) {
-        if (e instanceof ApiError && e.status === 409) await refresh();
+        if (e instanceof ApiError && (e.status === 409 || e.status === 429)) await refresh();
         toast((e as Error).message, true);
         return undefined;
       }

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Camera, Check, CircleCheck, Heart, Loader2, LocateFixed, MapPin, Minus, Plus, Ruler, Store, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Camera, Check, CircleCheck, Copy, Heart, Loader2, LocateFixed, MapPin, Minus, Plus, Ruler, Store, Trash2, TriangleAlert, UserRound, X } from 'lucide-react';
 import type { MeasureKey } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Badge, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
+import { Badge, ConfirmButton, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
 import { useIntake } from './Home.tsx';
 import { InfoMark } from './Glossary.tsx';
 import { MEASURES, fmtDay, shopLocation, wardrobeBrands } from '../lib.ts';
@@ -319,18 +319,82 @@ function Preferences() {
   );
 }
 
+/** Accounts mode (production spec §4): who is signed in, sign out, delete the account; the owner makes invite links. */
+function Account() {
+  const { session, act, toast } = useApp();
+  const [invites, setInvites] = useState<{ code: string; expiresAt: string; usedBy: string | null; disabled: number }[]>([]);
+  const owner = Boolean(session?.user?.owner);
+  const load = () => void api<typeof invites>('GET', '/api/invites').then(setInvites).catch(() => undefined);
+  useEffect(() => { if (owner) load(); }, [owner]);
+  if (!session?.user) return null;
+  const link = (code: string) => `${window.location.origin}/i/${code}`;
+  const copy = async (code: string) => {
+    await navigator.clipboard?.writeText(link(code)).catch(() => undefined);
+    toast('Посилання скопійовано');
+  };
+  const signOut = async () => {
+    await fetch('/api/auth/sign-out', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => undefined);
+    window.location.href = '/';
+  };
+  const open = invites.filter((i) => !i.usedBy && !i.disabled && i.expiresAt > new Date().toISOString());
+  return (
+    <div className="stack" style={{ gap: 28 }}>
+      <section className="account-row">
+        <div>
+          <b>{session.user.name}</b>
+          <p className="small muted">{session.user.email}</p>
+        </div>
+        <button className="quiet-toggle" onClick={() => void signOut()}>Вийти</button>
+      </section>
+      {owner && (
+        <section className="stack" style={{ gap: 10 }}>
+          <div className="section-head" style={{ margin: 0 }}>
+            <h2 className="h2">Запрошення <span className="count">{open.length}</span></h2>
+            <button className="quiet-toggle" onClick={() => void act(() => api<{ code: string }>('POST', '/api/invites')).then((inv) => { if (inv) { load(); void copy(inv.code); } })}>Нове запрошення</button>
+          </div>
+          <ul className="set-list">
+            {open.map((i) => (
+              <li key={i.code}>
+                <span className="set-name">{link(i.code).replace(/^https?:\/\//, '')}<span className="buy"> · до {fmtDay(i.expiresAt)}</span></span>
+                <button className="icon-btn" aria-label="Скопіювати посилання" onClick={() => void copy(i.code)}><Copy size={13} /></button>
+                <button className="icon-btn" aria-label="Скасувати запрошення" onClick={() => void act(() => api('DELETE', `/api/invites/${encodeURIComponent(i.code)}`)).then(load)}><X size={13} /></button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <section>
+        <ConfirmButton
+          className="btn ghost danger"
+          title="Видалити акаунт"
+          message={<>Видалити акаунт і все в ньому — фото, речі, капсули, образи й примірки — назавжди?</>}
+          onConfirm={async () => {
+            const ok = await act(() => api('DELETE', '/api/account'));
+            if (ok !== undefined) window.location.href = '/';
+          }}
+        >
+          <Trash2 size={14} /> Видалити акаунт
+        </ConfirmButton>
+      </section>
+    </div>
+  );
+}
+
 export function ProfilePage({ tab }: { tab?: string }) {
-  const current = TABS.some((t) => t.key === tab) ? tab! : 'base';
+  const { session } = useApp();
+  const tabs = session?.mode === 'accounts' ? [...TABS, { key: 'account', label: 'Акаунт', icon: <UserRound size={17} /> }] : TABS;
+  const current = tabs.some((t) => t.key === tab) ? tab! : 'base';
   return (
     <div className="page">
       <PageHead title="Мій профіль" />
       <div className="split">
-        <SubNav value={current} onChange={(k) => go(`/profile/${k}`)} groups={[{ items: TABS }]} />
+        <SubNav value={current} onChange={(k) => go(`/profile/${k}`)} groups={[{ items: tabs }]} />
         <div>
           {current === 'base' && <BasePhotos />}
           {current === 'measurements' && <Measurements />}
           {current === 'shops' && <Shops />}
           {current === 'preferences' && <Preferences />}
+          {current === 'account' && <Account />}
         </div>
       </div>
     </div>

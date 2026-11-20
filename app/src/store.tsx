@@ -1,10 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { AppState } from './api.ts';
-import { ApiError, getState } from './api.ts';
+import type { AppState, Session } from './api.ts';
+import { ApiError, getSession, getState } from './api.ts';
 
 interface Ctx {
   state: AppState | null;
+  /** Accounts mode: who is signed in; null while unknown. */
+  session: Session | null;
+  /** Accounts mode without a signed-in account: the landing page shows instead of the site. */
+  signedOut: boolean;
   error: string | null;
   refresh: () => Promise<void>;
   /** Runs a mutation, refreshes state and reports errors as a toast. */
@@ -17,6 +21,8 @@ const AppCtx = createContext<Ctx | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
   const [toastMsg, setToast] = useState<{ msg: string; bad: boolean; href?: string } | null>(null);
   const timer = useRef<number | undefined>(undefined);
 
@@ -30,9 +36,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       setState(await getState());
       setError(null);
+      setSignedOut(false);
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiError && e.status === 401) setSignedOut(true);
+      else setError((e as Error).message);
     }
+  }, []);
+  useEffect(() => {
+    void getSession().then(setSession).catch(() => setSession({ mode: 'local', user: null }));
   }, []);
 
   const act = useCallback(
@@ -102,7 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [state, toast]);
 
-  const value = useMemo(() => ({ state, error, refresh, act, toast }), [state, error, refresh, act, toast]);
+  const value = useMemo(() => ({ state, session, signedOut, error, refresh, act, toast }), [state, session, signedOut, error, refresh, act, toast]);
   return (
     <AppCtx.Provider value={value}>
       {children}

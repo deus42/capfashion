@@ -3,9 +3,11 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createStore, HttpError } from './store.ts';
+import { HttpError } from './store.ts';
 import { buildSeed } from './seed.ts';
-import { createRunner } from './runner.ts';
+import { createLimiter } from './runner.ts';
+import { createTenants, type Tenant } from './tenants.ts';
+import { INVITE_COOKIE, authConfigFromEnv, createAuth } from './auth.ts';
 import { stateView } from './state-view.ts';
 import { dispatch, upload } from './routes.ts';
 import { CONTENT_TYPES, MAX_UPLOAD_BYTES, prewarm, resolveAllowed, snapWidth, thumbnail } from './media.ts';
@@ -15,11 +17,16 @@ const PROJECT_ROOT = path.resolve(APP_DIR, '..');
 const DATA_DIR = path.resolve(process.env.CAPSULA_DATA_DIR || path.join(PROJECT_ROOT, '.local', 'app-data'));
 const DIST = path.join(APP_DIR, 'dist');
 const PORT = Number(process.env.PORT || 4317);
-const HOST = '127.0.0.1';
+const HOST = process.env.HOST || '127.0.0.1';
 
-const store = createStore(DATA_DIR, () => buildSeed(PROJECT_ROOT, DATA_DIR));
-const runner = createRunner(store, PROJECT_ROOT);
-const ctx = { store, projectRoot: PROJECT_ROOT, drain: () => void runner.drain() };
+// Two modes (production spec §4–5): without Google credentials the owner's single local site runs exactly as before;
+// with them, every signed-in account gets its own wardrobe folder and the queue shares a cap on running jobs.
+const authConfig = authConfigFromEnv(process.env, DATA_DIR);
+const ACCOUNTS = Boolean(authConfig);
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const tenants = createTenants({ projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, seed: () => buildSeed(PROJECT_ROOT, DATA_DIR), limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined });
+const auth = authConfig ? await createAuth(authConfig) : null;
+const localTenant = ACCOUNTS ? null : tenants.local();
 
 const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
 
@@ -44,7 +51,7 @@ function authorize(req: http.IncomingMessage): string | null {
   const proxied = PROXY_HEADERS.some((h) => h in req.headers);
   if (LOOPBACK_HOST.test(host) && localForward && !proxied) return null;
   const login = String(req.headers['tailscale-user-login'] ?? '').toLowerCase();
-  const allowed = (process.env.CAPSULA_TAILSCALE_LOGIN || store.read().settings.tailscaleLogin || '').toLowerCase();
+  const allowed = (process.env.CAPSULA_TAILSCALE_LOGIN || localTenant!.store.read().settings.tailscaleLogin || '').toLowerCase();
   if (!allowed) return 'Віддалений доступ вимкнено: у налаштуваннях не вказано Tailscale-логін власника';
   if (!login || login !== allowed) return 'Доступ дозволено лише власнику через Tailscale';
   return null;
@@ -104,23 +111,84 @@ function sendFile(res: http.ServerResponse, file: string, cache = 'no-cache', re
   fs.createReadStream(file).pipe(res);
 }
 
+const secureCookies = Boolean(authConfig?.baseURL.startsWith('https://'));
+
+/** Accounts mode: sign-in, invites and the signed-in account's tenant; local mode: the owner's site. */
+async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse, url: URL, method: string): Promise<Tenant | null> {
+  if (!auth) return localTenant;
+  if (url.pathname.startsWith('/api/auth/')) {
+    await auth.handler(req, res);
+    return null;
+  }
+  // An invite link sets a short-lived cookie that the Google sign-up checks, then opens the landing page.
+  if (method === 'GET' && url.pathname.startsWith('/i/')) {
+    const code = decodeURIComponent(url.pathname.slice(3));
+    const ok = Boolean(auth.validInvite(code));
+    res.writeHead(302, {
+      location: ok ? '/?invite=1' : '/?invite=invalid',
+      ...(ok ? { 'set-cookie': `${INVITE_COOKIE}=${encodeURIComponent(code)}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax${secureCookies ? '; Secure' : ''}` } : {}),
+      'cache-control': 'no-store',
+    });
+    res.end();
+    return null;
+  }
+  const needsAccount = url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/') || url.pathname.startsWith('/thumb/');
+  if (!needsAccount) return null;
+  const user = await auth.userOf(req);
+  if (method === 'GET' && url.pathname === '/api/session') {
+    send(res, 200, { mode: 'accounts', user });
+    return null;
+  }
+  if (!user) {
+    send(res, 401, { error: 'Потрібно увійти' });
+    return null;
+  }
+  if (url.pathname.startsWith('/api/') && method !== 'GET' && req.headers['x-capsula'] !== '1') {
+    send(res, 403, { error: 'Запит без заголовка сайту відхилено' });
+    return null;
+  }
+  // Owner: invite links. Everyone: delete their own account and everything in it.
+  if (url.pathname === '/api/invites' || url.pathname.startsWith('/api/invites/')) {
+    if (!user.owner) send(res, 403, { error: 'Лише для власника' });
+    else if (method === 'GET') send(res, 200, auth.invites.list());
+    else if (method === 'POST') send(res, 200, auth.invites.create());
+    else if (method === 'DELETE') send(res, 200, (auth.invites.disable(decodeURIComponent(url.pathname.split('/')[3] ?? '')), { ok: true }));
+    else send(res, 405, { error: 'Метод не підтримується' });
+    return null;
+  }
+  if (method === 'DELETE' && url.pathname === '/api/account') {
+    tenants.remove(user.id);
+    auth.deleteUser(user.id);
+    send(res, 200, { ok: true });
+    return null;
+  }
+  return tenants.forUser(user.id);
+}
+
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://local');
-  const denied = authorize(req);
-  if (denied) return send(res, 403, { error: denied });
   const method = req.method ?? 'GET';
+  if (!ACCOUNTS) {
+    const denied = authorize(req);
+    if (denied) return send(res, 403, { error: denied });
+  }
+  const isTenantPath = url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/') || url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/i/');
+  const tenant = isTenantPath ? await accountTenant(req, res, url, method) : localTenant;
+  if (isTenantPath && !tenant) return; // answered: sign-in, invite, session, owner tools or account deletion
+  const { store, runner, ctx, root } = tenant ?? localTenant ?? ({} as Tenant);
 
   if (url.pathname.startsWith('/api/')) {
     if (method !== 'GET' && req.headers['x-capsula'] !== '1') return send(res, 403, { error: 'Запит без заголовка сайту відхилено' });
+    if (method === 'GET' && url.pathname === '/api/session') return send(res, 200, { mode: 'local', user: null });
     if (method === 'GET' && url.pathname === '/api/state') {
       const db = store.read();
-      return send(res, 200, { db: stateView(db), runner: runner.state, recovered: store.recovered(), dataDir: path.relative(PROJECT_ROOT, DATA_DIR) }, req);
+      return send(res, 200, { db: stateView(db), runner: runner.state, recovered: store.recovered(), dataDir: path.relative(root, store.dataDir) }, req);
     }
     if (method === 'GET' && url.pathname.startsWith('/api/jobs/') && url.pathname.endsWith('/log')) {
       const id = decodeURIComponent(url.pathname.split('/')[3]);
       const job = store.read().jobs.find((j) => j.id === id);
       if (!job?.logPath) return send(res, 404, { error: 'Журналу немає' });
-      const text = fs.existsSync(path.join(PROJECT_ROOT, job.logPath)) ? fs.readFileSync(path.join(PROJECT_ROOT, job.logPath), 'utf8') : '';
+      const text = fs.existsSync(path.join(root, job.logPath)) ? fs.readFileSync(path.join(root, job.logPath), 'utf8') : '';
       return send(res, 200, { log: text.slice(-20000) });
     }
     if (method === 'POST' && url.pathname === '/api/upload') {
@@ -144,17 +212,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (url.pathname.startsWith('/media/')) {
     const rel = decodeURIComponent(url.pathname.slice('/media/'.length));
-    const file = resolveAllowed(PROJECT_ROOT, DATA_DIR, rel);
+    const file = resolveAllowed(root, store.dataDir, rel);
     if (!fs.existsSync(file)) return send(res, 404, { error: 'Файл не знайдено' });
     return sendFile(res, file, 'private, max-age=3600');
   }
 
   if (url.pathname.startsWith('/thumb/')) {
     const rel = decodeURIComponent(url.pathname.slice('/thumb/'.length));
-    const file = resolveAllowed(PROJECT_ROOT, DATA_DIR, rel);
+    const file = resolveAllowed(root, store.dataDir, rel);
     if (!fs.existsSync(file)) return send(res, 404, { error: 'Файл не знайдено' });
     const size = snapWidth(Number(url.searchParams.get('w')) || 480);
-    const thumb = await thumbnail(PROJECT_ROOT, DATA_DIR, rel, rel, size);
+    const thumb = await thumbnail(root, store.dataDir, rel, rel, size);
     return sendFile(res, thumb, 'private, max-age=86400');
   }
 
@@ -176,17 +244,11 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const interrupted = await runner.recover();
-// Warm the thumbnail cache for everything the UI shows, in the background.
-{
-  const db = store.read();
+// Local mode warms the thumbnail cache for everything the UI shows, in the background (the tenant resumes an interrupted run itself).
+if (localTenant) {
+  const db = localTenant.store.read();
   prewarm(PROJECT_ROOT, DATA_DIR, [...db.photos.map((p) => p.path), ...db.results.map((r) => r.imagePath)]);
 }
 server.listen(PORT, HOST, () => {
-  console.log(`${new Date().toISOString()} Capsula: http://${HOST}:${PORT}  (дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${runner.state.codexBin})`);
-  // A run was in progress when the server stopped: continue it. Jobs that were only queued wait for "Запустити".
-  if (interrupted > 0) {
-    console.log(`Продовжую чергу: ${interrupted} перерваних завдань`);
-    void runner.drain();
-  }
+  console.log(`${new Date().toISOString()} Capsula: http://${HOST}:${PORT}  (${ACCOUNTS ? `акаунти, ${authConfig!.baseURL}` : `дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${localTenant!.runner.state.codexBin}`})`);
 });

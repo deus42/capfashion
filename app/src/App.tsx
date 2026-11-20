@@ -12,6 +12,7 @@ import { WardrobePage } from './pages/Wardrobe.tsx';
 import { GalleryPage } from './pages/Gallery.tsx';
 import { ShoppingPage } from './pages/Shopping.tsx';
 import { ProfilePage } from './pages/Profile.tsx';
+import { Landing } from './pages/Landing.tsx';
 
 function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: number; desk?: boolean }) {
   return (
@@ -39,11 +40,12 @@ function Redirect({ to }: { to: string }) {
 }
 
 export default function App() {
-  const { state, error } = useApp();
+  const { state, error, signedOut } = useApp();
   const { parts, query } = useRoute();
   const intake = useIntake();
   const section = parts[0] ?? 'home';
 
+  if (signedOut) return <Landing />;
   if (!state) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--muted)' }}>

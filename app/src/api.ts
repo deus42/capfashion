@@ -29,6 +29,13 @@ async function parse<T>(res: Response): Promise<T> {
   return data as T;
 }
 
+/** Accounts mode signs people in with Google; the owner's local site has no accounts. */
+export interface SessionUser { id: string; name: string; email: string; image: string | null; owner: boolean }
+export interface Session { mode: 'local' | 'accounts'; user: SessionUser | null }
+export async function getSession(): Promise<Session> {
+  return parse(await fetch('/api/session', { cache: 'no-store' }));
+}
+
 export async function getState(): Promise<AppState> {
   return parse(await fetch('/api/state', { cache: 'no-store' }));
 }

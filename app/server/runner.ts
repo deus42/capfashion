@@ -169,7 +169,26 @@ function parseReply(text: string): { status?: string; notes?: string; reason?: s
  * attached as images, ephemeral session. Up to `settings.concurrency` jobs
  * (default 2) run at once.
  */
-export function createRunner(store: Store, projectRoot: string, codexBin = findCodex()) {
+/** A shared cap on jobs running at once across every account's queue (accounts mode); local mode passes none. */
+export interface Limiter { run<T>(fn: () => Promise<T>): Promise<T> }
+export function createLimiter(max: number): Limiter {
+  let running = 0;
+  const waiting: (() => void)[] = [];
+  return {
+    async run<T>(fn: () => Promise<T>) {
+      if (running >= max) await new Promise<void>((r) => waiting.push(r));
+      running += 1;
+      try {
+        return await fn();
+      } finally {
+        running -= 1;
+        waiting.shift()?.();
+      }
+    },
+  };
+}
+
+export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter } = {}) {
   const active = new Set<string>();
   // Item revisions each advise run saw when its prompt was built (see seenRevs).
   const adviseRevs = new Map<string, Map<string, number>>();
@@ -602,12 +621,14 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
   }
 
   let draining = false;
+  let stopped = false;
   async function drain() {
     if (draining) return;
     draining = true;
     state.lastError = null;
     try {
       for (;;) {
+        if (stopped) break;
         const db = store.read();
         const limit = Math.max(1, Math.min(4, db.settings.concurrency ?? 2));
         // What the owner starts by hand (photo intake, analyzer) goes first, then try-ons, then packshots.
@@ -629,7 +650,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
           const next = queued.splice(idx, 1)[0];
           active.add(next.id);
           sync();
-          void runSafe(next.id).finally(() => {
+          void (opts.limiter ? opts.limiter.run(() => runSafe(next.id)) : runSafe(next.id)).finally(() => {
             active.delete(next.id);
             sync();
           });
@@ -669,8 +690,13 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       .then(() => drain())
       .catch(() => undefined);
   };
-  setTimeout(weeklyCheck, 2 * 60 * 1000).unref?.();
-  setInterval(weeklyCheck, 60 * 60 * 1000).unref?.();
+  const timers = [setTimeout(weeklyCheck, 2 * 60 * 1000), setInterval(weeklyCheck, 60 * 60 * 1000)];
+  for (const t of timers) t.unref?.();
+  /** A deleted account's queue stops: no new jobs start and the weekly review ends. */
+  const stop = () => {
+    stopped = true;
+    for (const t of timers) clearTimeout(t);
+  };
 
-  return { state, drain, recover };
+  return { state, drain, recover, stop };
 }

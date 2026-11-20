@@ -1814,3 +1814,53 @@ test('a proposal is shown only while its purchases fit the closed set: planned, 
   ];
   assert.deepEqual(openSuggestions(db).map((s) => s.id).sort(), ['free', 'planned', 'replaces']);
 });
+
+// ── Production stage 1: accounts and per-account wardrobes (production spec §4–5) ──
+
+test('every account gets its own empty, valid wardrobe folder; deleting the account removes it and stops its queue', async () => {
+  const { createTenants, emptyDb } = await import('./tenants.ts');
+  assert.equal(validateDb(emptyDb()), null);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-tenants-'));
+  const tenants = createTenants({ projectRoot: dir, dataDir: dir, seed: emptyDb });
+  const a = tenants.forUser('user-aaaaaa');
+  const b = tenants.forUser('user-bbbbbb');
+  await a.store.mutate((d) => void d.needs.push({ id: 'N-a', rev: 1, title: 'Only A', category: 'tees', priority: 'core', description: '', why: '', fitCheck: '', status: 'open', origin: 'owner', createdAt: at, updatedAt: at }));
+  assert.equal(a.store.read().needs.length, 1);
+  assert.equal(b.store.read().needs.length, 0, 'accounts never share data');
+  assert.equal(a.root, path.join(dir, 'users', 'user-aaaaaa'));
+  assert.equal(tenants.forUser('user-aaaaaa'), a, 'an open account is reused');
+  assert.throws(() => tenants.forUser('../escape'), /Unsafe account id/);
+  tenants.remove('user-aaaaaa');
+  assert.equal(fs.existsSync(path.join(dir, 'users', 'user-aaaaaa')), false);
+  assert.equal(tenants.forUser('user-aaaaaa').store.read().needs.length, 0, 'a new sign-up after deletion starts empty');
+  b.runner.stop();
+  tenants.forUser('user-aaaaaa').runner.stop();
+});
+
+test('the shared job limiter runs at most N jobs at once across queues', async () => {
+  const { createLimiter } = await import('./runner.ts');
+  const limiter = createLimiter(2);
+  let running = 0, peak = 0;
+  const job = () => limiter.run(async () => { running++; peak = Math.max(peak, running); await new Promise((r) => setTimeout(r, 20)); running--; });
+  await Promise.all([job(), job(), job(), job(), job()]);
+  assert.equal(peak, 2);
+});
+
+test('accounts: config needs both Google keys and a strong secret in production; invites are single-use and expire', async () => {
+  const { authConfigFromEnv, createAuth } = await import('./auth.ts');
+  assert.equal(authConfigFromEnv({}, '/tmp'), null, 'no Google keys: the local single-user site');
+  assert.throws(() => authConfigFromEnv({ GOOGLE_CLIENT_ID: 'x' }, '/tmp'), /both/);
+  assert.throws(() => authConfigFromEnv({ GOOGLE_CLIENT_ID: 'x', GOOGLE_CLIENT_SECRET: 'y', NODE_ENV: 'production' }, '/tmp'), /BETTER_AUTH_SECRET/);
+  const cfg = authConfigFromEnv({ GOOGLE_CLIENT_ID: 'x.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'y', OWNER_EMAIL: 'Owner@Example.test', BETTER_AUTH_URL: 'https://capsula.example/path' }, fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-auth-')))!;
+  assert.equal(cfg.baseURL, 'https://capsula.example');
+  assert.equal(cfg.ownerEmail, 'owner@example.test');
+  assert.equal(cfg.openSignup, false);
+  const auth = await createAuth({ ...cfg, secret: 'k'.repeat(48) });
+  const invite = auth.invites.create();
+  assert.ok(auth.validInvite(invite.code));
+  assert.equal(auth.validInvite('unknown'), null);
+  auth.invites.disable(invite.code);
+  assert.equal(auth.validInvite(invite.code), null, 'a cancelled invite no longer admits anyone');
+  assert.equal(await auth.userOf({ headers: {} } as never), null);
+  auth.close();
+});

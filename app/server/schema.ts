@@ -4,7 +4,7 @@ import { pieceSetError } from '../src/capsule-pieces.ts';
 
 export const SCHEMA_VERSION = 1;
 
-export const CATEGORIES = ['outerwear', 'knitwear', 'shirts', 'tees', 'trousers', 'shorts', 'shoes', 'accessories'] as const;
+export const CATEGORIES = ['outerwear', 'knitwear', 'shirts', 'tees', 'dresses', 'trousers', 'shorts', 'skirts', 'shoes', 'accessories'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export const ITEM_STATUSES = ['needs_confirmation', 'confirmed', 'inactive'] as const;
@@ -398,7 +398,20 @@ export interface Profile {
   /** «Відстань»: how far physical stores may be, in km; 0 = online only; unset = any distance. */
   radiusKm?: number;
   preferences: { comfort: string; materials: string; fit: string; branding: string };
+  /** Interface and reply language (production spec §7); unset = the browser's, then Ukrainian. */
+  language?: Language;
+  /** «Який одяг підбирати?» (spec §3, §7): what the stylist, searches and try-ons dress the person in; unset = any. */
+  wardrobeFocus?: WardrobeFocus;
+  /** First sign-in (spec §3): «На фото я або людина, яка дала згоду. Мені 18+». */
+  consentAt?: string;
+  /** Weather periods follow the hemisphere (spec §7); unset = northern. */
+  hemisphere?: 'north' | 'south';
 }
+
+export const LANGUAGES = ['uk', 'en'] as const;
+export type Language = (typeof LANGUAGES)[number];
+export const WARDROBE_FOCUS = ['men', 'women', 'any'] as const;
+export type WardrobeFocus = (typeof WARDROBE_FOCUS)[number];
 
 export interface Settings {
   codexModel: string;
@@ -565,6 +578,9 @@ export function validateDb(db: unknown): string | null {
     if (ref.hair && !d.photos.some((p) => p.id === ref.hair!.sourcePhotoId && p.source !== 'generated' && !p.inspiration && p.path === ref.hair!.original.path)) return 'Профіль: зачіска повинна походити з власного оригіналу';
   }
   for (const k of MEASURE_KEYS) if (!d.profile.measurements?.[k]) return `Профіль: немає мірки ${k}`;
+  if (d.profile.language !== undefined && !LANGUAGES.includes(d.profile.language)) return 'Профіль: невідома мова';
+  if (d.profile.wardrobeFocus !== undefined && !WARDROBE_FOCUS.includes(d.profile.wardrobeFocus)) return 'Профіль: невідомий гардероб';
+  if (d.profile.hemisphere !== undefined && d.profile.hemisphere !== 'north' && d.profile.hemisphere !== 'south') return 'Профіль: невідома півкуля';
   if (!d.settings?.codexModel) return 'Налаштування: немає моделі Codex';
   return null;
 }

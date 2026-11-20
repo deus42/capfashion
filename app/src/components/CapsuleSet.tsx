@@ -80,7 +80,7 @@ export function CapsuleSetEditor({ draft, onChange }: { draft: SetDraft; onChang
   const needs = db.needs.filter((n) => n.status === 'open' && !inSet.has(`need:${n.id}`));
   const roleOf = (r: SlotRef) => {
     const c = pieceCategory(db, r);
-    return c === 'outerwear' ? 'layer' : c === 'trousers' || c === 'shorts' ? 'bottom' : c === 'shoes' || c === 'accessories' ? c : 'top';
+    return c === 'outerwear' ? 'layer' : c === 'trousers' || c === 'shorts' || c === 'skirts' ? 'bottom' : c === 'shoes' || c === 'accessories' ? c : 'top';
   };
   const ordered = [...draft.pieces].sort((a, b) => ROLE_ORDER.indexOf(roleOf(a)) - ROLE_ORDER.indexOf(roleOf(b)));
 

@@ -4,13 +4,14 @@
 import type { Category, DB, Item, Job, Look, Season, SlotKey, Slots } from './schema.ts';
 import { CATEGORIES, SEASONS, SLOT_KEYS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
+import { focusLine, replyLanguage } from './person.ts';
 import { hiddenLookIds, lookKeys } from '../src/rating.ts';
 import { isEyewear, weakPiece } from '../src/lib.ts';
 import { alreadySeen, refusedPieces } from '../src/look-memory.ts';
 
 export const CATEGORY_UK: Record<Category, string> = {
-  outerwear: 'верхній одяг', knitwear: 'худі й трикотаж', shirts: 'сорочки й поло', tees: 'футболки',
-  trousers: 'штани', shorts: 'шорти', shoes: 'взуття', accessories: 'аксесуари',
+  outerwear: 'верхній одяг', knitwear: 'худі й трикотаж', shirts: 'сорочки й поло', tees: 'футболки', dresses: 'сукні',
+  trousers: 'штани', shorts: 'шорти', skirts: 'спідниці', shoes: 'взуття', accessories: 'аксесуари',
 };
 
 const str = { type: 'string' } as const;
@@ -91,10 +92,10 @@ export function intakePrompt(db: DB, job: Job, photoNames: string[]) {
     `Uploaded photo: ${photoNames.join(', ')}. This is a single-user app: the photos are uploaded by the owner, and a person who is the clear main subject is the owner. Do not try to identify anyone or compare faces.`,
     'photoType: person_full_body = the main person visible head to shoes; person_face = close-up of the main person\'s face/shoulders; person_partial = the main person visible but cropped (e.g. shoes hidden); garments_only = clothes/shoes/accessories without a person (hanger, flat lay, floor, product photo); label = a garment label/tag close-up; other = anything else.',
     'singlePerson: true if exactly one person is the main subject (others absent or clearly in the background).',
-    'baseSuitable: true only for person_full_body or person_face photos with singlePerson that meet the try-on base-photo standard: front-facing, eyes visible, no sunglasses/cap, no phone or objects in front of the body, not a mirror selfie, even light, plain background, sharp; full length for person_full_body. baseIssues: in Ukrainian, a short comma list of what breaks the standard (empty string if none or not applicable).',
+    `baseSuitable: true only for person_full_body or person_face photos with singlePerson that meet the try-on base-photo standard: front-facing, eyes visible, no sunglasses/cap, no phone or objects in front of the body, not a mirror selfie, even light, plain background, sharp; full length for person_full_body. baseIssues: in ${replyLanguage(db)}, a short comma list of what breaks the standard (empty string if none or not applicable).`,
     'label: for photoType label, read the tag: brand, size, composition (as printed, keep original language) and itemId of the wardrobe item it most likely belongs to (empty string if unclear). For other photo types all label fields are empty strings.',
     'garments: for person_full_body, person_partial and garments_only list every distinct garment, pair of shoes and visible accessory of the main person or shown on its own (ignore other people, the phone, mirror and background). Only wearable items: clothing, shoes and fashion accessories (watch, glasses, cap/hat, belt, scarf, bag or backpack worn as part of the outfit). Never list shopping bags, phones, headphones/earbuds, keys or other objects. Skip anything barely visible that cannot be described reliably. For person_face, label and other: an empty array.',
-    'For each: title in Ukrainian (short, descriptive: colour + type + visible brand only if the logo is clearly legible), category from the enum, colour in Ukrainian, notes in Ukrainian (visible construction, material look, uncertainty). Never guess sizes, exact models or composition.',
+    `For each: title in ${replyLanguage(db)} (short, descriptive: colour + type + visible brand only if the logo is clearly legible), category from the enum, colour in ${replyLanguage(db)}, notes in ${replyLanguage(db)} (visible construction, material look, uncertainty). Never guess sizes, exact models or composition.`,
     'duplicateOf: check the existing wardrobe list before treating anything as new. Put a listed id (e.g. W-047) only when distinctive details visible here match that item\'s notes — hardware shape and colour (buckle, zip, buttons), texture, stitching, logo, pattern. The same type and colour alone is NOT enough: the owner may have several black belts, white tees or dark jackets. If the listed item is known only from a worn or mirror photo, or any visible detail differs, use an empty string — a new candidate the owner can merge is better than hiding a new item inside an old one.',
     'coversNeed: the shopping list below holds things the owner was advised to buy. If this garment is the owner\'s own piece (worn, on a hanger, on the floor or laid flat — not a shop listing or screenshot) and it is what one of those entries asks for — same category, same garment type, same colour family — put that need id (e.g. N-10); a small logo or minor detail difference is fine, a different colour or garment type is not. Otherwise an empty string. One garment covers at most one need.',
     'Return status "error" only if the image cannot be analysed at all; otherwise status "done" and reason "" (photoType other is still "done").',
@@ -156,18 +157,18 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
   const completeBlock = required.length
     ? [
         `COMPLETE-THE-LOOK MODE: the owner picked ${required.map((i) => `${i.id} (${i.title})`).join(', ')}. Every look MUST contain all of these exact ids in the appropriate slots.`,
-        'Propose 3 to 4 clearly different ways to complete them (different occasions or moods), adding other wardrobe items for the missing slots. In "why", say in one Ukrainian sentence what the added pieces bring (colour, balance, formality).',
+        `Propose 3 to 4 clearly different ways to complete them (different occasions or moods), adding other wardrobe items for the missing slots. In "why", say in one ${replyLanguage(db)} sentence what the added pieces bring (colour, balance, formality).`,
         'Name the selection after the picked pieces, e.g. "Доповнення: оливковий overshirt".',
       ].join('\n')
     : '';
   return [
     'You are the Capsula stylist running unattended. Build outfits ONLY from the owner\'s existing wardrobe listed below and answer with JSON only (schema enforced).',
-    'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
+    focusLine(db),
     `Profile notes: ${Object.values(db.profile.preferences).filter(Boolean).join(' ')}`,
     job.instructions ? `Request from the owner: ${job.instructions}` : 'Request: a balanced set of everyday outfits for the current season.',
     completeBlock,
     '',
-    'Rules: use only ids from the list (exact strings). Each look needs a bottom and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
+    'Rules: use only ids from the list (exact strings). Each look needs a bottom (a dress in the top slot replaces both top and bottom) and shoes; add a top unless the outer layer is worn closed; at most one item per slot except accessories (max 2). Prefer items "confirmed by owner", but candidates are allowed. Produce 4 to 6 looks unless the owner asked otherwise.',
     'Same-look rule (the owner\'s): two outfits are the SAME look when they are identical or differ by only one piece — one swap, one addition or one removal, accessories included. A DIFFERENT look has at least two different pieces. Every look you return must be a different look from each other and from every outfit listed below; looks that break this are discarded.',
     'Spread the wardrobe: use pieces that existing outfits rarely use, vary colours and silhouettes. Give the selection a new name, different from the existing names.',
     rejected.length ? `Outfits the owner REJECTED (never propose them again or anything within one piece of them; steer away from their direction):\n${rejected.map((l) => outfitLine(l as Look)).join('\n')}` : '',
@@ -175,7 +176,7 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
     liked.length ? `Outfits the owner LIKED (already saved — do not repeat or near-copy them; their style is a good signal):\n${liked.map(outfitLine).join('\n')}` : '',
     existing.length ? `Other existing outfits (do not repeat or near-copy):\n${existing.map(outfitLine).join('\n')}` : '',
     names.length ? `Existing selection names (do not reuse): ${names.join('; ')}` : '',
-    'Write name, description, look names, occasion and why in Ukrainian, short (why: one sentence on colour/silhouette logic). season: all | warm | transitional | cold.',
+    `Write name, description, look names, occasion and why in ${replyLanguage(db)}, short (why: one sentence on colour/silhouette logic). season: all | warm | transitional | cold.`,
     attached.length ? `Packshot images are attached as files named by item id (${attached.length} files) — use them to judge colours and styles.` : '',
     'If the wardrobe is not enough for a single sensible outfit, return status "error" with the reason.',
     '',
@@ -340,7 +341,8 @@ export function applyAnalyze(db: DB, job: Job, reply: AnalyzeReply): string | nu
       const limit = k === 'accessories' ? 2 : 1;
       slots[k] = [...new Set((l[k] ?? []).filter((id) => owned.has(id)))].slice(0, limit).map((id) => ({ kind: 'item' as const, id }));
     }
-    if (!slots.bottom.length || !slots.shoes.length) continue;
+    const dress = slots.top.some((r) => db.items.find((i) => i.id === r.id)?.category === 'dresses');
+    if ((!slots.bottom.length && !dress) || !slots.shoes.length) continue;
     const set = lookKeys({ slots });
     if (required.some((id) => !set.has(`item:${id}`))) continue;
     if ([...set].some((k) => refused.has(k.slice(5)) && !required.includes(k.slice(5)))) continue;

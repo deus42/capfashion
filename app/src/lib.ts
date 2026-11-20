@@ -9,19 +9,22 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   knitwear: 'Худі й трикотаж',
   shirts: 'Сорочки й поло',
   tees: 'Футболки',
+  dresses: 'Сукні',
   trousers: 'Штани',
   shorts: 'Шорти',
+  skirts: 'Спідниці',
   shoes: 'Взуття',
   accessories: 'Аксесуари',
 };
 
 export const SEASON_LABEL: Record<Season, string> = { all: 'Усі сезони', warm: 'Тепло', transitional: 'Міжсезоння', cold: 'Холод' };
 
-/** The five weather periods (owner, 19.11), with Rijeka's months: Mar–May spring, Jun–Aug summer, Sep–Oct early autumn, Nov late autumn, Dec–Feb winter. */
+/** The five weather periods (owner, 19.11), temperate months of the northern hemisphere: Mar–May spring, Jun–Aug summer, Sep–Oct early autumn, Nov late autumn, Dec–Feb winter (spec §7). */
 export const PERIOD_LABEL: Record<Period, string> = { spring: 'Весна', summer: 'Літо', 'early-autumn': 'Рання осінь', 'late-autumn': 'Пізня осінь', winter: 'Зима' };
 export const PERIOD_TEMP: Record<Period, string> = { spring: '10–20 °C', summer: 'від 20 °C', 'early-autumn': '12–20 °C', 'late-autumn': '5–12 °C', winter: '0–10 °C, дощ' };
-export function currentPeriod(date = new Date()): Period {
-  const m = date.getMonth() + 1;
+export function currentPeriod(date = new Date(), hemisphere: 'north' | 'south' = 'north'): Period {
+  // The southern hemisphere has the same periods six months later.
+  const m = ((date.getMonth() + (hemisphere === 'south' ? 6 : 0)) % 12) + 1;
   return m >= 3 && m <= 5 ? 'spring' : m <= 8 && m >= 6 ? 'summer' : m === 9 || m === 10 ? 'early-autumn' : m === 11 ? 'late-autumn' : 'winter';
 }
 /** «у приміщенні» (owner, 19.11): a look of a capsule only for cold periods, without any outer layer, is not for going out in 0–12 °C. */
@@ -35,7 +38,7 @@ export function indoorOnly(db: DB, look: Look): boolean {
 const NEAR: Record<Period, Period[]> = { spring: ['early-autumn', 'summer'], summer: ['spring', 'early-autumn'], 'early-autumn': ['spring', 'late-autumn'], 'late-autumn': ['winter', 'early-autumn'], winter: ['late-autumn'] };
 /** Home (owner, 19.11): ready looks for today — capsules of the current period first, then the nearest periods; liked and best scored first. */
 export function todayLooks(db: DB, n = 2): Look[] {
-  const now = currentPeriod();
+  const now = currentPeriod(new Date(), db.profile.hemisphere);
   const caps = db.capsules.filter((c) => !c.redirectCapsuleIds && c.kind !== 'selection' && !isCapsuleHidden(db, c) && c.periods?.length);
   const rank = (ps: Period[]) => caps
     .filter((c) => c.periods!.some((p) => ps.includes(p)))
@@ -54,9 +57,9 @@ export const SLOT_LABEL: Record<SlotKey, string> = { top: 'Верх', layer: 'Ш
 
 /** Which wardrobe categories fit each outfit slot. */
 export const SLOT_CATEGORIES: Record<SlotKey, Category[]> = {
-  top: ['tees', 'shirts', 'knitwear'],
+  top: ['tees', 'shirts', 'knitwear', 'dresses'],
   layer: ['outerwear', 'knitwear', 'shirts'],
-  bottom: ['trousers', 'shorts'],
+  bottom: ['trousers', 'shorts', 'skirts'],
   shoes: ['shoes'],
   accessories: ['accessories'],
 };
@@ -392,12 +395,18 @@ export function openSuggestions(db: DB) {
 }
 
 /** «Де шукати» (Profile → Магазини): the owner's shopping place; empty means online only. */
-export const DEFAULT_LOCATION = 'Tower Center Rijeka, Rijeka, Croatia';
-export const shopLocation = (db: DB) => db.profile.location ?? DEFAULT_LOCATION;
+/** «Де шукати»: the person's shopping place; empty until they name one or share their location. */
+export const shopLocation = (db: DB) => db.profile.location ?? '';
 
 // «Магазини» (owner, 19.11): the shops of the found products and where their nearest store is.
+/** Country and region words shops add to their names («Levi’s Croatia», «Levi’s Hrvatska», «Levi’s DE»); generic, not anyone's place. */
+const COUNTRY_WORDS = 'croatia|hrvatska|slovenia|slovenija|serbia|srbija|bosnia|montenegro|ukraine|україна|ukraina|poland|polska|czech|česko|slovakia|hungary|magyarország|romania|bulgaria|greece|germany|deutschland|austria|österreich|switzerland|schweiz|italy|italia|france|spain|españa|portugal|netherlands|nederland|belgium|ireland|denmark|sweden|norway|finland|lithuania|latvia|estonia|uk|usa|us|eu|hr|si|rs|ua|pl|cz|sk|hu|ro|bg|gr|de|at|ch|it|fr|es|pt|nl|be|ie|dk|se|no|fi|lt|lv|ee';
+const COUNTRY_SUFFIX = new RegExp(`\\s+(${COUNTRY_WORDS})$`, 'i');
+/** A shop's plain name: no «(…)» notes and no trailing country word. */
+export const plainShopName = (name: string) => name.replace(/\s*\([^)]*\)/g, '').trim().replace(COUNTRY_SUFFIX, '').trim();
 /** One key per shop: «Levi’s Croatia» and «Levi’s Hrvatska» are the same shop. */
-export const storeKey = (name: string) => name.replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\b(croatia|hrvatska|hr|online|shop|store|eu)\b/g, ' ').replace(/\s+/g, ' ').trim();
+const KEY_NOISE = new RegExp(`\\b(${COUNTRY_WORDS}|online|shop|store)\\b`, 'g');
+export const storeKey = (name: string) => name.replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(KEY_NOISE, ' ').replace(/\s+/g, ' ').trim();
 
 /** Shops of the found products, once each, with their known place (a shop at the owner's place counts as known). */
 export function shopStores(db: DB) {
@@ -430,7 +439,7 @@ export const rankCapsules = (db: DB, caps: Capsule[]) =>
   caps
     .map((c, i) => {
       const { done, total } = capsuleReady(db, c);
-      return { c, i, full: total > 0 && done === total, share: total ? done / total : 0, now: Boolean(c.periods?.includes(currentPeriod())) };
+      return { c, i, full: total > 0 && done === total, share: total ? done / total : 0, now: Boolean(c.periods?.includes(currentPeriod(new Date(), db.profile.hemisphere))) };
     })
     // Capsules for the current weather period first (owner, 19.11), then liked, ready, …
     .sort((a, b) => Number(b.now) - Number(a.now) || Number(b.c.favorite) - Number(a.c.favorite) || Number(b.full) - Number(a.full) || b.share - a.share || a.i - b.i)

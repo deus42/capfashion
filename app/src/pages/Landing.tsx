@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { t } from '../i18n.ts';
 
 /**
  * The page before sign-in (production spec §3): the wordmark, one line and «Продовжити з Google».
@@ -27,26 +28,26 @@ export function Landing() {
       window.location.href = data.url;
     } catch {
       setBusy(false);
-      setProblem('Не вдалося відкрити вхід через Google. Спробуй ще раз.');
+      setProblem(t('Не вдалося відкрити вхід через Google. Спробуй ще раз.'));
     }
   };
 
-  const note = problem || (invalid ? 'Це запрошення вже використане або застаріло.' : failed ? 'Увійти не вдалося. Поки що Capsula відкрита за запрошенням.' : invited ? '' : 'Поки що за запрошенням.');
+  const note = problem || (invalid ? t('Це запрошення вже використане або застаріло.') : failed ? t('Увійти не вдалося. Поки що Capsula відкрита за запрошенням.') : invited ? '' : t('Поки що за запрошенням.'));
   return (
     <main className="landing">
       <div className="landing-inner">
         <h1 className="landing-mark">Capsula</h1>
-        <p className="landing-line">Кілька речей. Багато образів. На тобі.</p>
+        <p className="landing-line">{t('Кілька речей. Багато образів. На тобі.')}</p>
         <button className="landing-google" onClick={() => void signIn()} disabled={busy} aria-busy={busy}>
           {busy ? <Loader2 size={16} className="spin" /> : <GoogleMark />}
-          <span>Продовжити з Google</span>
+          <span>{t('Продовжити з Google')}</span>
         </button>
         {note && <p className="landing-note">{note}</p>}
       </div>
       <footer className="landing-foot">
-        <a href="https://github.com/deus42/capsula">Код</a>
-        <a href="/privacy">Приватність</a>
-        <a href="/terms">Умови</a>
+        <a href="https://github.com/deus42/capsula">{t('Код')}</a>
+        <a href="/privacy">{t('Приватність')}</a>
+        <a href="/terms">{t('Умови')}</a>
       </footer>
     </main>
   );

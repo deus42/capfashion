@@ -1,6 +1,6 @@
 import path from 'node:path';
-import type { DB, Item, Job, Look, Need, Photo, PhotoKind, ReworkReason, SlotKey, SlotRef, Slots, SnapshotSlot } from './schema.ts';
-import { CATEGORIES, ITEM_STATUSES, MEASURE_KEYS, PHOTO_KINDS, REWORK_REASONS, SEASONS, SLOT_KEYS } from './schema.ts';
+import type { DB, Item, Job, Look, Need, Photo, PhotoKind, ReworkReason, SlotKey, SlotRef, Slots, SnapshotSlot, Language, WardrobeFocus } from './schema.ts';
+import { CATEGORIES, ITEM_STATUSES, LANGUAGES, MEASURE_KEYS, PHOTO_KINDS, REWORK_REASONS, SEASONS, SLOT_KEYS, WARDROBE_FOCUS } from './schema.ts';
 import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
 import { prewarm, saveUpload } from './media.ts';
@@ -117,7 +117,7 @@ export function createJob(db: DB, look: Look, basePhotoIds: string[], instructio
   return job;
 }
 
-const ITEM_SLOT: Record<Item['category'], SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
+const ITEM_SLOT: Record<Item['category'], SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', dresses: 'top', trousers: 'bottom', shorts: 'bottom', skirts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
 
 export function packshotJob(db: DB, target: { itemId?: string; needId?: string }, instructions = '', retryOf?: string, frozen?: Job['snapshot']): Job {
   let snapshot = frozen;
@@ -970,6 +970,17 @@ on('PATCH', '/api/profile', (ctx, _p, b) =>
       for (const k of ['comfort', 'materials', 'fit', 'branding'] as const) if (typeof pr[k] === 'string') prof.preferences[k] = str(pr[k])!;
     }
     if (Array.isArray(b.basePhotoIds)) prof.basePhotoIds = (b.basePhotoIds as string[]).filter((id) => db.photos.some((p) => p.id === id));
+    // First sign-in and «Побажання»: language, what to dress the person in, the consent, the hemisphere.
+    if (b.language !== undefined) {
+      if (!LANGUAGES.includes(b.language as never)) throw new HttpError(400, 'Невідома мова');
+      prof.language = b.language as Language;
+    }
+    if (b.wardrobeFocus !== undefined) {
+      if (!WARDROBE_FOCUS.includes(b.wardrobeFocus as never)) throw new HttpError(400, 'Невідомий гардероб');
+      prof.wardrobeFocus = b.wardrobeFocus as WardrobeFocus;
+    }
+    if (b.consent === true && !prof.consentAt) prof.consentAt = now();
+    if (b.hemisphere === 'north' || b.hemisphere === 'south') prof.hemisphere = b.hemisphere;
     return prof;
   }),
 );

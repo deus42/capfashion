@@ -4,7 +4,7 @@ import type { Need, Product } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, JobBar, Modal, UploadButton } from '../components/ui.tsx';
-import { distinctLooks, fmtDay, itemArt, looksUsing, purchasePlan, purchaseRanking, shopLocation, shopStores, siteLooks, storeKey } from '../lib.ts';
+import { distinctLooks, fmtDay, itemArt, looksUsing, plainShopName, purchasePlan, purchaseRanking, shopLocation, shopStores, siteLooks, storeKey } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
 
 const STALE_DAYS = 14;
@@ -141,13 +141,18 @@ const cleanName = (s: string) => s.replace(/\s*\((?=[^)]*\d)[A-Z0-9][A-Z0-9 /.-]
 type Where = { line: string; href?: string };
 function storePlaces(db: ReturnType<typeof useDb>): Map<string, Where> {
   const here = shopLocation(db);
+  // The city of the shopping place («Tower Center Rijeka, Rijeka, Croatia» → «Rijeka») is left out of store lines there.
+  const parts = here.split(',').map((x) => x.trim()).filter(Boolean);
+  const city = parts.length > 2 ? parts.at(-2)! : parts.length === 2 ? parts[1] : '';
+  const esc = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const noCity = (text: string, sep: string) => (city ? text.replace(new RegExp(`${sep}${esc}$`, 'i'), '') : text);
   const map = (q: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
   const out = new Map<string, Where>();
   for (const s of shopStores(db)) {
-    const name = s.name.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '');
+    const name = plainShopName(s.name);
     // A store at the owner's own shopping place is named like the others there.
-    const atHere = Boolean(here) && Boolean(s.place?.place.toLowerCase().includes(here.split(',')[0].toLowerCase().replace(/\s+rijeka$/, '')));
-    if (s.place && !s.place.online) out.set(s.key, { line: atHere ? here.split(',')[0] : `${s.place.place.replace(/,\s*Rijeka$/i, '')}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`) });
+    const atHere = Boolean(here) && Boolean(s.place?.place.toLowerCase().includes(noCity(here.split(',')[0], '\\s+').toLowerCase()));
+    if (s.place && !s.place.online) out.set(s.key, { line: atHere ? here.split(',')[0] : `${noCity(s.place.place, ',\\s*')}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`) });
     else if (s.atPlace && here) out.set(s.key, { line: here.split(',')[0], href: map(`${name} ${here}`) });
     else if (s.place?.online) out.set(s.key, { line: 'онлайн', href: s.place.url ?? (s.host ? `https://${s.host}` : undefined) });
   }
@@ -164,7 +169,7 @@ function ProductLine({ p, need, best, where }: { p: Product; need: Need; best: b
   const stale = p.checkedAt && Date.now() - new Date(p.checkedAt).getTime() > STALE_DAYS * 864e5;
   const name = cleanName(`${p.brand} ${p.model}`.trim());
   const open = need.status === 'open' && p.status !== 'purchased';
-  const shop = p.store.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '');
+  const shop = plainShopName(p.store);
   return (
     <div className={`product-line${p.status === 'purchased' ? ' bought' : ''}`}>
       <span className="pl-img">{photo ? <Img path={photo.path} w={160} /> : concept ? <Img path={concept.path} w={160} /> : <CategoryIcon category={need.category} size={18} />}</span>

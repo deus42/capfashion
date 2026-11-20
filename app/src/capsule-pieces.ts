@@ -19,7 +19,7 @@ type PieceDb = Pick<DB, 'items' | 'needs' | 'products'>;
 const SLOT_ORDER: SlotKey[] = ['layer', 'top', 'bottom', 'shoes', 'accessories'];
 const GARMENT_ROLES = ['top', 'layer', 'bottom'] as const;
 const DEFAULT_ROLE: Record<Category, PieceRole> = {
-  outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories',
+  outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', dresses: 'top', trousers: 'bottom', shorts: 'bottom', skirts: 'bottom', shoes: 'shoes', accessories: 'accessories',
 };
 
 export const pieceGroup = (category: Category): PieceGroup =>
@@ -129,7 +129,9 @@ export function capsuleSet(db: DB, c: Capsule): CapsuleSet {
     roles[p.role] += 1;
   }
   const over = (Object.keys(CAPSULE_LIMITS) as PieceGroup[]).filter((g) => counts[g] > CAPSULE_LIMITS[g]);
-  return { saved: Boolean(c.pieces), pieces, counts, roles, combinations: capsuleCombinations(roles), over };
+  // A dress worn as the top is a whole outfit on its own: it counts as a dress, not as a top to pair with bottoms.
+  const dresses = pieces.filter((p) => p.category === 'dresses' && p.role === 'top').length;
+  return { saved: Boolean(c.pieces), pieces, counts, roles, combinations: capsuleCombinations({ ...roles, top: roles.top - dresses, dresses }), over };
 }
 
 const GROUP_LIMIT_TEXT: Record<PieceGroup, string> = {

@@ -14,6 +14,8 @@ import { ShoppingPage } from './pages/Shopping.tsx';
 import { ProfilePage } from './pages/Profile.tsx';
 import { Landing } from './pages/Landing.tsx';
 import { LegalPage } from './pages/Legal.tsx';
+import { Welcome } from './pages/Welcome.tsx';
+import { pickLanguage, setLanguage } from './i18n.ts';
 
 function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: number; desk?: boolean }) {
   return (
@@ -41,11 +43,13 @@ function Redirect({ to }: { to: string }) {
 }
 
 export default function App() {
-  const { state, error, signedOut } = useApp();
+  const { state, error, signedOut, session } = useApp();
   const { parts, query } = useRoute();
   const intake = useIntake();
   const section = parts[0] ?? 'home';
 
+  // Language (spec §7): the profile's choice; accounts fall back to the browser, the owner's local site stays Ukrainian.
+  setLanguage(state?.db.profile.language ?? (session?.mode === 'accounts' ? pickLanguage() : 'uk'));
   // The legal pages open for everyone, signed in or not.
   if (section === 'privacy' || section === 'terms') return <LegalPage kind={section} />;
   if (signedOut) return <Landing />;
@@ -65,6 +69,8 @@ export default function App() {
     );
   }
 
+  // First sign-in (spec §3): what to dress the person in and the consent, before anything else.
+  if (session?.mode === 'accounts' && !state.db.profile.consentAt) return <Welcome />;
   const { db } = state;
   // The thin bar means work is happening now; queued work waiting for its turn shows nothing.
   // One span over everything running: it fills once from the first start to the last usual end and never jumps back.

@@ -5,6 +5,7 @@
 import type { DB, Item, Job, Need, Season, SlotRef, Slots, Suggestion } from './schema.ts';
 import { CATEGORIES, SEASONS, emptySlots } from './schema.ts';
 import { newId, now } from './store.ts';
+import { focusLine, replyLanguage } from './person.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
 import { SCORE_SCALE, SLOT_CATEGORIES, currentPeriod, hasPieces, isComplete, isEyewear, itemUsage, openSuggestions, siteLooks, weakPiece } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../src/rating.ts';
@@ -122,8 +123,8 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
   const weak = items.filter(weakPiece).map((i) => i.id);
   const unused = items.filter((i) => itemUsage(db, i.id).looks === 0 && !refused.has(i.id) && !weakPiece(i)).map((i) => i.id);
   return [
-    'You are the Capsula wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in Ukrainian, short.',
-    'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
+    `You are the Capsula wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in ${replyLanguage(db)}, short.`,
+    focusLine(db),
     `Profile — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     job.instructions ? `What changed: ${job.instructions}` : '',
     '',
@@ -133,13 +134,13 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
     chosen.length ? `The owner chose these pieces himself (added by hand or bought) — never suggest replacing them: ${chosen.join(', ')}.` : '',
     `2. looks — score ONLY these look ids now: ${toScore.join(', ') || 'none'} (the others are listed with their current score for comparison): 0–10 with ONE decimal for harmony of colours, silhouette, formality and season. ${SCALE_RULE} A look with any TO BUY piece is at most 8; 9+ only for looks that can be worn today; a near-duplicate of a stronger look scores low. weakItem: an item id in that look that clearly weakens it, and swapTo: an owned item id for the same slot that is clearly better and not already in the look; both empty if nothing is clearly better. why: one sentence.`,
     `3. newLooks — up to 3 new outfits from owned item ids only. First, every item with no shown look yet (${unused.join(', ') || 'none'}) that fits a listed capsule gets one outfit; then items rated 7+ with 0–1 shown looks. Every outfit requires the id of a listed capsule whose style and season fits. If none fits, propose a new capsule in newCapsules. Each needs a bottom and shoes; at most one item per slot except accessories (max 2). why: which owned pieces it brings into use and why it works.`,
-    `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short Ukrainian name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases or the declined purchases listed below. Usually empty.`,
+    `5. newNeeds — at most 2: a piece to BUY when a listed capsule clearly lacks something for its style and season (e.g. no warm layer, no fitting shoes) and no owned item can fill it. capsuleId, title (short ${replyLanguage(db)} name of the piece), category (${CATEGORIES.join(' | ')}), why (one sentence). Never repeat the open purchases or the declined purchases listed below. Usually empty.`,
     '4. newCapsules — at most 1, only when 3 or more strong outfits of one style and season are not covered by any listed capsule: a name, season (all | warm | transitional | cold), why and 3–5 looks (same rules). Usually empty.',
     'Never use eyewear (glasses, sunglasses, frames) anywhere — the owner wears none in looks.',
     'Same-look rule (the owner\'s): two outfits are the SAME look when identical or different by only one piece. Every new outfit must be a different look from each other, from every listed look and from every rejected outfit.',
     'Return status "error" only if the wardrobe cannot be read.',
     '',
-    `Today: ${new Date().toISOString().slice(0, 10)}, current weather period: ${currentPeriod()}.`,
+    `Today: ${new Date().toISOString().slice(0, 10)}, current weather period: ${currentPeriod(new Date(), db.profile.hemisphere)}.`,
     'Capsules are distinct FASHION capsules (owner, 19.11): every new outfit must fit its capsule\'s aesthetic, palette and weather periods in the brief.',
     'Capsules (id | name | season | periods | kind | brief):',
     capsules.map((c) => `${c.id} | ${c.name} | ${c.season} | ${(c.periods ?? []).join('+') || '—'} | ${c.kind ?? 'capsule'} | ${c.description.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n'),
@@ -178,7 +179,7 @@ export const seenRevs = (db: DB) => new Map<string, number>([...itemsToRate(db).
 const text = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
 
 /**
- * An outfit counts only when every piece is owned and fits its slot, with a top or an outer layer, a bottom and shoes.
+ * An outfit counts only when every piece is owned and fits its slot, with a top or an outer layer, a bottom (or a dress) and shoes.
  * Eyewear is quietly left out (never in looks); an unknown or deleted piece rejects the whole outfit.
  */
 function slotsFrom(o: Outfit, owned: Map<string, Item>, eyewear: Set<string>): Slots | null {
@@ -188,7 +189,8 @@ function slotsFrom(o: Outfit, owned: Map<string, Item>, eyewear: Set<string>): S
     if (ids.some((id) => !owned.has(id) || !SLOT_CATEGORIES[k].includes(owned.get(id)!.category))) return null;
     slots[k] = ids.slice(0, k === 'accessories' ? 2 : 1).map((id) => ({ kind: 'item' as const, id }));
   }
-  return (slots.top.length || slots.layer.length) && slots.bottom.length && slots.shoes.length ? slots : null;
+  const dress = slots.top.some((r) => owned.get(r.id)?.category === 'dresses');
+  return (slots.top.length || slots.layer.length) && (slots.bottom.length || dress) && slots.shoes.length ? slots : null;
 }
 
 /** Saves the advisor's answer: ratings, look advice, new proposals (valid open ones stay), replacement purchases. */

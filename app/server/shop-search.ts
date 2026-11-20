@@ -10,6 +10,7 @@ import type { DB, Job, Product, StorePlace } from './schema.ts';
 import { newId, now } from './store.ts';
 import { detectImageType } from './media.ts';
 import { siteLooks, wardrobeBrands, missingNeeds, resolveRef, shopLocation, shopStores } from '../src/lib.ts';
+import { placeCountry, replyLanguage, shopSection } from './person.ts';
 
 const str = { type: 'string' } as const;
 
@@ -70,7 +71,7 @@ export function queueStoreFind(db: DB): Job | null {
 export function ownerWhere(db: DB) {
   const c = db.profile.coords;
   const place = shopLocation(db);
-  const origin = c ? `the owner's shared location ${c.lat}, ${c.lon} (rounded to about 1 km)${place && !/моє місце/i.test(place) ? `, near «${place}»` : ''}` : `the owner's shopping place «${place || 'Rijeka, Croatia'}»`;
+  const origin = c ? `the owner's shared location ${c.lat}, ${c.lon} (rounded to about 1 km)${place && !/моє місце/i.test(place) ? `, near «${place}»` : ''}` : `the owner's shopping place «${place}»`;
   const radius = db.profile.radiusKm;
   // An emptied place (and no shared location) still means online only, as before the distance choice existed.
   return { origin, radius, onlineOnly: radius === 0 || (!c && !place) };
@@ -150,21 +151,21 @@ export function shopSearchPrompt(db: DB, job: Job) {
     .map((l) => `- ${l.name}: ${Object.values(l.slots).flat().filter((r) => !(r.kind === 'need' && r.id === need.id)).map((r) => resolveRef(db, r).title).join(', ')}`);
   return [
     'You are the Capsula shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
-    'Find 2 to 4 products the owner can buy now that fulfil this shopping recommendation.',
+    `Find 2 to 4 products the owner can buy now that fulfil this shopping recommendation, in the shops' ${shopSection(db)} sections.`,
     `Recommendation: ${need.title} — ${need.description}`,
     need.why ? `Why it is recommended: ${need.why}` : '',
     need.fitCheck ? `Fit to check: ${need.fitCheck}` : '',
     `Owner's brands (search these first): ${ownerBrands(db).join(', ') || '—'}.`,
     db.profile.stores?.length ? `Owner's stores (check these first): ${db.profile.stores.join(', ')}.` : '',
     where.onlineOnly
-      ? 'Where: only the official online stores of the owner\'s stores and brands that ship to Croatia (the owner buys online only). Other shops only if nothing suitable is found there.'
-      : `Where: first physical stores ${where.radius ? `within ${where.radius} km of` : 'near'} ${where.origin} — check which stores are there (the owner's stores first) and whether they sell such a piece; then the official online stores of the owner's stores and brands that ship to Croatia. Other shops only if nothing suitable is found there.`,
+      ? `Where: only the official online stores of the owner's stores and brands that ship to ${placeCountry(db) || "the owner's country"} (the owner buys online only). Other shops only if nothing suitable is found there.`
+      : `Where: first physical stores ${where.radius ? `within ${where.radius} km of` : 'near'} ${where.origin} — check which stores are there (the owner's stores first) and whether they sell such a piece; then the official online stores of the owner's stores and brands that ship to ${placeCountry(db) || "the owner's country"}. Other shops only if nothing suitable is found there.`,
     `Owner's taste — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     sizes ? `Known sizes: ${sizes}.` : '',
     looks.length ? `Looks this piece would complete (with their other pieces):\n${looks.join('\n')}` : '',
     known.length ? `Already found (do not return these again; find different ones): ${known.join(' ')}` : '',
     'Rules: only real products listed right now, each with its direct product page URL and a direct https image URL of the product taken from that page. Never invent products, prices, URLs or images; leave out anything you could not verify. model: the model name and colour as shown to shoppers, without article numbers or colour codes; sku: the article number if shown, else empty. price: the number with a decimal point as text, empty if unknown; currency: ISO code. inTower: true only when the store is at the owner\'s shopping place. size: the size to try from the known sizes, else empty. matchScore 0–10: colour, cut, material and style against the recommendation, the looks and the taste; use distinct scores so the best one is clear. matchNote: one short Ukrainian sentence why. Best first.',
-    'Return status "error" only if web search is unavailable; if nothing suitable exists, status "done" with an empty list and the reason in Ukrainian.',
+    `Return status "error" only if web search is unavailable; if nothing suitable exists, status "done" with an empty list and the reason in ${replyLanguage(db)}.`,
     job.instructions ? `Owner note: ${job.instructions}` : '',
   ]
     .filter(Boolean)

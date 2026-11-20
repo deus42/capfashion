@@ -243,7 +243,7 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
   const { act } = useApp();
   const art = (id?: string) => (id ? db.photos.find((p) => p.id === id)?.path : undefined);
   // Adding: each piece once, under its natural place (a jumper under «Верх», a jacket under «Шар»).
-  const NATURAL: Record<string, SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', trousers: 'bottom', shorts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
+  const NATURAL: Record<string, SlotKey> = { outerwear: 'layer', knitwear: 'top', shirts: 'top', tees: 'top', dresses: 'top', trousers: 'bottom', shorts: 'bottom', skirts: 'bottom', shoes: 'shoes', accessories: 'accessories' };
   const optionsFor = (s: SlotKey) => {
     const cats = slot ? SLOT_CATEGORIES[s] : SLOT_CATEGORIES[s].filter((c) => NATURAL[c] === s);
     const own = current?.kind === 'item' ? db.items.find((i) => i.id === current.id)?.category : current?.kind === 'need' ? db.needs.find((n) => n.id === current.id)?.category : undefined;

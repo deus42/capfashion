@@ -7,7 +7,8 @@ import { go, useApp, useDb } from '../store.tsx';
 import { Badge, ConfirmButton, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
 import { useIntake } from './Home.tsx';
 import { InfoMark } from './Glossary.tsx';
-import { MEASURES, fmtDay, shopLocation, wardrobeBrands } from '../lib.ts';
+import { MEASURES, fmtDay, plainShopName, shopLocation, wardrobeBrands } from '../lib.ts';
+import { currentLanguage, t } from '../i18n.ts';
 
 const STANDARD = [
   '2–3 фото на повний зріст спереду',
@@ -200,7 +201,7 @@ function Measurements() {
 }
 
 /** Brand and shop names written once: «Levi’s Croatia», «LEVI'S» and «Levi's» are one choice. */
-const cleanShop = (s: string) => s.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '').trim();
+const cleanShop = plainShopName;
 const nameKey = (s: string) => s.toLowerCase().replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function uniqueNames(list: string[]) {
   const seen = new Map<string, string>();
@@ -305,8 +306,27 @@ function Preferences() {
     ['fit', 'Посадка', 'Крій штанів, сорочок, верхнього одягу; довжина.'],
     ['branding', 'Брендування', 'Наскільки помітними можуть бути логотипи.'],
   ] as const;
+  // Language, what to dress the person in and the hemisphere save at once, like every quiet toggle.
+  const choose = (patch: Record<string, string>) => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, ...patch }));
+  const rows: { label: string; key: 'language' | 'wardrobeFocus' | 'hemisphere'; current?: string; options: [string, string][] }[] = [
+    { label: 'Мова', key: 'language', current: currentLanguage(), options: [['uk', 'Українська'], ['en', 'English']] },
+    { label: 'Одяг', key: 'wardrobeFocus', current: prof.wardrobeFocus, options: [['men', 'Чоловічий'], ['women', 'Жіночий'], ['any', 'Будь-який']] },
+    { label: 'Півкуля', key: 'hemisphere', current: prof.hemisphere ?? 'north', options: [['north', 'Північна'], ['south', 'Південна']] },
+  ];
   return (
-    <Section actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), 'Побажання збережено')}>Зберегти</button>}>
+    <Section actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), t('Побажання збережено'))}>{t('Зберегти')}</button>}>
+      <div className="pref-rows">
+        {rows.map((r) => (
+          <div key={r.key} className="pref-row">
+            <span>{t(r.label)}</span>
+            <div className="filters start">
+              {r.options.map(([value, label]) => (
+                <button key={value} className={r.current === value ? 'on' : ''} aria-pressed={r.current === value} onClick={() => r.current !== value && choose({ [r.key]: value })}>{value === 'en' || value === 'uk' ? label : t(label)}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
       <div className="grid-form">
         {fields.map(([k, label]) => (
           <label key={k} className="field">

@@ -5,6 +5,7 @@
 import type { Category, DB, Job, SlotKey, Slots, Suggestion } from './schema.ts';
 import { CATEGORIES, emptySlots } from './schema.ts';
 import { HttpError, newId, now } from './store.ts';
+import { focusLine, replyLanguage } from './person.ts';
 import { CATEGORY_UK, ownedItems } from './analysis.ts';
 import { PERIOD_LABEL, PERIOD_TEMP, SLOT_CATEGORIES, currentPeriod, isEyewear, weakPiece } from '../src/lib.ts';
 import { hiddenLookIds, isCapsuleHidden } from '../src/rating.ts';
@@ -76,7 +77,7 @@ const line = (db: DB, slots: Slots) =>
   SLOT_KEYS.flatMap((k) => slots[k].map((r) => (r.kind === 'item' ? `${k}:${r.id}` : `${k}:TO BUY ${db.needs.find((n) => n.id === r.id)?.title ?? r.id.replace(/^new:/, '')}`))).join(', ');
 
 export function discoverPrompt(db: DB, job: Job) {
-  const period = currentPeriod();
+  const period = currentPeriod(new Date(), db.profile.hemisphere);
   const required = job.requiredItemIds ?? [];
   const items = pieces(db).filter((i) => !weakPiece(i) || required.includes(i.id));
   const caps = searchCapsules(db).filter((c) => !job.capsuleId || c.id === job.capsuleId);
@@ -84,13 +85,14 @@ export function discoverPrompt(db: DB, job: Job) {
   const prefs = db.profile.preferences;
   return [
     'You are the Capsula stylist worker running unattended. Answer with JSON only (schema enforced). Text only, no images.',
-    `Today: ${new Date().toISOString().slice(0, 10)}; current weather period: ${PERIOD_LABEL[period]} (${PERIOD_TEMP[period]}), Rijeka, Croatia.`,
+    `Today: ${new Date().toISOString().slice(0, 10)}; current weather period: ${PERIOD_LABEL[period]} (${PERIOD_TEMP[period]})${db.profile.location ? `, near ${db.profile.location}` : ''}.`,
     'The owner wants NEW looks in distinct FASHION capsules (refined modern direction). Each look must clearly belong to its capsule\'s aesthetic, palette and weather periods below, and must differ from every outfit listed under "Never again" and "Existing" (owner\'s rule: identical, one piece different, or one core piece different ignoring accessories = the same look).',
-    'Owner preferences: comfortable relaxed smart casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers; no eyewear of any kind.',
+    focusLine(db),
+    'No eyewear of any kind.',
     `Profile — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     job.instructions ? `The owner asks: ${job.instructions}` : `No request: start with the capsules of the current period and the ones with the fewest looks.`,
     required.length ? `Every look MUST contain these owned pieces: ${required.join(', ')}.` : '',
-    `Return up to ${MAX_SEARCH_RESULTS} looks. Each: capsuleId (one of the capsules below), a short elegant Ukrainian name, why (one Ukrainian sentence: the idea of the look), owned item ids per slot (top, layer, bottom, shoes, accessories — at most 1 per slot, 2 accessories), and buy: at most 2 pieces the owner does not have that make the look work (slot, a short Ukrainian name with colour and material, category). Prefer owned pieces; a look needs a top or an outer layer, a bottom and shoes (owned or to buy).`,
+    `Return up to ${MAX_SEARCH_RESULTS} looks. Each: capsuleId (one of the capsules below), a short elegant ${replyLanguage(db)} name, why (one ${replyLanguage(db)} sentence: the idea of the look), owned item ids per slot (top, layer, bottom, shoes, accessories — at most 1 per slot, 2 accessories), and buy: at most 2 pieces the owner does not have that make the look work (slot, a short Ukrainian name with colour and material, category). Prefer owned pieces; a look needs a top or an outer layer, a bottom and shoes (owned or to buy).`,
     refused.length ? `Pieces the owner keeps refusing — never use them: ${refused.join(', ')}.` : '',
     `Pieces already planned to buy — when a look needs one of them, use its exact name in buy: ${db.needs.filter((n) => n.status === 'open').map((n) => n.title).join('; ') || '—'}.`,
     '',
@@ -165,6 +167,8 @@ export function applyDiscover(db: DB, job: Job, reply: DiscoverReply) {
       const title = text(b.title, 80);
       if (!title || !(SLOT_KEYS as readonly string[]).includes(slot) || !SLOT_CATEGORIES[slot].includes(category)) continue;
       if (slot !== 'accessories' && slots[slot].length) continue;
+      // A dress is the whole outfit: nothing to buy for the bottom beside it.
+      if (slot === 'bottom' && slots.top.some((r) => owned.get(r.id)?.category === 'dresses')) continue;
       if (free && setKeys) {
         // A closed set: a planned purchase of the set, a free place, or a named piece of the set it replaces.
         const planned = capsule.pieces!.some((r) => r.kind === 'need' && db.needs.some((n) => n.id === r.id && n.category === category && sameTitle(n.title, title)));

@@ -918,6 +918,21 @@ on('PATCH', '/api/profile', (ctx, _p, b) =>
     if (Array.isArray(b.brands)) prof.brands = list(b.brands);
     if (Array.isArray(b.stores)) prof.stores = list(b.stores);
     if (typeof b.location === 'string') prof.location = str(b.location, 120) ?? '';
+    // «Моє місце»: only a rounded position (≈ 1 km) is kept; null forgets it.
+    if (b.coords === null) delete prof.coords;
+    else if (b.coords && typeof b.coords === 'object') {
+      const c = b.coords as { lat?: unknown; lon?: unknown };
+      const lat = Number(c.lat);
+      const lon = Number(c.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new HttpError(400, 'Неправильне місце');
+      prof.coords = { lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100, at: now() };
+    }
+    if (b.radiusKm === null) delete prof.radiusKm;
+    else if (b.radiusKm !== undefined) {
+      const r = Number(b.radiusKm);
+      if (!Number.isFinite(r) || r < 0 || r > 1000) throw new HttpError(400, 'Неправильна відстань');
+      prof.radiusKm = Math.round(r);
+    }
     if (b.preferences && typeof b.preferences === 'object') {
       const pr = b.preferences as Record<string, unknown>;
       for (const k of ['comfort', 'materials', 'fit', 'branding'] as const) if (typeof pr[k] === 'string') prof.preferences[k] = str(pr[k])!;

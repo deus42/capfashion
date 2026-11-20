@@ -66,13 +66,36 @@ export function queueStoreFind(db: DB): Job | null {
   return j;
 }
 
+/** Where the owner shops (owner, 20.11): the shared location or the named place, and how far a store may be. */
+export function ownerWhere(db: DB) {
+  const c = db.profile.coords;
+  const place = shopLocation(db);
+  const origin = c ? `the owner's shared location ${c.lat}, ${c.lon} (rounded to about 1 km)${place && !/моє місце/i.test(place) ? `, near «${place}»` : ''}` : `the owner's shopping place «${place || 'Rijeka, Croatia'}»`;
+  const radius = db.profile.radiusKm;
+  return { origin, radius, onlineOnly: radius === 0 };
+}
+
+/** The owner's sizes, kept under the hood (owner, 20.11): wardrobe labels, bought products and any saved by hand. */
+export function ownerSizes(db: DB) {
+  const out = new Set<string>();
+  for (const s of db.profile.knownSizes) out.add(`${s.brand} ${s.category}: ${s.size}`);
+  for (const i of db.items) if (i.size && i.status !== 'inactive' && !i.mergedInto) out.add(`${i.brand || 'unknown brand'} ${i.category}: ${i.size}`);
+  for (const p of db.products) {
+    if (p.status !== 'purchased' || !p.recommendedSize) continue;
+    const need = db.needs.find((n) => n.id === p.needId);
+    out.add(`${p.brand} ${need?.category ?? ''}: ${p.recommendedSize} (bought)`.replace(/ :/, ':'));
+  }
+  return [...out];
+}
+
 export function storeFindPrompt(db: DB) {
-  const location = shopLocation(db) || 'Rijeka, Croatia';
+  const { origin, radius } = ownerWhere(db);
+  const limit = radius && radius > 0 ? radius : 300;
   return [
     // Worded like the shop search: the unattended worker refused a "store-finder" task as outside its sources (19.11).
     'You are the Cap Fashion shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
-    `Find where the owner can buy in person. The owner's shopping place: ${location}.`,
-    'For each shop below, find the NEAREST place to that shopping place where its clothes can be bought in person — the shop\'s own store or an official retailer that sells the brand, whichever is nearer. place: for a retailer its name first, then the mall or street and city, e.g. "Europa 92, Tower Center, Rijeka"; for an own store the mall or street and city, e.g. "Arena Centar, Zagreb". km: approximate road distance from the shopping place, 0 if unknown. url: the store locator or store page you used. online: true when there is no such place within about 300 km (then place empty). Only facts you verified on the web; never invent a store.',
+    `Find where the owner can buy in person. Measure from: ${origin}.`,
+    `For each shop below, find the NEAREST place to that point where its clothes can be bought in person — the shop's own store or an official retailer that sells the brand, whichever is nearer. place: for a retailer its name first, then the mall or street and city, e.g. "Europa 92, Tower Center, Rijeka"; for an own store the mall or street and city, e.g. "Arena Centar, Zagreb". km: approximate road distance from that point, 0 if unknown. url: the store locator or store page you used. online: true when there is no such place within about ${limit} km (then place empty). Only facts you verified on the web; never invent a store.`,
     'Shops (key | name | website):',
     storesToFind(db).map((s) => `${s.key} | ${s.name} | ${s.host || '—'}`).join('\n'),
   ].join('\n');
@@ -117,10 +140,10 @@ const linkKey = (href: string) => {
 export function shopSearchPrompt(db: DB, job: Job) {
   const need = db.needs.find((n) => n.id === job.needId)!;
   const prefs = db.profile.preferences;
-  const location = shopLocation(db);
+  const where = ownerWhere(db);
   // Links the owner dropped with × count as found: a new search never brings them back.
   const known = [...db.products.filter((p) => p.needId === need.id && p.url).map((p) => p.url!), ...(need.droppedUrls ?? [])];
-  const sizes = db.profile.knownSizes.map((s) => `${s.brand} ${s.category}: ${s.size}`).join('; ');
+  const sizes = ownerSizes(db).join('; ');
   const looks = siteLooks(db)
     .filter((l) => missingNeeds(db, l).includes(need.id))
     .map((l) => `- ${l.name}: ${Object.values(l.slots).flat().filter((r) => !(r.kind === 'need' && r.id === need.id)).map((r) => resolveRef(db, r).title).join(', ')}`);
@@ -132,9 +155,9 @@ export function shopSearchPrompt(db: DB, job: Job) {
     need.fitCheck ? `Fit to check: ${need.fitCheck}` : '',
     `Owner's brands (search these first): ${ownerBrands(db).join(', ') || '—'}.`,
     db.profile.stores?.length ? `Owner's stores (check these first): ${db.profile.stores.join(', ')}.` : '',
-    location
-      ? `Where: first the stores at the owner's shopping place «${location}» — check which stores are there (the owner's stores first) and whether they sell such a piece; then the official online stores of the owner's stores and brands that ship to Croatia. Other shops only if nothing suitable is found there.`
-      : 'Where: the official online stores of the owner\'s stores and brands that ship to Croatia. Other shops only if nothing suitable is found there.',
+    where.onlineOnly
+      ? 'Where: only the official online stores of the owner\'s stores and brands that ship to Croatia (the owner buys online only). Other shops only if nothing suitable is found there.'
+      : `Where: first physical stores ${where.radius ? `within ${where.radius} km of` : 'near'} ${where.origin} — check which stores are there (the owner's stores first) and whether they sell such a piece; then the official online stores of the owner's stores and brands that ship to Croatia. Other shops only if nothing suitable is found there.`,
     `Owner's taste — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     sizes ? `Known sizes: ${sizes}.` : '',
     looks.length ? `Looks this piece would complete (with their other pieces):\n${looks.join('\n')}` : '',

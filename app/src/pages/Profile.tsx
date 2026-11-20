@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Camera, Check, CircleCheck, Heart, Loader2, Plus, Ruler, Store, Tag, Trash2, TriangleAlert, X } from 'lucide-react';
-import type { Category, KnownSize, MeasureKey } from '../api.ts';
+import { Camera, Check, CircleCheck, Heart, Loader2, LocateFixed, MapPin, Minus, Plus, Ruler, Store, Trash2, TriangleAlert, X } from 'lucide-react';
+import type { MeasureKey } from '../api.ts';
 import { api, thumb } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
 import { Badge, PageHead, PhotoPicker, SubNav } from '../components/ui.tsx';
 import { useIntake } from './Home.tsx';
 import { InfoMark } from './Glossary.tsx';
-import { CATEGORY_LABEL, MEASURES, fmtDay, shopLocation, wardrobeBrands } from '../lib.ts';
+import { MEASURES, fmtDay, shopLocation, wardrobeBrands } from '../lib.ts';
 
 const STANDARD = [
   '2–3 фото на повний зріст спереду',
@@ -18,9 +18,8 @@ const STANDARD = [
 ];
 
 const TABS = [
-  { key: 'base', label: 'Базові фото', icon: <Camera size={17} /> },
+  { key: 'base', label: 'Мої фото', icon: <Camera size={17} /> },
   { key: 'measurements', label: 'Мірки', icon: <Ruler size={17} /> },
-  { key: 'sizes', label: 'Розміри брендів', icon: <Tag size={17} /> },
   { key: 'shops', label: 'Магазини', icon: <Store size={17} /> },
   { key: 'preferences', label: 'Побажання', icon: <Heart size={17} /> },
 ];
@@ -55,7 +54,7 @@ function BasePhotos() {
   const ok = base.filter((p) => p.meetsStandard).length;
   return (
     <Section
-      title="Базові фото"
+      title="Мої фото"
       sub={prof.identity?.disabledReason ?? (prof.identity ? `${base[0]?.originalName ?? 'Оригінал'} — опора обличчя. ${prof.identity.preserveHeadAngle ? 'Оригінальний ракурс.' : 'Прямий погляд, голова рівно.'} ${prof.identity.noGlasses ? 'Без окулярів.' : ''} ${prof.identity.hairstyle ?? ''}` : 'Обличчя для примірок береться лише з цих фото.')}
       actions={!prof.identity && <button className="btn" onClick={() => setPicker(true)}>Вибрати з наявних</button>}
     >
@@ -81,7 +80,7 @@ function BasePhotos() {
                       </Badge>
                     </span>
                     {!prof.identity && <span className="tr">
-                      <button className="icon-btn" aria-label="Прибрати з базових" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }), 'Прибрано')}>
+                      <button className="icon-btn" aria-label="Прибрати з моїх фото" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }), 'Прибрано')}>
                         <X size={14} />
                       </button>
                     </span>}
@@ -107,17 +106,50 @@ function BasePhotos() {
       </div>
       {picker && (
         <PhotoPicker
-          title="Базові фото з наявних"
+          title="Мої фото з наявних"
           selected={prof.basePhotoIds}
           filter={(p) => p.kind === 'base' || p.kind === 'source'}
           onClose={() => setPicker(false)}
           onSave={(ids) => {
             setPicker(false);
-            void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: ids }), 'Базові фото оновлено');
+            void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: ids }), 'Мої фото оновлено');
           }}
         />
       )}
     </Section>
+  );
+}
+
+/** A first tap on − or + starts from a usual value instead of zero (owner, 20.11: convenient selectors). */
+const TYPICAL: Record<MeasureKey, number> = { height: 178, chest: 100, waist: 86, hips: 100, shoulders: 46, sleeve: 64, inseam: 82, foot: 27 };
+const STEP: Record<MeasureKey, number> = { height: 1, chest: 1, waist: 1, hips: 1, shoulders: 0.5, sleeve: 0.5, inseam: 1, foot: 0.5 };
+
+/** «Як міряти» (owner, 20.11): a quiet line drawing with numbered measuring lines; the row in focus lights its line. */
+function MeasureFigure({ active }: { active: MeasureKey | null }) {
+  const body = 'M92 52L92 64C82 68 68 69 62 77C56 86 54 112 52 158L46 228C45 238 42 246 46 250C50 252 53 246 54 236L60 170C62 140 65 118 70 104C73 140 77 168 75 192C73 208 70 220 72 234L76 322L80 406C75 412 66 416 66 422C66 425 70 426 74 426L94 426L95 408L97 322L100 256';
+  const lines: { key: MeasureKey; d: string; at: [number, number] }[] = [
+    { key: 'height', d: 'M176 13L176 426M171 13L181 13M171 426L181 426', at: [176, 220] },
+    { key: 'chest', d: 'M71 114Q100 121 129 114', at: [100, 118] },
+    { key: 'waist', d: 'M75 190Q100 196 125 190', at: [100, 193] },
+    { key: 'hips', d: 'M72 232Q100 240 128 232', at: [100, 236] },
+    { key: 'shoulders', d: 'M62 70L138 70M62 66L62 74M138 66L138 74', at: [100, 70] },
+    { key: 'sleeve', d: 'M55 80L38 228', at: [46, 154] },
+    { key: 'inseam', d: 'M104 262L109 404', at: [107, 334] },
+    { key: 'foot', d: 'M66 436L94 436M66 432L66 440M94 432L94 440', at: [80, 436] },
+  ];
+  return (
+    <svg className="measure-figure" viewBox="0 0 200 446" role="img" aria-label="Як міряти">
+      <ellipse className="body" cx="100" cy="32" rx="15" ry="19" />
+      <path className="body" d={body} />
+      <path className="body" d={body} transform="translate(200 0) scale(-1 1)" />
+      {lines.map((l) => <path key={l.key} className={`ml${active === l.key ? ' on' : ''}`} d={l.d} />)}
+      {lines.map((l) => (
+        <g key={l.key} className={`mk${active === l.key ? ' on' : ''}`}>
+          <circle cx={l.at[0]} cy={l.at[1]} r="8" />
+          <text x={l.at[0]} y={l.at[1] + 0.5}>{MEASURES.findIndex((m) => m.key === l.key) + 1}</text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -127,135 +159,135 @@ function Measurements() {
   const prof = db.profile;
   const load = () => Object.fromEntries(MEASURES.map((m) => [m.key, prof.measurements[m.key].value?.toString() ?? ''])) as Record<MeasureKey, string>;
   const [values, setValues] = useState(load);
-  useEffect(() => setValues(load()), [prof.rev]);
+  const [active, setActive] = useState<MeasureKey | null>(null);
+  const timers = useRef<Partial<Record<MeasureKey, number>>>({});
+  // Saved values come back without overwriting a number that is still being typed.
+  useEffect(() => setValues((cur) => { const next = load(); for (const m of MEASURES) if (timers.current[m.key]) next[m.key] = cur[m.key]; return next; }), [prof.rev]);
+  // Each measure saves itself shortly after the last change (no rev: quick changes in a row never conflict).
+  const set = (k: MeasureKey, v: string) => {
+    setValues((x) => ({ ...x, [k]: v }));
+    window.clearTimeout(timers.current[k]);
+    timers.current[k] = window.setTimeout(() => {
+      delete timers.current[k];
+      void act(() => api('PATCH', '/api/profile', { measurements: { [k]: { value: v } } }));
+    }, 700);
+  };
+  const step = (k: MeasureKey, dir: 1 | -1) => {
+    const cur = parseFloat(values[k]);
+    set(k, String(Number.isFinite(cur) ? Math.round((cur + dir * STEP[k]) * 10) / 10 : TYPICAL[k]));
+  };
   return (
-    <Section
-      actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, measurements: Object.fromEntries(MEASURES.map((m) => [m.key, { value: values[m.key] }])) }), 'Мірки збережено')}>Зберегти мірки</button>}
-    >
-      <div className="measure-grid">
-        {MEASURES.map((m) => {
-          const saved = prof.measurements[m.key];
-          return (
-            <label key={m.key} className="field">
-              <span className="row" style={{ justifyContent: 'space-between' }}>
-                <span>{m.label}<InfoMark title={m.label} text={m.how} /></span>
-                {saved.value !== null && <span className="small faint" style={{ fontWeight: 400 }}>{fmtDay(saved.date)}</span>}
+    <Section>
+      <div className="measure-layout">
+        <MeasureFigure active={active} />
+        <div className="measure-list">
+          {MEASURES.map((m, i) => (
+            <div key={m.key} className={`measure-row${active === m.key ? ' on' : ''}`} onMouseEnter={() => setActive(m.key)} onMouseLeave={() => setActive(null)} onFocus={() => setActive(m.key)} onBlur={() => setActive(null)}>
+              <span className="m-num">{i + 1}</span>
+              <span className="m-label">{m.label}<InfoMark title={m.label} text={m.how} /></span>
+              <span className="stepper">
+                <button type="button" aria-label={`Менше: ${m.label}`} onClick={() => step(m.key, -1)}><Minus size={14} /></button>
+                <input inputMode="decimal" value={values[m.key]} placeholder="—" aria-label={`${m.label}, см`} onChange={(e) => set(m.key, e.target.value.replace(',', '.'))} />
+                <span className="unit">см</span>
+                <button type="button" aria-label={`Більше: ${m.label}`} onClick={() => step(m.key, 1)}><Plus size={14} /></button>
               </span>
-              <div style={{ position: 'relative' }}>
-                <input className="input" inputMode="decimal" value={values[m.key]} onChange={(e) => setValues((x) => ({ ...x, [m.key]: e.target.value.replace(',', '.') }))} placeholder="—" style={{ paddingRight: 44 }} />
-                <span className="faint small" style={{ position: 'absolute', right: 14, top: 13 }}>см</span>
-              </div>
-            </label>
-          );
-        })}
+            </div>
+          ))}
+        </div>
       </div>
     </Section>
   );
 }
 
-function Sizes() {
-  const db = useDb();
-  const { act } = useApp();
-  const prof = db.profile;
-  const [sizes, setSizes] = useState<KnownSize[]>(prof.knownSizes);
-  useEffect(() => setSizes(prof.knownSizes), [prof.rev]);
-  const upd = (i: number, patch: Partial<KnownSize>) => setSizes((l) => l.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  const add = () => setSizes((s) => [...s, { id: '', brand: '', category: 'trousers', size: '' }]);
-  return (
-    <Section
-      actions={
-        sizes.length > 0 || prof.knownSizes.length > 0 ? (
-          <>
-            <button className="btn" onClick={add}><Plus size={15} /> Додати</button>
-            <button className="btn primary" disabled={sizes.some((s) => !s.brand.trim() || !s.size.trim())} onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, knownSizes: sizes }), 'Розміри збережено')}>Зберегти</button>
-          </>
-        ) : undefined
-      }
-    >
-      {sizes.length === 0 ? (
-        <button className="dropzone" style={{ padding: 26, width: '100%' }} onClick={add}>
-          <Plus size={20} style={{ margin: '0 auto' }} />
-          <b>Додати розмір</b>
-        </button>
-      ) : (
-        <div className="stack" style={{ gap: 12 }}>
-          {sizes.map((s, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 0.8fr 1.6fr auto', gap: 10 }} className="size-row">
-              <input className="input" placeholder="Бренд" value={s.brand} onChange={(e) => upd(i, { brand: e.target.value })} />
-              <select className="select" value={s.category} onChange={(e) => upd(i, { category: e.target.value as Category })}>
-                {(Object.keys(CATEGORY_LABEL) as Category[]).map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
-              </select>
-              <input className="input" placeholder="Розмір" value={s.size} onChange={(e) => upd(i, { size: e.target.value })} />
-              <input className="input" placeholder="Примітка (модель, як сидить)" value={s.note ?? ''} onChange={(e) => upd(i, { note: e.target.value })} />
-              <button className="btn ghost" aria-label="Видалити" onClick={() => setSizes((l) => l.filter((_, j) => j !== i))}><Trash2 size={15} /></button>
-            </div>
-          ))}
-        </div>
-      )}
-    </Section>
-  );
+/** Brand and shop names written once: «Levi’s Croatia», «LEVI'S» and «Levi's» are one choice. */
+const cleanShop = (s: string) => s.replace(/\s*\([^)]*\)/g, '').replace(/\s+(croatia|hrvatska|hr)$/i, '').trim();
+const nameKey = (s: string) => s.toLowerCase().replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function uniqueNames(list: string[]) {
+  const seen = new Map<string, string>();
+  for (const v of list.map(cleanShop).filter(Boolean)) if (!seen.has(nameKey(v))) seen.set(nameKey(v), v);
+  return [...seen.values()];
 }
 
-/** A short list the owner edits: × removes, typing + Enter adds. */
-function ChipsField({ label, values: saved, placeholder, onSave }: { label: string; values: string[]; placeholder: string; onSave: (next: string[]) => void }) {
+/** A tap-to-pick list (owner, 20.11: convenient selectors): every known option as a quiet pill, the chosen ones in ink.
+ *  The order is alphabetical and never changes on a tap, so nothing jumps; «+ інший» adds one more. */
+function PickField({ label, selected: saved, options, placeholder, onSave }: { label: string; selected: string[]; options: string[]; placeholder: string; onSave: (next: string[]) => void }) {
+  const [sel, setSel] = useState(saved);
   const [text, setText] = useState('');
-  // The list changes at once; quick taps never wait for (or fight) the server.
-  const [values, setValues] = useState(saved);
   const savedKey = saved.join('\n');
-  useEffect(() => setValues(saved), [savedKey]);
-  const change = (next: string[]) => {
-    setValues(next);
-    onSave(next);
-  };
-  const add = () => {
-    const v = text.trim();
-    if (!v) return;
-    setText('');
-    if (!values.some((x) => x.toLowerCase() === v.toLowerCase())) change([...values, v]);
-  };
+  useEffect(() => setSel(saved), [savedKey]);
+  const all = uniqueNames([...sel, ...options]).sort((a, b) => a.localeCompare(b, 'uk', { sensitivity: 'base' }));
+  const on = (v: string) => sel.some((x) => nameKey(x) === nameKey(v));
+  const change = (next: string[]) => { setSel(next); onSave(next); };
+  const toggle = (v: string) => change(on(v) ? sel.filter((x) => nameKey(x) !== nameKey(v)) : [...sel, v]);
+  const add = () => { const v = text.trim(); setText(''); if (v && !on(v)) change([...sel, v]); };
   return (
     <div className="field">
       <span>{label}</span>
-      <div className="chips">
-        {values.map((v) => (
-          <span key={v} className="chip brand">
-            {v}
-            <button aria-label={`Прибрати ${v}`} onClick={() => change(values.filter((x) => x !== v))}><X size={12} /></button>
-          </span>
-        ))}
-        <form className="brand-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
-          <input className="input sm" value={text} onChange={(e) => setText(e.target.value)} onBlur={add} placeholder={placeholder} aria-label={placeholder} />
+      <div className="pick-chips">
+        {all.map((v) => <button key={nameKey(v)} type="button" className={`pick${on(v) ? ' on' : ''}`} aria-pressed={on(v)} onClick={() => toggle(v)}>{v}</button>)}
+        <form className="pick-add" onSubmit={(e) => { e.preventDefault(); add(); }}>
+          <input value={text} onChange={(e) => setText(e.target.value)} onBlur={add} placeholder={placeholder} aria-label={placeholder} />
         </form>
       </div>
     </div>
   );
 }
 
-/** «Магазини» (owner, 18.11): where «Знайти» searches — the place, my stores, my brands. */
+const MY_PLACE = 'Моє місце';
+const RADII: { v: number | null; label: string }[] = [
+  { v: 5, label: '5 км' }, { v: 15, label: '15 км' }, { v: 50, label: '50 км' }, { v: null, label: 'Будь-яка' }, { v: 0, label: 'Лише онлайн' },
+];
+
+/** «Магазини» (owner, 18–20.11): where searches look — my place (shared by the browser) or a named one, how far, my stores, my brands. */
 function Shops() {
   const db = useDb();
-  const { act } = useApp();
+  const { act, toast } = useApp();
   const prof = db.profile;
   const [place, setPlace] = useState(shopLocation(db));
+  const [locating, setLocating] = useState(false);
   useEffect(() => setPlace(shopLocation(db)), [prof.rev]);
   // No rev: each field saves only itself, so quick changes in a row never conflict.
   const save = (patch: Record<string, unknown>) => void act(() => api('PATCH', '/api/profile', patch));
+  const locate = () => {
+    if (!('geolocation' in navigator)) { toast('Цей браузер не ділиться місцем'); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setLocating(false); save({ coords: { lat: pos.coords.latitude, lon: pos.coords.longitude }, location: MY_PLACE }); },
+      () => { setLocating(false); toast('Місце не отримано — дозволь браузеру доступ до геолокації'); },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 },
+    );
+  };
+  const radius = prof.radiusKm ?? null;
+  const stores = uniqueNames([...db.products.map((p) => p.store), ...(db.stores ?? []).map((s) => s.name)]);
+  const brands = uniqueNames([...wardrobeBrands(db), ...db.products.map((p) => p.brand)]);
   return (
     <Section>
-      <div className="stack" style={{ gap: 22 }}>
-        <label className="field">
+      <div className="stack" style={{ gap: 26 }}>
+        <div className="field">
           <span>Де шукати</span>
-          <input
-            className="input"
-            value={place}
-            placeholder="Лише онлайн"
-            onChange={(e) => setPlace(e.target.value)}
-            onBlur={() => { if (place.trim() !== shopLocation(db)) save({ location: place.trim() }); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-          />
-        </label>
-        <ChipsField label="Мої магазини" values={prof.stores ?? []} placeholder="+ магазин" onSave={(stores) => save({ stores })} />
-        <ChipsField label="Мої бренди" values={prof.brands ?? wardrobeBrands(db)} placeholder="+ бренд" onSave={(brands) => save({ brands })} />
+          <div className="place-field">
+            <MapPin size={16} />
+            <input
+              value={place}
+              placeholder="Місто чи торговий центр"
+              aria-label="Де шукати"
+              onChange={(e) => setPlace(e.target.value)}
+              onBlur={() => { if (place.trim() !== shopLocation(db)) save({ location: place.trim(), coords: null }); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            />
+            <button type="button" className="locate" onClick={locate} disabled={locating} aria-label={MY_PLACE} title={MY_PLACE}>
+              {locating ? <Loader2 size={16} className="spin" /> : <LocateFixed size={16} />}
+            </button>
+          </div>
+        </div>
+        <div className="field">
+          <span>Відстань</span>
+          <div className="filters start" role="group" aria-label="Відстань до магазинів">
+            {RADII.map((r) => <button key={r.label} type="button" className={radius === r.v ? 'on' : ''} aria-pressed={radius === r.v} onClick={() => save({ radiusKm: r.v })}>{r.label}</button>)}
+          </div>
+        </div>
+        <PickField label="Мої магазини" selected={prof.stores ?? []} options={stores} placeholder="+ інший магазин" onSave={(next) => save({ stores: next })} />
+        <PickField label="Мої бренди" selected={prof.brands ?? wardrobeBrands(db)} options={brands} placeholder="+ інший бренд" onSave={(next) => save({ brands: next })} />
       </div>
     </Section>
   );
@@ -297,7 +329,6 @@ export function ProfilePage({ tab }: { tab?: string }) {
         <div>
           {current === 'base' && <BasePhotos />}
           {current === 'measurements' && <Measurements />}
-          {current === 'sizes' && <Sizes />}
           {current === 'shops' && <Shops />}
           {current === 'preferences' && <Preferences />}
         </div>

@@ -384,6 +384,10 @@ export interface Profile {
   location?: string;
   /** «Мої магазини»: shops the owner likes; checked first, at the place and online. */
   stores?: string[];
+  /** «Моє місце» (owner, 20.11): the location the browser shared, rounded to about 1 km; searches measure from it. */
+  coords?: { lat: number; lon: number; at: string };
+  /** «Відстань»: how far physical stores may be, in km; 0 = online only; unset = any distance. */
+  radiusKm?: number;
   preferences: { comfort: string; materials: string; fit: string; branding: string };
 }
 

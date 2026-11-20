@@ -23,14 +23,14 @@ function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: Re
   );
 }
 
-/** The logo (owner, 20.11): a capsule — half filled, half drawn — for a site built around capsules. */
+/** The logo (owner, 20.11): a tailor's mannequin silhouette — a dress form on its stand. */
 function CapsuleMark({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="capsule-mark">
-      <g transform="rotate(45 16 16)">
-        <path d="M10.5 16V9.5a5.5 5.5 0 0 1 11 0V16Z" fill="currentColor" />
-        <rect x="10.5" y="4" width="11" height="24" rx="5.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      </g>
+      <rect x="14.2" y="2.6" width="3.6" height="2.4" rx="1" fill="currentColor" />
+      <path d="M9.6 7.4C11.4 5.7 20.6 5.7 22.4 7.4C23.6 9.4 22.9 12.4 21.2 14.6C20.2 16 21.3 18.3 22 20C18.8 21.7 13.2 21.7 10 20C10.7 18.3 11.8 16 10.8 14.6C9.1 12.4 8.4 9.4 9.6 7.4Z" fill="currentColor" />
+      <rect x="15.3" y="21" width="1.4" height="7" fill="currentColor" />
+      <path d="M11.5 30.2L16 27.6L20.5 30.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

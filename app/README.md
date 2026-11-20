@@ -40,6 +40,10 @@ The site runs as the user LaunchAgent `ai.deus.capsula` (`~/Library/LaunchAgents
 - Every look should show the owner: new selections queue a try-on per look, and `POST /api/renders/missing` queues one for every look without a render (needs base photos). Covers show the render or an explicit generating/queued state; capsule pages list their items separately.
 - Variety: the analyzer receives existing looks and selection names to avoid; an empty request gets an unused theme; the server drops looks that repeat an existing one except for a single piece and numbers repeated names.
 
+## Capsule sets
+
+A capsule is a style plus a closed set ([spec](../docs/superpowers/specs/2026-11-20-capsule-system-design.md)): up to 10 garments, 3 pairs of shoes and 3 accessories (`src/capsule-pieces.ts`). `PATCH /api/capsules/:id {pieces, base}` saves a set; `pieces: null` clears it. Once a set is saved, looks outside it are refused (409). Merges, purchases and deletions update the set too. `node app/server/capsule-sets.ts` (`--json`) prints the current sets read-only, with limits, roles, look counts and combinations.
+
 ## Editing and deleting
 
 Capsules, selections, looks, items, renders, packshots, products, needs and queue jobs can be edited or deleted from their cards; deletes need confirmation and cascade (`DELETE /api/<collection>/:id`). Chat originals and uploads retained as references cannot be deleted from the photo archive. Inactive and merged items are hidden except in the «Неактуальні» filter.

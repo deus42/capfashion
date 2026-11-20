@@ -12,7 +12,7 @@ import { productKey, queueStoreFind } from './shop-search.ts';
 import { tooClose, withBuys } from '../src/look-memory.ts';
 import { queueDiscover } from './discover.ts';
 import { sameIdentity } from './identity.ts';
-import { placeLook, requireParentCapsule } from './capsule-membership.ts';
+import { assertLookFits, placeLook, replaceInSets, requireParentCapsule, setCapsulePieces, stripFromSets } from './capsule-membership.ts';
 
 type Body = Record<string, unknown>;
 export interface Ctx {
@@ -161,6 +161,8 @@ function replaceRefs(db: DB, match: (r: SlotRef) => boolean, replacement: SlotRe
       changedLooks.push(look.id);
     }
   }
+  // Capsule sets follow the same replacement; a limited replacement touches only the capsules of the changed looks.
+  replaceInSets(db, match, replacement, onlyLooks ? new Set(db.capsules.filter((c) => c.lookIds.some((id) => changedLooks.includes(id))).map((c) => c.id)) : undefined);
   return changedLooks;
 }
 
@@ -341,6 +343,7 @@ export function deleteCapsule(db: DB, id: string) {
 }
 
 function stripRefs(db: DB, kind: SlotRef['kind'], id: string) {
+  stripFromSets(db, kind, id);
   for (const look of db.looks) {
     const next = cleanSlots(look.slots);
     for (const k of SLOT_KEYS) next[k] = next[k].filter((r) => !(r.kind === kind && r.id === id));
@@ -495,6 +498,8 @@ on('PATCH', '/api/capsules/:id', (ctx, [id], b) =>
       }
       c.lookIds = ids as string[];
     }
+    // The capsule's closed set (owner, 20.11): up to 10 garments, 3 shoes, 3 accessories; null clears it.
+    if ('pieces' in b || 'base' in b) setCapsulePieces(db, c, b.pieces, b.base);
     return c;
   }),
 );
@@ -567,7 +572,10 @@ on('POST', '/api/looks/:id/advice', async (ctx, [id], b) => {
       const next = cleanSlots(look.slots);
       for (const k of SLOT_KEYS) next[k] = next[k].map((r) => (r.kind === 'item' && r.id === swap.from ? { kind: 'item' as const, id: swap.to } : r));
       // The new composition gets a fresh score (it stays in «Найкращі» once rated again).
-      if (setLookSlots(look, next, 'Порада порадника')) queueAdvice(db, `Порада прийнята: ${look.name}`);
+      if (setLookSlots(look, next, 'Порада порадника')) {
+        assertLookFits(db, look);
+        queueAdvice(db, `Порада прийнята: ${look.name}`);
+      }
     } else {
       look.advice.rejected = [...(look.advice.rejected ?? []), `${swap.from}>${swap.to}`];
     }
@@ -596,11 +604,12 @@ on('PATCH', '/api/looks/:id', async (ctx, [id], b) => {
     const look = findOr404(db.looks, id, 'Образ');
     bump(look, b.rev);
     pick(look, b, ['name', 'note']);
-    if ('capsuleId' in b) placeLook(db, look, requireParentCapsule(db, str(b.capsuleId)));
-    if (b.keptVersion === look.version) look.keptVersion = look.version;
-    if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
     // A changed composition is rated again (never re-rendered by itself: the look page offers «Оновити», owner 17.11).
     const changed = b.slots ? setLookSlots(look, cleanSlots(b.slots), str(b.versionNote)) : false;
+    if ('capsuleId' in b) placeLook(db, look, requireParentCapsule(db, str(b.capsuleId)));
+    else if (changed) assertLookFits(db, look);
+    if (b.keptVersion === look.version) look.keptVersion = look.version;
+    if (typeof b.favorite === 'boolean') rate(look, b.favorite ? 'like' : null);
     if (!look.name) throw new HttpError(400, 'Назва не може бути порожньою');
     if (changed) queueAdvice(db, `Змінено образ: ${look.name}`);
     return { look, run: changed };

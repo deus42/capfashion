@@ -22,6 +22,8 @@ import { MAX_OPEN_REPLACEMENTS, SCORE_SCALE, sameTitle, adviceDue, advisePrompt,
 import { refusedPieces, tooClose } from '../src/look-memory.ts';
 import { applyDiscover, discoverPrompt } from './discover.ts';
 import { stylistContext } from './stylist-context.ts';
+import { CAPSULE_LIMITS, capsuleCombinations, capsuleSet } from '../src/capsule-pieces.ts';
+import { capsuleSetsReport } from './capsule-sets.ts';
 
 const at = '2026-11-17T00:00:00.000Z';
 const SAMPLE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FuoAAAAASUVORK5CYII=', 'base64');
@@ -1606,4 +1608,101 @@ test('a piece to buy reuses an open purchase with nearly the same name', () => {
   assert.equal(sameTitle('Пряме вовняне пальто кольору кемел', 'Вовняне пальто кольору кемел'), true);
   assert.equal(sameTitle('Темно-коричневі челсі із зернистої шкіри', 'Шкіряні черевики челсі'), false);
   assert.equal(sameTitle('Прямі лляні штани кольору екрю', 'Бежеві / пісочні чіноси'), false);
+});
+
+// ── Capsule as a closed set of 10 garments (owner, 20.11; spec 2026-11-20-capsule-system-design.md, stage 1) ──
+
+test('capsule combinations follow (tops × bottoms + dresses) × (layers + 1) × shoes', () => {
+  assert.equal(capsuleCombinations({ top: 4, bottom: 3, layer: 2, shoes: 2 }), 72);
+  assert.equal(capsuleCombinations({ top: 3, bottom: 3, layer: 0, shoes: 3 }), 27);
+  assert.equal(capsuleCombinations({ top: 2, bottom: 1, layer: 0, shoes: 1, dresses: 2 }), 4);
+  assert.equal(capsuleCombinations({ top: 5, bottom: 2, layer: 1, shoes: 0 }), 0);
+});
+
+test('an unsaved capsule set is read from its visible looks; roles come from the slots, a product stands for its purchase', () => {
+  const db = fixture();
+  db.items.push({ id: 'W-3', rev: 1, category: 'shoes', title: 'White sneakers', status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+  db.items.push({ id: 'W-4', rev: 1, category: 'knitwear', title: 'Navy cardigan', status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+  db.products.push({ id: 'PR-1', needId: 'N-1', store: 'Shop', brand: 'B', model: 'Tee', url: 'https://example.test/tee', status: 'option', createdAt: at, updatedAt: at } as DB['products'][number]);
+  const slots = { ...emptySlots(), top: [{ kind: 'product' as const, id: 'PR-1' }], layer: [{ kind: 'item' as const, id: 'W-4' }], bottom: [{ kind: 'item' as const, id: 'W-1' }], shoes: [{ kind: 'item' as const, id: 'W-3' }] };
+  db.looks.push({ ...db.looks[0], id: 'L-2', slots, versions: [{ version: 1, slots, at }] });
+  db.capsules[0].lookIds.push('L-2');
+  const set = capsuleSet(db, db.capsules[0]);
+  assert.equal(set.saved, false);
+  assert.deepEqual(set.counts, { garments: 3, shoes: 1, accessories: 0 });
+  assert.deepEqual(set.pieces.map((p) => `${p.ref.kind}:${p.ref.id}`).sort(), ['item:W-1', 'item:W-3', 'item:W-4', 'need:N-1']);
+  const byId = Object.fromEntries(set.pieces.map((p) => [p.ref.id, p]));
+  assert.equal(byId['W-4'].role, 'layer');
+  assert.equal(byId['N-1'].role, 'top');
+  assert.equal(byId['N-1'].looks, 2, 'the purchase counts in the look with its product too');
+  assert.equal(byId['N-1'].owned, false);
+  assert.equal(set.combinations, 1 * 1 * 2 * 1);
+  const later = structuredClone(db); // hidden looks are cached per looks array, as each store read is a fresh copy
+  later.looks[1].disliked = true;
+  assert.equal(capsuleSet(later, later.capsules[0]).counts.garments, 2, 'a hidden look is history, not part of the set');
+});
+
+test('a saved set keeps its limits, its base and its looks: nothing outside the set enters the capsule', async () => {
+  const { call, store } = setup();
+  await store.mutate((db) => {
+    for (let i = 0; i < 11; i++) db.items.push({ id: `G-${i}`, rev: 1, category: 'tees', title: `Tee ${i}`, status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+  });
+  const ten = Array.from({ length: 9 }, (_, i) => ({ kind: 'item', id: `G-${i}` }));
+  await assert.rejects(call('PATCH', '/api/capsules/C-1', { pieces: [...ten, { kind: 'item', id: 'G-9' }, { kind: 'item', id: 'G-10' }, { kind: 'item', id: 'W-1' }, { kind: 'need', id: 'N-1' }] }), /до 10 речей одягу/);
+  await assert.rejects(call('PATCH', '/api/capsules/C-1', { pieces: [{ kind: 'item', id: 'W-1' }] }), /Образів поза набором: 1 \(Молочна футболка\)/, 'a visible look still uses a piece left out');
+  await assert.rejects(call('PATCH', '/api/capsules/C-1', { pieces: [{ kind: 'item', id: 'W-1' }, { kind: 'need', id: 'N-1' }], base: [{ kind: 'item', id: 'W-2' }] }), /База капсули має бути з її набору/);
+  const saved = await call('PATCH', '/api/capsules/C-1', { pieces: [{ kind: 'item', id: 'W-1' }, { kind: 'need', id: 'N-1' }, { kind: 'item', id: 'G-0' }], base: [{ kind: 'item', id: 'W-1' }] });
+  assert.deepEqual(saved.base, [{ kind: 'item', id: 'W-1' }]);
+  assert.equal(capsuleSet(store.read(), store.read().capsules[0]).saved, true);
+  // Looks: a piece outside the set is refused in edits and new looks; a piece inside passes.
+  const look = store.read().looks[0];
+  await assert.rejects(call('PATCH', '/api/looks/L-1', { rev: look.rev, slots: { ...look.slots, top: [{ kind: 'item', id: 'G-5' }] } }), /Поза набором капсули «Urban»: Tee 5/);
+  const edited = await call('PATCH', '/api/looks/L-1', { rev: look.rev, slots: { ...look.slots, top: [{ kind: 'item', id: 'G-0' }] } });
+  assert.equal(edited.version, 2);
+  await assert.rejects(call('POST', '/api/looks', { capsuleId: 'C-1', name: 'New', slots: { ...emptySlots(), top: [{ kind: 'item', id: 'G-7' }] } }), /Поза набором/);
+  assert.equal(store.read().looks.length, 1, 'a refused look is not saved');
+  // Saving keeps the base inside the set; null clears set and base.
+  const trimmed = await call('PATCH', '/api/capsules/C-1', { pieces: [{ kind: 'item', id: 'G-0' }, { kind: 'item', id: 'W-1' }, { kind: 'need', id: 'N-1' }] });
+  assert.deepEqual(trimmed.base, [{ kind: 'item', id: 'W-1' }]);
+  const cleared = await call('PATCH', '/api/capsules/C-1', { pieces: null });
+  assert.equal(cleared.pieces, undefined);
+  assert.equal(cleared.base, undefined);
+});
+
+test('capsule sets follow merges and deletions, and the stored set is validated', async () => {
+  const { call, store } = setup();
+  await call('PATCH', '/api/capsules/C-1', { pieces: [{ kind: 'item', id: 'W-1' }, { kind: 'item', id: 'W-2' }, { kind: 'need', id: 'N-1' }], base: [{ kind: 'item', id: 'W-2' }] });
+  await call('DELETE', '/api/items/W-2');
+  let c = store.read().capsules[0];
+  assert.deepEqual(c.pieces, [{ kind: 'item', id: 'W-1' }, { kind: 'need', id: 'N-1' }]);
+  assert.equal(c.base, undefined, 'the base left with the deleted piece');
+  await store.mutate((db) => {
+    db.items.push({ id: 'W-5', rev: 1, category: 'trousers', title: 'Navy chinos (photo 2)', status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+  });
+  const merged = await call('POST', '/api/items/merge', { ids: ['W-1', 'W-5'] });
+  c = store.read().capsules[0];
+  assert.deepEqual(c.pieces, [{ kind: 'item', id: merged.id }, { kind: 'need', id: 'N-1' }]);
+  assert.ok(store.read().looks[0].slots.bottom.some((r) => r.id === merged.id), 'the look and the set name the same merged piece');
+  const db = fixture();
+  db.capsules[0].base = [{ kind: 'item', id: 'W-1' }];
+  assert.match(validateDb(db) ?? '', /база без набору/);
+  db.capsules[0].pieces = [{ kind: 'product', id: 'PR-x' }];
+  assert.match(validateDb(db) ?? '', /лише речі й покупки/);
+  db.capsules[0].pieces = [{ kind: 'item', id: 'W-1' }, { kind: 'item', id: 'W-1' }];
+  delete db.capsules[0].base;
+  assert.match(validateDb(db) ?? '', /повторюється/);
+});
+
+test('the capsule sets report reads every fashion capsule, flags limits and never writes', () => {
+  const db = fixture();
+  for (let i = 0; i < 4; i++) db.items.push({ id: `A-${i}`, rev: 1, category: 'accessories', title: `Belt ${i}`, status: 'confirmed', photoIds: [], origin: 'manual', history: [], createdAt: at, updatedAt: at });
+  db.looks[0].slots.accessories = [0, 1, 2, 3].map((i) => ({ kind: 'item' as const, id: `A-${i}` }));
+  db.capsules.push({ ...db.capsules[0], id: 'C-sel', kind: 'selection', name: 'Selection', lookIds: [] });
+  const before = JSON.stringify(db);
+  const report = capsuleSetsReport(db);
+  assert.equal(JSON.stringify(db), before);
+  assert.deepEqual(report.capsules.map((c) => c.name), ['Urban'], 'selections are not fashion capsules');
+  assert.deepEqual(report.capsules[0].over, ['accessories']);
+  assert.equal(report.capsules[0].limits.garments, CAPSULE_LIMITS.garments);
+  assert.equal(report.capsules[0].toBuy, 1);
 });

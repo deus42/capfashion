@@ -1,5 +1,6 @@
 // Shared data contract for the site, the Codex runner and agent imports.
 // Every write goes through validateDb before it reaches disk.
+import { pieceSetError } from '../src/capsule-pieces.ts';
 
 export const SCHEMA_VERSION = 1;
 
@@ -269,6 +270,14 @@ export interface Capsule {
   disliked?: boolean;
   ratedAt?: string;
   lookIds: string[];
+  /**
+   * The capsule's closed set (owner, 20.11): up to 10 garments, 3 pairs of shoes and 3 accessories,
+   * owned items or purchases to buy. Once saved, the capsule's looks use only these pieces;
+   * until then the set is read from its visible looks.
+   */
+  pieces?: SlotRef[];
+  /** One or two pieces of the set the capsule's looks are built on, like Karan's bodysuit. */
+  base?: SlotRef[];
   /** A retired capsule's old URL leads to the capsules that received its looks. */
   redirectCapsuleIds?: string[];
   origin: 'source' | 'agent' | 'owner';
@@ -515,6 +524,12 @@ export function validateDb(db: unknown): string | null {
     for (const lid of c.lookIds) if (!has('looks', lid)) return `Капсула ${c.id}: немає образу ${lid}`;
     if (c.disliked !== undefined && typeof c.disliked !== 'boolean') return `Капсула ${c.id}: некоректна оцінка`;
     if (c.disliked && c.favorite) return `Капсула ${c.id}: лайк і дизлайк одночасно`;
+    if (c.base && !c.pieces) return `Капсула ${c.id}: база без набору`;
+    if (c.pieces !== undefined) {
+      if (!Array.isArray(c.pieces) || (c.base !== undefined && !Array.isArray(c.base))) return `Капсула ${c.id}: некоректний набір`;
+      const err = pieceSetError(d, c.pieces, c.base ?? []);
+      if (err) return `Капсула ${c.id}: ${err}`;
+    }
   }
   for (const j of d.jobs) {
     if (!JOB_STATES.includes(j.state)) return `Завдання ${j.id}: невідомий стан`;

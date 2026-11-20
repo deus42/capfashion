@@ -126,7 +126,7 @@ export function advisePrompt(db: DB, job: Job, attached: string[]) {
   const weak = items.filter(weakPiece).map((i) => i.id);
   const unused = items.filter((i) => itemUsage(db, i.id).looks === 0 && !refused.has(i.id) && !weakPiece(i)).map((i) => i.id);
   return [
-    'You are the Cap Fashion wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in Ukrainian, short.',
+    'You are the Capsula wardrobe advisor running unattended. Answer with JSON only (schema enforced). Write every text in Ukrainian, short.',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
     `Profile — comfort: ${prefs.comfort || '—'}; materials: ${prefs.materials || '—'}; fit: ${prefs.fit || '—'}; branding: ${prefs.branding || '—'}.`,
     job.instructions ? `What changed: ${job.instructions}` : '',

@@ -11,7 +11,7 @@
 ## Workspace Policy
 
 - Repo root: `/Users/deus/Projects/Capfashion`; default branch `main`; preserve unrelated and concurrent changes. Use branches or worktrees only when explicitly requested.
-- Remote: public GitHub repo `deus42/capfashion` (created 17 November 2026 on the owner's request). Push only when the owner asks; the site itself stays local.
+- Remote: public GitHub repo `deus42/capsula` (created 17 November 2026 as `capfashion`, renamed by the owner 20 November 2026). Push only when the owner asks; the site itself stays local.
 - Local initialization, scoped edits and verification are within the project task. Publishing, cloud uploads and external sharing require task-specific authorization.
 - Do not spawn native subagents without explicit user or applicable task-packet authorization. When authorized without a tighter budget: at most two concurrent children, one generation, no nested spawning.
 
@@ -99,9 +99,9 @@
 
 ## Project-Specific Rules
 
-### Site direction — Cap Fashion is built around capsules (owner, 20 November 2026)
+### Site direction — Capsula is built around capsules (owner, 20 November 2026)
 
-- Cap Fashion is the owner's personal capsule-wardrobe site, and everything on it is organised around CAPSULES. A capsule is a distinct, refined fashion style: currently Smart Casual, Mediterranean Casual and Outdoor Casual.
+- Capsula is the owner's personal capsule-wardrobe site, and everything on it is organised around CAPSULES. A capsule is a distinct, refined fashion style: currently Smart Casual, Mediterranean Casual and Outdoor Casual.
 - Structure: capsule → its looks (variants fold into one) → pieces, owned or to buy. The wardrobe, purchases, stores, the advisor, the «Нові» search and try-ons exist to serve the capsules. They fill a capsule's gaps, find new looks in its style and show how a look will wear.
 - Home opens on the capsules: the question «Що одягнемо сьогодні?» with the chat composer, small chips, then capsule tiles by rating. It is not a catalogue of every look; looks live inside their capsule and in «Капсули → Усі образи».
 - Fashion first: capsules are judged as fashion (distinct, beautiful, current, refined), not by what is already owned. Ownership is a quiet filter or mark («З моїх речей»), and missing pieces become purchases.
@@ -127,9 +127,9 @@
 - Every screen must look calm, refined and premium, like a strong fashion site; elegance comes before any other visual choice. Prefer quiet type, fine lines and generous space over heavy filled buttons, bold blocks and loud pills.
 - Filters are quiet text toggles (muted words; the active one in ink with a fine underline), never heavy buttons. Primary actions stay small and precise, e.g. a small round black icon button.
 - Text input for the stylist or search follows the standard chat-bot composer (as in Claude or Codex): text that grows as you type, small quiet controls bottom left, a small round send button bottom right.
-- Use space well without cramming (owner, 20 November 2026): the goal is no oversized renders and no wasted space, not forcing everything onto one screen. Cap Fashion is built around CAPSULES. Home follows app.fashn.ai: the question and the chat composer sit in the centre, small chips under it («Нові образи», «Наступна покупка»), and below are simply the capsule tiles, best rated first from left to right. Home does not list every look. Avoid boxes inside boxes and giant hero renders.
+- Use space well without cramming (owner, 20 November 2026): the goal is no oversized renders and no wasted space, not forcing everything onto one screen. Capsula is built around CAPSULES. Home follows app.fashn.ai: the question and the chat composer sit in the centre, small chips under it («Нові образи», «Наступна покупка»), and below are simply the capsule tiles, best rated first from left to right. Home does not list every look. Avoid boxes inside boxes and giant hero renders.
 - «Покупки» (owner, 20 November 2026): every found product is one line showing what it is, where to buy it, price, size, fit score (reason behind ⓘ) and a quiet «Куплено». «Where to buy» is the owner's shopping place, the nearest store with distance and a map link, or «онлайн». There is no separate store list to scroll to; the 19 November separate list is withdrawn. The page lists open purchases only, with no «Відкриті / Усі» filter.
-- The logo is a tailor's mannequin silhouette (a dress form on its stand) in ink, without a box. It appears on the rail, in the phone header beside «Cap Fashion» and as the favicon. Never a pill: «капсула» means the capsule wardrobe (owner, 20 November 2026).
+- The logo is a tailor's mannequin silhouette (a dress form on its stand) in ink, without a box. It appears on the rail, in the phone header beside «Capsula» and as the favicon. Never a pill: «капсула» means the capsule wardrobe (owner, 20 November 2026).
 - Profile (owner, 20 November 2026): «Мої фото», «Мірки», «Магазини», «Побажання»; there is no «Розміри брендів», because sizes are worked out under the hood from wardrobe labels and bought products. «Мірки» show a quiet line figure explaining how to measure, with numbered lines and a − value + selector per measure that starts from a usual value and saves itself. «Магазини» has «Де шукати» with a locate button: the browser asks to share the location, and only a rounded position of about 1 km is kept. It also has the distance as quiet words (5 / 15 / 50 км, Будь-яка, Лише онлайн), and stores and brands as tap-to-pick pills in a stable alphabetical order.
 - Desktop and phone share one visual language: the global «Додати фото» is the same black circle with a plus in both, with its label like every other navigation item. On the desktop rail it sits at the bottom, right above the profile; on the phone it stays in the centre of the bottom bar.
 

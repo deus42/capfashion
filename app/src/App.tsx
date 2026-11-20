@@ -89,7 +89,7 @@ export default function App() {
   return (
     <div className="shell">
       <nav className="rail" aria-label="Розділи">
-        <a href="/home" className="rail-logo" aria-label="Cap Fashion">
+        <a href="/home" className="rail-logo" aria-label="Capsula">
           <CapsuleMark size={34} />
         </a>
         <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} desk />
@@ -112,7 +112,7 @@ export default function App() {
       <div className="frame">
         {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
-          <a href="/home" className="wordmark m-only" aria-label="Cap Fashion — Головна" aria-current={section === 'home' ? 'page' : undefined}><CapsuleMark size={22} />Cap Fashion</a>
+          <a href="/home" className="wordmark m-only" aria-label="Capsula — Головна" aria-current={section === 'home' ? 'page' : undefined}><CapsuleMark size={22} />Capsula</a>
           <div className="grow" />
           <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}

@@ -1,4 +1,4 @@
-/* Cap Fashion — design system modelled on the FASHN app: light canvas, icon rail,
+/* Capsula — design system modelled on the FASHN app: light canvas, icon rail,
    serif display titles, image-first tiles, floating prompt boxes. */
 :root {
   --bg: #f2f2f3;
@@ -194,7 +194,7 @@ h1, h2, h3, h4, h5, p { margin: 0; }
 
 /* ── Home ──────────────────────────────────────────────── */
 /* Home (owner, 20.11, after app.fashn.ai): the question and the chat composer in the centre, small chips under it,
-   then the capsules as tiles (Cap Fashion is about capsules), the best rated first. No boxes inside boxes. */
+   then the capsules as tiles (Capsula is about capsules), the best rated first. No boxes inside boxes. */
 .home-top { max-width: 1080px; margin: 0 auto; padding: 28px 0 8px; text-align: center; }
 .home-title { font-family: var(--font-display); font-weight: 420; font-size: 46px; line-height: 1.05; letter-spacing: -0.015em; font-variation-settings: 'wdth' 92; color: var(--ink); }
 .home-ask { margin: 26px auto 0; max-width: 720px; }

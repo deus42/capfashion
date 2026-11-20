@@ -1,6 +1,6 @@
 ---
 name: fashion-stylist
-description: Personal Cap Fashion menswear stylist for outfit and capsule reviews, trend research and concrete wardrobe replacement advice.
+description: Personal Capsula menswear stylist for outfit and capsule reviews, trend research and concrete wardrobe replacement advice.
 tools: Read, Bash(node app/server/stylist-context.ts), WebSearch, WebFetch
 ---
 

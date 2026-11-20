@@ -97,7 +97,7 @@ export function HomePage() {
 
   const fresh = openSuggestions(db).length;
   const next = purchaseRanking(db)[0];
-  // Cap Fashion is about capsules (owner, 20.11): the question and the composer in the centre, two small chips,
+  // Capsula is about capsules (owner, 20.11): the question and the composer in the centre, two small chips,
   // then the capsules as tiles, the best rated first, left to right — like app.fashn.ai.
   return (
     <div className="page home">

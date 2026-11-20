@@ -82,7 +82,7 @@ export function discoverPrompt(db: DB, job: Job) {
   const refused = [...refusedPieces(db, hiddenLookIds(db))].filter((id) => !required.includes(id));
   const prefs = db.profile.preferences;
   return [
-    'You are the Cap Fashion stylist worker running unattended. Answer with JSON only (schema enforced). Text only, no images.',
+    'You are the Capsula stylist worker running unattended. Answer with JSON only (schema enforced). Text only, no images.',
     `Today: ${new Date().toISOString().slice(0, 10)}; current weather period: ${PERIOD_LABEL[period]} (${PERIOD_TEMP[period]}), Rijeka, Croatia.`,
     'The owner wants NEW looks in distinct FASHION capsules (refined modern direction). Each look must clearly belong to its capsule\'s aesthetic, palette and weather periods below, and must differ from every outfit listed under "Never again" and "Existing" (owner\'s rule: identical, one piece different, or one core piece different ignoring accessories = the same look).',
     'Owner preferences: comfortable relaxed smart casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers; no eyewear of any kind.',

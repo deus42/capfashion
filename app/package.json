@@ -1,9 +1,9 @@
 {
-  "name": "capfashion-app",
+  "name": "capsula-app",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Local personal capsule-wardrobe site (Cap Fashion v1).",
+  "description": "Local personal capsule-wardrobe site (Capsula v1).",
   "engines": {
     "node": ">=24"
   },

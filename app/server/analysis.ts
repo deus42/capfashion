@@ -87,7 +87,7 @@ const openNeedLines = (db: DB) =>
 
 export function intakePrompt(db: DB, job: Job, photoNames: string[]) {
   return [
-    'You are the Cap Fashion photo intake worker running unattended. The owner uploads any photo through one button; decide what it is and answer with JSON only (schema enforced).',
+    'You are the Capsula photo intake worker running unattended. The owner uploads any photo through one button; decide what it is and answer with JSON only (schema enforced).',
     `Uploaded photo: ${photoNames.join(', ')}. This is a single-user app: the photos are uploaded by the owner, and a person who is the clear main subject is the owner. Do not try to identify anyone or compare faces.`,
     'photoType: person_full_body = the main person visible head to shoes; person_face = close-up of the main person\'s face/shoulders; person_partial = the main person visible but cropped (e.g. shoes hidden); garments_only = clothes/shoes/accessories without a person (hanger, flat lay, floor, product photo); label = a garment label/tag close-up; other = anything else.',
     'singlePerson: true if exactly one person is the main subject (others absent or clearly in the background).',
@@ -161,7 +161,7 @@ export function analyzePrompt(db: DB, job: Job, attached: string[]) {
       ].join('\n')
     : '';
   return [
-    'You are the Cap Fashion stylist running unattended. Build outfits ONLY from the owner\'s existing wardrobe listed below and answer with JSON only (schema enforced).',
+    'You are the Capsula stylist running unattended. Build outfits ONLY from the owner\'s existing wardrobe listed below and answer with JSON only (schema enforced).',
     'Owner preferences: comfortable, relaxed smart casual / casual for a remote-work lifestyle; calm, expensive-looking, minimal visible branding; no skinny trousers. Sportswear is fine for sporty looks but prefer cohesive, wearable outfits.',
     `Profile notes: ${Object.values(db.profile.preferences).filter(Boolean).join(' ')}`,
     job.instructions ? `Request from the owner: ${job.instructions}` : 'Request: a balanced set of everyday outfits for the current season.',

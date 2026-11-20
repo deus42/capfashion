@@ -1,4 +1,4 @@
-# Capfashion
+# Capsula
 
 Personal fashion and capsule-wardrobe workspace, initialized 15 November 2026.
 
@@ -8,7 +8,7 @@ The source chat is **“Нагадай чорну п’ятницю”**, dated 
 
 - **Персональний стиліст у Codex і Claude.** Напиши «Стилісте, переглянь Smart Casual. Що залишити, що замінити й чому?» Цей самий агент перевіряє чернетки під час створення та зміни образів і капсул. [Як працює стиліст](docs/superpowers/specs/2026-11-20-fashion-stylist.md)
 - **Local site:** `cd app && npm start` → http://127.0.0.1:4317 ([app README](app/README.md))
-- [Cap Fashion v1 — functional specification](docs/superpowers/specs/2026-11-15-cap-fashion-design.md) (accepted as the implementation basis, 17 November)
+- [Capsula v1 — functional specification](docs/superpowers/specs/2026-11-15-cap-fashion-design.md) (accepted as the implementation basis, 17 November)
 - [Project brief](docs/project.md)
 - [Source recovery and coverage](docs/source-status.md)
 - [Capsule plans](docs/capsules/README.md)
@@ -33,7 +33,7 @@ output/               Generated reports/previews (ignored)
 tasks/worklogs/       Local execution checkpoints (ignored)
 ```
 
-This workspace contains source material, the accepted functional specification, a candidate wardrobe catalogue and the local Cap Fashion site (`app/`). Site data lives in ignored `.local/app-data/`. There is no deployment or public hosting; iPhone access is tailnet-only and opt-in. Original personal material and generated personal images stay outside Git.
+This workspace contains source material, the accepted functional specification, a candidate wardrobe catalogue and the local Capsula site (`app/`). Site data lives in ignored `.local/app-data/`. There is no deployment or public hosting; iPhone access is tailnet-only and opt-in. Original personal material and generated personal images stay outside Git.
 
 ## Vault
 

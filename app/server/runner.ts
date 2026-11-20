@@ -25,7 +25,7 @@ const BUNDLED_CODEX = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bi
  */
 const WORKER_ISOLATION = [
   '-c', 'project_doc_max_bytes=0',
-  '-c', 'developer_instructions="You are an unattended, sandboxed worker inside the local Cap Fashion app. Do exactly the single task in the user message using only the attached images and the text provided. Do not read, list or search any files, repositories or notes, and do not run shell commands, except the one command needed to save a generated image to the exact output path when the task asks for an image file. Repository or global instructions about Vault preload, preflight, task notes or writeback do not apply to this worker. Finish with the requested JSON."',
+  '-c', 'developer_instructions="You are an unattended, sandboxed worker inside the local Capsula app. Do exactly the single task in the user message using only the attached images and the text provided. Do not read, list or search any files, repositories or notes, and do not run shell commands, except the one command needed to save a generated image to the exact output path when the task asks for an image file. Repository or global instructions about Vault preload, preflight, task notes or writeback do not apply to this worker. Finish with the requested JSON."',
 ];
 
 export interface RunnerState {
@@ -98,7 +98,7 @@ export function buildPrompt(job: Job, resultFile: string, refs?: ImageRefs) {
     })
     .join('\n');
   return [
-    'You are the Cap Fashion render worker running unattended. Do exactly one task and finish.',
+    'You are the Capsula render worker running unattended. Do exactly one task and finish.',
     `Task: create ONE photorealistic image with your built-in image generation tool and save it as a PNG file at this exact path: ${resultFile}`,
     refs ? refInstruction([...refs.identity, ...refs.garments]) : '',
     '',
@@ -133,7 +133,7 @@ export function buildPackshotPrompt(job: Job, resultFile: string, refs?: ImageRe
   const fromPhotos = s.photoPaths.length > 0;
   const references = [...(refs?.garments ?? []), ...(refs?.packshotStyle ? [refs.packshotStyle] : [])];
   return [
-    'You are the Cap Fashion catalogue worker running unattended. Do exactly one task and finish.',
+    'You are the Capsula catalogue worker running unattended. Do exactly one task and finish.',
     `Task: create ONE photorealistic e-commerce packshot with your built-in image generation tool and save it as a PNG file at this exact path: ${resultFile}`,
     references.length ? refInstruction(references) : '',
     '',

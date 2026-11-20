@@ -183,7 +183,7 @@ const interrupted = await runner.recover();
   prewarm(PROJECT_ROOT, DATA_DIR, [...db.photos.map((p) => p.path), ...db.results.map((r) => r.imagePath)]);
 }
 server.listen(PORT, HOST, () => {
-  console.log(`${new Date().toISOString()} Cap Fashion: http://${HOST}:${PORT}  (дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${runner.state.codexBin})`);
+  console.log(`${new Date().toISOString()} Capsula: http://${HOST}:${PORT}  (дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${runner.state.codexBin})`);
   // A run was in progress when the server stopped: continue it. Jobs that were only queued wait for "Запустити".
   if (interrupted > 0) {
     console.log(`Продовжую чергу: ${interrupted} перерваних завдань`);

@@ -8,7 +8,7 @@ Keep the existing fashion/capsule work, original photos and future wardrobe deci
 
 - Source recovery is complete: preserve all 25 photos, the visible conversation and their provenance.
 - Build a source-backed candidate wardrobe catalogue; every item requires owner confirmation.
-- Maintain the [Cap Fashion v1 specification](superpowers/specs/2026-11-15-cap-fashion-design.md), accepted as the implementation basis on 17 November 2026, and the local site in `app/` that implements it.
+- Maintain the [Capsula v1 specification](superpowers/specs/2026-11-15-cap-fashion-design.md), accepted as the implementation basis on 17 November 2026, and the local site in `app/` that implements it.
 - Keep agent instructions, task checkpoints and the Vault project map synchronized.
 
 ## Working method

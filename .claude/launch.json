@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "capfashion",
+      "name": "capsula",
       "url": "http://localhost:4317",
       "port": 4317
     }

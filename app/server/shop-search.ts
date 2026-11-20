@@ -94,7 +94,7 @@ export function storeFindPrompt(db: DB) {
   const limit = radius && radius > 0 ? radius : 300;
   return [
     // Worded like the shop search: the unattended worker refused a "store-finder" task as outside its sources (19.11).
-    'You are the Cap Fashion shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
+    'You are the Capsula shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
     `Find where the owner can buy in person. Measure from: ${origin}.`,
     `For each shop below, find the NEAREST place to that point where its clothes can be bought in person — the shop's own store or an official retailer that sells the brand, whichever is nearer. place: for a retailer its name first, then the mall or street and city, e.g. "Europa 92, Tower Center, Rijeka"; for an own store the mall or street and city, e.g. "Arena Centar, Zagreb". km: approximate road distance from that point, 0 if unknown. url: the store locator or store page you used. online: true when there is no such place within about ${limit} km (then place empty). Only facts you verified on the web; never invent a store.`,
     'Shops (key | name | website):',
@@ -149,7 +149,7 @@ export function shopSearchPrompt(db: DB, job: Job) {
     .filter((l) => missingNeeds(db, l).includes(need.id))
     .map((l) => `- ${l.name}: ${Object.values(l.slots).flat().filter((r) => !(r.kind === 'need' && r.id === need.id)).map((r) => resolveRef(db, r).title).join(', ')}`);
   return [
-    'You are the Cap Fashion shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
+    'You are the Capsula shop-search worker running unattended. Use live web search. Answer with JSON only (schema enforced).',
     'Find 2 to 4 products the owner can buy now that fulfil this shopping recommendation.',
     `Recommendation: ${need.title} — ${need.description}`,
     need.why ? `Why it is recommended: ${need.why}` : '',
@@ -265,7 +265,7 @@ export async function fetchProductImage(projectRoot: string, dataDir: string, id
     // Every redirect is checked again before it is followed (at most 3).
     for (let hop = 0; u && hop <= 3; hop += 1) {
       if (!(await publicUrl(u))) return null;
-      res = await fetch(u, { redirect: 'manual', signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'Mozilla/5.0 (Cap Fashion product photo)' } });
+      res = await fetch(u, { redirect: 'manual', signal: AbortSignal.timeout(15000), headers: { 'user-agent': 'Mozilla/5.0 (Capsula product photo)' } });
       if (res.status < 300 || res.status >= 400) break;
       const next = res.headers.get('location');
       u = next ? httpsUrl(new URL(next, u).href) : null;

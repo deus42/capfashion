@@ -1,4 +1,4 @@
-# Cap Fashion — local site
+# Capsula — local site
 
 Personal capsule-wardrobe site from the [v1 specification](../docs/superpowers/specs/2026-11-15-cap-fashion-design.md). Sections: Home, Capsules, Try-on studio, Gallery, Wardrobe (Elements-style), Shopping, Queue, Legend; Profile opens from the avatar. The UI follows FASHN's layout and visual language in simplified form: icon rail, serif display titles (self-hosted Noto Serif Display), Geist UI type, image-first tiles. FASHN's logo, name and assets are not used.
 

@@ -328,7 +328,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const j = db.jobs.find((x) => x.id === jobId)!;
       j.state = 'running';
       j.startedAt = now();
-      j.stateNote = job.kind === 'intake' ? 'Codex розпізнає речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'storefind' ? 'Шукаю найближчі магазини…' : job.kind === 'discover' ? 'Шукаю нові образи…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Codex складає образи з твоїх речей…';
+      j.stateNote = job.kind === 'intake' ? 'Розпізнаю речі на фото…' : job.kind === 'shopsearch' ? 'Шукаю варіанти в магазинах…' : job.kind === 'storefind' ? 'Шукаю найближчі магазини…' : job.kind === 'discover' ? 'Шукаю нові образи…' : job.kind === 'advise' ? 'Порадник оцінює гардероб…' : 'Складаю образи з твоїх речей…';
       j.logPath = path.relative(projectRoot, logFile);
     });
     let exit: { code: number | null; err?: string };

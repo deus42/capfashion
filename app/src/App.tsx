@@ -15,7 +15,7 @@ import { ProfilePage } from './pages/Profile.tsx';
 import { Landing } from './pages/Landing.tsx';
 import { LegalPage } from './pages/Legal.tsx';
 import { Welcome } from './pages/Welcome.tsx';
-import { pickLanguage, setLanguage } from './i18n.ts';
+import { pickLanguage, setLanguage, t } from './i18n.ts';
 
 function RailItem({ to, icon, label, active, dot, desk }: { to: string; icon: ReactNode; label: string; active: boolean; dot?: number; desk?: boolean }) {
   return (
@@ -59,7 +59,7 @@ export default function App() {
         {error ? (
           <div className="stack" style={{ alignItems: 'center' }}>
             <TriangleAlert />
-            <b>Сервер недоступний</b>
+            <b>{t('Сервер недоступний')}</b>
             <span className="small">{error}</span>
           </div>
         ) : (
@@ -96,23 +96,23 @@ export default function App() {
 
   return (
     <div className="shell">
-      <nav className="rail" aria-label="Розділи">
+      <nav className="rail" aria-label={t('Розділи')}>
         <a href="/home" className="rail-logo" aria-label="Capsula">
           <CapsuleMark size={34} />
         </a>
-        <RailItem to="home" icon={<House size={ic} />} label="Головна" active={section === 'home'} desk />
-        <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label="Капсули" active={section === 'capsules' || section === 'looks'} />
-        <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
-        <button type="button" className="rail-item rail-upload" aria-label="Додати фото" title="Додати фото" onClick={intake.pick} disabled={intake.busy}>
+        <RailItem to="home" icon={<House size={ic} />} label={t('Головна')} active={section === 'home'} desk />
+        <RailItem to="capsules" icon={<LayoutGrid size={ic} />} label={t('Капсули')} active={section === 'capsules' || section === 'looks'} />
+        <RailItem to="gallery" icon={<Images size={ic} />} label={t('Галерея')} active={section === 'gallery'} />
+        <button type="button" className="rail-item rail-upload" aria-label={t('Додати фото')} title={t('Додати фото')} onClick={intake.pick} disabled={intake.busy}>
           <span className="upload-icon" aria-hidden="true">
             {intake.busy ? <Loader2 size={ic} className="spin" /> : <Plus size={ic} />}
           </span>
-          <span>Додати фото</span>
+          <span>{t('Додати фото')}</span>
         </button>
-        <RailItem to="wardrobe" icon={<Shirt size={ic} />} label="Гардероб" active={section === 'wardrobe'} />
-        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label="Покупки" active={section === 'shopping'} />
+        <RailItem to="wardrobe" icon={<Shirt size={ic} />} label={t('Гардероб')} active={section === 'wardrobe'} />
+        <RailItem to="shopping" icon={<ShoppingBag size={ic} />} label={t('Покупки')} active={section === 'shopping'} />
         <div className="rail-spacer" />
-        <a href="/profile" className={`rail-avatar${section === 'profile' ? ' active' : ''}`} aria-label="Мій профіль" title="Мій профіль">
+        <a href="/profile" className={`rail-avatar${section === 'profile' ? ' active' : ''}`} aria-label={t('Мій профіль')} title={t('Мій профіль')}>
           {avatar ? <Img path={avatar.path} w={120} /> : <User size={18} />}
         </a>
       </nav>
@@ -120,15 +120,15 @@ export default function App() {
       <div className="frame">
         {running.length > 0 && <SpanBar jobs={running} className="app-progress" />}
         <header className="topbar">
-          <a href="/home" className="wordmark m-only" aria-label="Capsula — Головна" aria-current={section === 'home' ? 'page' : undefined}>Capsula</a>
+          <a href="/home" className="wordmark m-only" aria-label={`Capsula — ${t('Головна')}`} aria-current={section === 'home' ? 'page' : undefined}>Capsula</a>
           <div className="grow" />
-          <a href="/profile" className="top-avatar m-only" aria-label="Мій профіль">
+          <a href="/profile" className="top-avatar m-only" aria-label={t('Мій профіль')}>
             {avatar ? <Img path={avatar.path} w={120} /> : <User size={16} />}
           </a>
         </header>
         {state.recovered && (
           <div className="banner warn">
-            <TriangleAlert size={16} /> Основний файл даних був пошкоджений — відкрито останню валідну копію. Наступне збереження відновить файл.
+            <TriangleAlert size={16} /> {t('Основний файл даних був пошкоджений — відкрито останню валідну копію. Наступне збереження відновить файл.')}
           </div>
         )}
         <main className="main">{page}</main>

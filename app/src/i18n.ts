@@ -5,7 +5,7 @@
  * that every literal `t('…')` in src has an English line. No external library.
  */
 import type { Language } from '../server/schema.ts';
-import { en } from './i18n/en.ts';
+import { en, enPatterns } from './i18n/en.ts';
 
 let lang: Language = 'uk';
 
@@ -23,7 +23,11 @@ export function setLanguage(next: Language) {
 export const currentLanguage = () => lang;
 
 export function t(text: string, vars?: Record<string, string | number>): string {
-  const out = lang === 'en' ? (en[text] ?? text) : text;
+  let out = text;
+  if (lang === 'en') {
+    if (text in en) out = en[text];
+    else for (const [re, to] of enPatterns) if (re.test(text)) { out = text.replace(re, to); break; }
+  }
   return vars ? out.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : out;
 }
 
@@ -35,3 +39,6 @@ export function plural(n: number, forms: { one: string; few: string; many: strin
   const form = m10 === 1 && m100 !== 11 ? forms.one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? forms.few : forms.many;
   return t(form, { n });
 }
+
+/** «1 образ», «3 образи», «5 образів». */
+export const LOOKS = { one: '{n} образ', few: '{n} образи', many: '{n} образів' };

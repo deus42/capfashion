@@ -3,6 +3,7 @@ import { hiddenLookIds, isCapsuleHidden } from './rating.ts';
 import { groupLookVariations } from './look-variation.ts';
 import { tooClose, withBuys } from './look-memory.ts';
 import { buysFitSet, capsulePieceRefs, combinationGains, fashionCapsules, inSavedSet } from './capsule-pieces.ts';
+import { LOOKS, plural, t } from './i18n.ts';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   outerwear: 'Верхній одяг',
@@ -51,7 +52,7 @@ export function todayLooks(db: DB, n = 2): Look[] {
 }
 
 /** «Пізня осінь · Зима» on a tile; with temperatures on the capsule page. */
-export const periodLine = (c: { periods?: Period[] }, temps = false) => (c.periods ?? []).map((p) => (temps ? `${PERIOD_LABEL[p]} ${PERIOD_TEMP[p]}` : PERIOD_LABEL[p])).join(' · ');
+export const periodLine = (c: { periods?: Period[] }, temps = false) => (c.periods ?? []).map((p) => (temps ? `${t(PERIOD_LABEL[p])} ${t(PERIOD_TEMP[p])}` : t(PERIOD_LABEL[p]))).join(' · ');
 
 export const SLOT_LABEL: Record<SlotKey, string> = { top: 'Верх', layer: 'Шар', bottom: 'Низ', shoes: 'Взуття', accessories: 'Аксесуари' };
 
@@ -169,12 +170,12 @@ export const progressShare = (elapsed: number, total: number) =>
 
 /** Real progress of one job: share of its usual time (never 100% before it ends) and what is left. */
 export function jobProgress(db: DB, job: Job, now = Date.now()) {
-  if (job.state !== 'running' || !job.startedAt) return { pct: 0, label: 'у черзі' };
+  if (job.state !== 'running' || !job.startedAt) return { pct: 0, label: t('у черзі') };
   const total = expectedSeconds(db, job.kind);
   const elapsed = Math.max(0, (now - new Date(job.startedAt).getTime()) / 1000);
   const left = total - elapsed;
   const pct = progressShare(elapsed, total);
-  const label = left >= 60 ? `ще ≈ ${Math.ceil(left / 60)} хв` : left > 5 ? 'ще < 1 хв' : left > -15 ? 'майже готово' : 'ще трохи';
+  const label = left >= 60 ? t('ще ≈ {n} хв', { n: Math.ceil(left / 60) }) : left > 5 ? t('ще < 1 хв') : left > -15 ? t('майже готово') : t('ще трохи');
   return { pct, label };
 }
 
@@ -329,18 +330,17 @@ export const capsuleCount = (capsules: { id: string }[]) => capsules.filter((c) 
 
 const ukrainianPlural = new Intl.PluralRules('uk');
 export function usageLabel(capsules: number, looks: number) {
-  if (!capsules && !looks) return 'без образів';
+  if (!capsules && !looks) return t('без образів');
   const ending = ukrainianPlural.select(capsules);
-  const lookEnding = ukrainianPlural.select(looks);
-  return `${capsules ? `у ${capsules} ${ending === 'one' ? 'капсулі' : 'капсулах'}` : '0 капсул'} · ${looks} ${lookEnding === 'one' ? 'образ' : lookEnding === 'few' ? 'образи' : 'образів'}`;
+  return `${capsules ? t(ending === 'one' ? 'у {n} капсулі' : 'у {n} капсулах', { n: capsules }) : t('0 капсул')} · ${plural(looks, LOOKS)}`;
 }
 
 /** Quiet line under an incomplete look's name (owner, 17.11): what is missing first, then how many more. */
 export function missingInfo(db: DB, look: Look): { text: string; more: number } | null {
-  if (!hasPieces(look)) return { text: 'порожній образ', more: 0 };
+  if (!hasPieces(look)) return { text: t('порожній образ'), more: 0 };
   const m = missingTitles(db, look);
   if (!m.length) return null;
-  return { text: `бракує: ${m[0].charAt(0).toLowerCase()}${m[0].slice(1)}`, more: m.length - 1 };
+  return { text: `${t('бракує')}: ${m[0].charAt(0).toLowerCase()}${m[0].slice(1)}`, more: m.length - 1 };
 }
 
 /** Liked first, then looks the owner can wear now, then the rest; otherwise the given order (owner, 17.11). */
@@ -368,9 +368,9 @@ export function itemVerdict(db: DB, item: Item): { line: string; note: string; k
   if (!r || item.status === 'inactive' || item.mergedInto || isEyewear(item.title)) return null;
   const n = itemUsage(db, item.id).looks;
   const reason = r.replace ? `${r.replace.charAt(0).toLowerCase()}${r.replace.slice(1)}`.replace(/[.\s]+$/, '') : '';
-  if (r.replace && !r.kept) return { kind: 'replace', line: `${r.score}/10 · варто замінити: ${reason}`, note: r.note, need: db.needs.find((x) => x.replaces === item.id && x.status === 'open') };
-  if (r.score >= 7 && n <= 1) return { kind: 'underused', line: `${r.score}/10 · гарна, мало образів`, note: r.note };
-  if (r.score >= 7) return { kind: 'strong', line: `${r.score}/10 · сильна річ`, note: r.note };
+  if (r.replace && !r.kept) return { kind: 'replace', line: `${r.score}/10 · ${t('варто замінити')}: ${reason}`, note: r.note, need: db.needs.find((x) => x.replaces === item.id && x.status === 'open') };
+  if (r.score >= 7 && n <= 1) return { kind: 'underused', line: `${r.score}/10 · ${t('гарна, мало образів')}`, note: r.note };
+  if (r.score >= 7) return { kind: 'strong', line: `${r.score}/10 · ${t('сильна річ')}`, note: r.note };
   return { kind: 'plain', line: `${r.score}/10`, note: r.note };
 }
 
@@ -431,7 +431,7 @@ export function shopStores(db: DB) {
 export function readyLine(db: DB, c: Pick<Capsule, 'lookIds'>) {
   const { done, total } = capsuleReady(db, c);
   if (!total) return '';
-  return done === total ? 'усі готові' : `${done} з ${total} готові`;
+  return done === total ? t('усі готові') : t('{done} з {total} готові', { done, total });
 }
 
 /** Liked first, then fully ready capsules, then the share of ready looks. */

@@ -7,6 +7,7 @@ import { Badge, CategoryIcon, ConfirmButton, Empty, JobBar, LookArt, Missing, Mo
 import { CATEGORY_LABEL, capsuleCount, isEyewear, itemPlacements, itemRating, itemVerdict, scoreLabel, usageLabel, wardrobeCapsule } from '../lib.ts';
 
 import { InfoMark, TermInfo } from './Glossary.tsx';
+import { t } from '../i18n.ts';
 
 const STATUS_LABEL: Record<ItemStatus, string> = { needs_confirmation: 'Потребує підтвердження', confirmed: 'Підтверджено', inactive: 'Неактуальна' };
 const STATUS_SHORT: Record<ItemStatus, string> = { needs_confirmation: 'звірити', confirmed: 'моя річ', inactive: 'неактуальна' };
@@ -40,7 +41,7 @@ function ItemPage({ item }: { item: Item }) {
 
   return (
     <div className="page">
-      <div className="crumb"><a href="/wardrobe">Гардероб</a></div>
+      <div className="crumb"><a href="/wardrobe">{t('Гардероб')}</a></div>
       <div className="page-head">
         <div>
           <h1>{item.title}<TermInfo texts={[item.title, item.fit]} /></h1>
@@ -50,14 +51,14 @@ function ItemPage({ item }: { item: Item }) {
               {verdict.line.includes(' ') ? `${verdict.line.slice(0, verdict.line.lastIndexOf(' '))} ` : ''}
               <span className="nowrap">{verdict.line.slice(verdict.line.lastIndexOf(' ') + 1)}{verdict.note && <InfoMark title={`${item.rating!.score}/10`} text={verdict.note} />}</span>
               {(verdict.need || (verdict.kind === 'replace' && item.status !== 'needs_confirmation')) && <span className="nowrap">
-                {verdict.need && <> · <a href={`/shopping?need=${verdict.need.id}`}>у покупках</a></>}
-                {verdict.kind === 'replace' && item.status !== 'needs_confirmation' && <button className="btn sm verdict-no" onClick={() => void act(() => api('POST', `/api/items/${item.id}/keep`), 'Залишаю — порадник оцінить ще раз')}>Ні</button>}
+                {verdict.need && <> · <a href={`/shopping?need=${verdict.need.id}`}>{t('у покупках')}</a></>}
+                {verdict.kind === 'replace' && item.status !== 'needs_confirmation' && <button className="btn sm verdict-no" onClick={() => void act(() => api('POST', `/api/items/${item.id}/keep`), t('Залишаю — порадник оцінить ще раз'))}>{t('Ні')}</button>}
               </span>}
             </p>
           )}
         </div>
         <div className="actions">
-          <button className="icon-btn" aria-label="Редагувати річ" onClick={() => setEditing(true)}><Pencil size={14} /></button>
+          <button className="icon-btn" aria-label={t('Редагувати річ')} onClick={() => setEditing(true)}><Pencil size={14} /></button>
         </div>
       </div>
 
@@ -76,23 +77,23 @@ function ItemPage({ item }: { item: Item }) {
 
       {item.status === 'needs_confirmation' && (
         <div className="its-me">
-          <span>Це моя річ?</span>
-          <button className="btn" onClick={() => void patch({ status: 'inactive' }, 'Прибрано')}>Ні</button>
-          <button className="btn primary" onClick={() => void patch({ status: 'confirmed' }, 'Моя річ')}><Check size={15} /> Так</button>
+          <span>{t('Це моя річ?')}</span>
+          <button className="btn" onClick={() => void patch({ status: 'inactive' }, t('Прибрано'))}>{t('Ні')}</button>
+          <button className="btn primary" onClick={() => void patch({ status: 'confirmed' }, t('Моя річ'))}><Check size={15} /> {t('Так')}</button>
         </div>
       )}
       {item.status === 'inactive' && (
         <div className="its-me">
-          <span>Не моя / неактуальна</span>
-          <button className="btn" onClick={() => void patch({ status: 'confirmed' }, 'Повернуто')}>Повернути</button>
+          <span>{t('Не моя / неактуальна')}</span>
+          <button className="btn" onClick={() => void patch({ status: 'confirmed' }, t('Повернуто'))}>{t('Повернути')}</button>
         </div>
       )}
 
       <div className="section-head">
-        <h2 className="h2">Де використано <span className="count">{usageLabel(capsuleCount(capsules), looks.length)}</span></h2>
+        <h2 className="h2">{t('Де використано')} <span className="count">{usageLabel(capsuleCount(capsules), looks.length)}</span></h2>
         {item.status !== 'inactive' && !isEyewear(item.title) && (
-          <button className="btn sm" onClick={async () => { const ok = await act(() => api('POST', '/api/discover', { itemIds: [item.id] }), 'Шукаю нові образи з цією річчю'); if (ok) go('/capsules?tab=new'); }}>
-            <Sparkles size={13} /> Ще образ
+          <button className="btn sm" onClick={async () => { const ok = await act(() => api('POST', '/api/discover', { itemIds: [item.id] }), t('Шукаю нові образи з цією річчю')); if (ok) go('/capsules?tab=new'); }}>
+            <Sparkles size={13} /> {t('Ще образ')}
           </button>
         )}
       </div>
@@ -111,7 +112,7 @@ function ItemPage({ item }: { item: Item }) {
         </div>
       )}
       {covers.map((n) => (
-        <a key={n.id} className="small muted" style={{ display: 'block', marginTop: 16 }} href={`/shopping?need=${n.id}`}>Закриває покупку «{n.title}»</a>
+        <a key={n.id} className="small muted" style={{ display: 'block', marginTop: 16 }} href={`/shopping?need=${n.id}`}>{t('Закриває покупку «{title}»', { title: n.title })}</a>
       ))}
       {editing && <ItemEdit item={item} onClose={() => setEditing(false)} />}
     </div>
@@ -124,41 +125,41 @@ function ItemEdit({ item, onClose }: { item: Item; onClose: () => void }) {
   const [form, setForm] = useState({ title: item.title, category: item.category, color: item.color ?? '', brand: item.brand ?? '', model: item.model ?? '', composition: item.composition ?? '', fit: item.fit ?? '', size: item.size ?? '' });
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const field = (k: keyof typeof form, label: string) => (
-    <label className="field"><span>{label}</span><input className="input" value={form[k]} onChange={set(k)} /></label>
+    <label className="field"><span>{t(label)}</span><input className="input" value={form[k]} onChange={set(k)} /></label>
   );
   const save = async () => {
-    const ok = await act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...form }), 'Збережено');
+    const ok = await act(() => api('PATCH', `/api/items/${item.id}`, { rev: item.rev, ...form }), t('Збережено'));
     if (ok) onClose();
   };
   return (
     <Modal
-      title="Річ"
+      title={t('Річ')}
       onClose={onClose}
       footer={
         <>
           <ConfirmButton
             className="btn ghost danger"
-            title="Видалити річ"
-            message={`Видалити «${item.title}» з гардероба? Фото-оригінали лишаться в архіві.`}
+            title={t('Видалити річ')}
+            message={t('Видалити «{title}» з гардероба? Фото-оригінали лишаться в архіві.', { title: item.title })}
             onConfirm={async () => {
-              const ok = await act(() => api('DELETE', `/api/items/${item.id}`), 'Річ видалено');
+              const ok = await act(() => api('DELETE', `/api/items/${item.id}`), t('Річ видалено'));
               if (ok !== undefined) go('/wardrobe');
             }}
           >
             <Trash2 size={14} />
           </ConfirmButton>
-          <button className="btn ghost" onClick={() => void act(() => api('POST', '/api/packshots', { itemIds: [item.id], run: true }), 'Нове фото речі в роботі')}><Wand2 size={14} /> Нове фото</button>
+          <button className="btn ghost" onClick={() => void act(() => api('POST', '/api/packshots', { itemIds: [item.id], run: true }), t('Нове фото речі в роботі'))}><Wand2 size={14} /> {t('Нове фото')}</button>
           <span style={{ flex: 1 }} />
-          <button className="btn primary" onClick={() => void save()}>Зберегти</button>
+          <button className="btn primary" onClick={() => void save()}>{t('Зберегти')}</button>
         </>
       }
     >
       <div className="grid-form">
-        <label className="field full"><span>Назва</span><input className="input" value={form.title} onChange={set('title')} /></label>
+        <label className="field full"><span>{t('Назва')}</span><input className="input" value={form.title} onChange={set('title')} /></label>
         <label className="field">
-          <span>Категорія</span>
+          <span>{t('Категорія')}</span>
           <select className="select" value={form.category} onChange={set('category')}>
-            {CATS.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+            {CATS.map((c) => <option key={c} value={c}>{t(CATEGORY_LABEL[c])}</option>)}
           </select>
         </label>
         {field('color', 'Колір')}
@@ -178,32 +179,32 @@ function NewItem({ onClose }: { onClose: () => void }) {
   const [category, setCategory] = useState<Category>('tees');
   return (
     <Modal
-      title="Нова річ"
+      title={t('Нова річ')}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Скасувати</button>
+          <button className="btn" onClick={onClose}>{t('Скасувати')}</button>
           <button
             className="btn primary"
             onClick={async () => {
-              const item = await act(() => api<Item>('POST', '/api/items', { title, category }), 'Річ додано');
+              const item = await act(() => api<Item>('POST', '/api/items', { title, category }), t('Річ додано'));
               if (item) {
                 onClose();
                 go(`/wardrobe/${item.id}`);
               }
             }}
           >
-            Додати
+            {t('Додати')}
           </button>
         </>
       }
     >
       <div className="grid-form">
-        <label className="field full"><span>Назва</span><input className="input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="напр. Біла Oxford-сорочка" /></label>
+        <label className="field full"><span>{t('Назва')}</span><input className="input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('напр. Біла Oxford-сорочка')} /></label>
         <label className="field">
-          <span>Категорія</span>
+          <span>{t('Категорія')}</span>
           <select className="select" value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-            {CATS.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+            {CATS.map((c) => <option key={c} value={c}>{t(CATEGORY_LABEL[c])}</option>)}
           </select>
         </label>
       </div>
@@ -242,7 +243,7 @@ export function WardrobePage({ openId }: { openId?: string }) {
   const visible = db.items.filter((i) => i.status !== 'inactive' && !i.mergedInto);
   const open = openId ? db.items.find((i) => i.id === openId) : undefined;
   const missing = db.items.filter((i) => !i.packshotId && i.status !== 'inactive' && !busy.has(i.id)).length;
-  const title = view === 'new' ? 'Нові з фото' : cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі';
+  const title = t(view === 'new' ? 'Нові з фото' : cat ? CATEGORY_LABEL[cat] : status ? STATUS_LABEL[status] : 'Усі речі');
   // An item opens as its own page, not a side panel over the grid.
   if (open) return <ItemPage item={open} />;
 
@@ -254,13 +255,13 @@ export function WardrobePage({ openId }: { openId?: string }) {
           mode ? null : (
             <>
               {missing > 0 && (
-                <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), 'Роблю фото речей')} title="Фото речей">
-                  <Wand2 size={15} /> Фото {missing}
+                <button className="btn" onClick={() => void act(() => api('POST', '/api/packshots', { all: true, run: true }), t('Роблю фото речей'))} title={t('Фото речей')}>
+                  <Wand2 size={15} /> {t('Фото')} {missing}
                 </button>
               )}
-              <button className="icon-btn" onClick={() => startMode('merge')} title="Обʼєднати дублікати"><Merge size={15} /></button>
-              <button className="icon-btn" onClick={() => setCreating(true)} title="Додати вручну"><Plus size={16} /></button>
-              <button className="btn primary" onClick={() => startMode('compose')}><Sparkles size={15} /> Доповнити образ</button>
+              <button className="icon-btn" onClick={() => startMode('merge')} title={t('Обʼєднати дублікати')}><Merge size={15} /></button>
+              <button className="icon-btn" onClick={() => setCreating(true)} title={t('Додати вручну')}><Plus size={16} /></button>
+              <button className="btn primary" onClick={() => startMode('compose')}><Sparkles size={15} /> {t('Доповнити образ')}</button>
 
             </>
           )
@@ -294,12 +295,12 @@ export function WardrobePage({ openId }: { openId?: string }) {
           <div className="toolbar">
             <label className="search">
               <Search size={15} />
-              <input className="input" placeholder="Пошук речі" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input className="input" placeholder={t('Пошук речі')} value={q} onChange={(e) => setQ(e.target.value)} />
             </label>
             <span className="grow" />
           </div>
           {list.length === 0 ? (
-            <Empty icon={<CircleDashed />} title="Речей не знайдено">Зміни фільтр або додай нову річ.</Empty>
+            <Empty icon={<CircleDashed />} title={t('Речей не знайдено')}>{t('Зміни фільтр або додай нову річ.')}</Empty>
           ) : (
             <div className="ward-grid">
               {list.map((i) => {
@@ -316,8 +317,8 @@ export function WardrobePage({ openId }: { openId?: string }) {
                   >
                     <div className="img">
                       {packshot ? <img src={thumb(packshot.path, 480)} alt={i.title} loading="lazy" /> : photo ? <img className="photo" src={thumb(photo.path, 480)} alt={i.title} loading="lazy" /> : null}
-                      {i.status !== 'needs_confirmation' && <span className="tl"><Badge tone={`${STATUS_TONE[i.status]} glass`}>{STATUS_SHORT[i.status]}</Badge></span>}
-                      {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">нова</Badge></span>}
+                      {i.status !== 'needs_confirmation' && <span className="tl"><Badge tone={`${STATUS_TONE[i.status]} glass`}>{t(STATUS_SHORT[i.status])}</Badge></span>}
+                      {i.origin === 'intake' && i.status === 'needs_confirmation' && <span className="tl"><Badge tone="info glass">{t('нова')}</Badge></span>}
                       {mergeSel && <span className="tr sel-box">{selected && <Check size={14} />}</span>}
                       {st?.state === 'running' && <JobBar job={st} />}
                     </div>
@@ -332,35 +333,35 @@ export function WardrobePage({ openId }: { openId?: string }) {
       </div>
       {mode && (
         <div className="sel-bar">
-              <span className="small muted">{mode === 'compose' ? `Вибери 1–4 речі · ${sel.length}` : `Вибери дублікати · ${sel.length}`}</span>
-              <button className="btn" onClick={stopMode}>Скасувати</button>
+              <span className="small muted">{mode === 'compose' ? `${t('Вибери 1–4 речі')} · ${sel.length}` : `${t('Вибери дублікати')} · ${sel.length}`}</span>
+              <button className="btn" onClick={stopMode}>{t('Скасувати')}</button>
               {mode === 'merge' ? (
                 <button
                   className="btn primary"
                   disabled={sel.length < 2}
                   onClick={async () => {
-                    const ok = await act(() => api<Item>('POST', '/api/items/merge', { ids: sel }), 'Дублікати обʼєднано, джерела збережено');
+                    const ok = await act(() => api<Item>('POST', '/api/items/merge', { ids: sel }), t('Дублікати обʼєднано, джерела збережено'));
                     if (ok) {
                       stopMode();
                       go(`/wardrobe/${ok.id}`);
                     }
                   }}
                 >
-                  <Merge size={15} /> Обʼєднати {sel.length}
+                  <Merge size={15} /> {t('Обʼєднати')} {sel.length}
                 </button>
               ) : (
                 <button
                   className="btn primary"
                   disabled={sel.length < 1}
                   onClick={async () => {
-                    const ok = await act(() => api('POST', '/api/discover', { itemIds: sel }), 'Шукаю нові образи з вибраними речами');
+                    const ok = await act(() => api('POST', '/api/discover', { itemIds: sel }), t('Шукаю нові образи з вибраними речами'));
                     if (ok) {
                       stopMode();
                       go('/capsules?tab=new');
                     }
                   }}
                 >
-                  <Sparkles size={15} /> Доповнити {sel.length || ''}
+                  <Sparkles size={15} /> {t('Доповнити')} {sel.length || ''}
                 </button>
               )}
                     </div>

@@ -885,6 +885,13 @@ button.wtile { border: 0; background: none; padding: 0; font: inherit; color: in
 .landing-foot { display: flex; justify-content: center; gap: 22px; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); font-size: 12.5px; }
 .landing-foot a { color: var(--faint); }
 .landing-foot a:hover { color: var(--ink); }
+/* «Капсули для тебе»: a catalogue style as a quiet text tile with one small «+». */
+.style-card { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 240px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius, 14px); background: var(--surface); }
+.style-idea { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.style-pieces { margin: 10px 0 0; font-size: 12px; line-height: 1.6; color: var(--faint); }
+.style-add { position: absolute; top: 16px; right: 16px; }
+.style-card .tile-period { display: block; padding-right: 40px; }
+
 /* «Побажання»: language, clothes and hemisphere as quiet toggles. */
 .pref-rows { display: grid; gap: 4px; margin-bottom: 22px; }
 .pref-row { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 12px; }

@@ -1,5 +1,6 @@
 import type { DB } from '../server/schema.ts';
 import type { QuotaKind, QuotaStatus } from '../server/quota.ts';
+import { t } from './i18n.ts';
 export type * from '../server/schema.ts';
 export type { QuotaKind, QuotaStatus };
 
@@ -27,7 +28,7 @@ export class ApiError extends Error {
 
 async function parse<T>(res: Response): Promise<T> {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error || `Помилка ${res.status}`);
+  if (!res.ok) throw new ApiError(res.status, t((data as { error?: string }).error || 'Помилка {status}', { status: res.status }));
   return data as T;
 }
 
@@ -47,9 +48,9 @@ const QUOTA_OUT: Record<QuotaKind, string> = {
 export function quotaNote(session: Session | null, kind: QuotaKind): string | null {
   const q = session?.quota;
   if (!q || q.owner) return null;
-  if (q.paused) return 'Генерацію призупинено до 1-го числа';
+  if (q.paused) return t('Генерацію призупинено до 1-го числа');
   const k = q.kinds[kind];
-  return k.limit !== null && k.used >= k.limit ? QUOTA_OUT[kind] : null;
+  return k.limit !== null && k.used >= k.limit ? t(QUOTA_OUT[kind]) : null;
 }
 export async function getSession(): Promise<Session> {
   return parse(await fetch('/api/session', { cache: 'no-store' }));

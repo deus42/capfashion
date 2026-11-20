@@ -6,10 +6,10 @@ import { useDb } from '../store.tsx';
 import { CATEGORY_LABEL, resolveRef } from '../lib.ts';
 import { CAPSULE_LIMITS, MAX_BASE_PIECES, capsuleSet, pieceCategory, pieceGroup, pieceKey, type CapsulePiece, type PieceGroup } from '../capsule-pieces.ts';
 import { Badge, CategoryIcon } from './ui.tsx';
+import { LOOKS, t, plural as pluralize } from '../i18n.ts';
 
-const plural = new Intl.PluralRules('uk');
-const looksText = (n: number) => (n ? `${n} ${{ one: 'образ', few: 'образи' }[plural.select(n) as string] ?? 'образів'}` : 'без образів');
-const combosText = (n: number) => `${n} ${plural.select(n) === 'many' ? 'поєднань' : 'поєднання'}`;
+const looksText = (n: number) => (n ? pluralize(n, LOOKS) : t('без образів'));
+const combosText = (n: number) => pluralize(n, { one: '{n} поєднання', few: '{n} поєднання', many: '{n} поєднань' });
 const GROUP_TEXT: Record<PieceGroup, string> = { garments: 'Одяг', shoes: 'Взуття', accessories: 'Аксесуари' };
 const ROLE_ORDER = ['layer', 'top', 'bottom', 'shoes', 'accessories'];
 const byRole = (a: CapsulePiece, b: CapsulePiece) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || Number(b.base) - Number(a.base) || b.looks - a.looks;
@@ -33,17 +33,17 @@ export function CapsuleSetSection({ capsule }: { capsule: Capsule }) {
       <a key={pieceKey(p.ref)} className="wtile" href={pieceHref(p.ref)}>
         <div className="img">
           {art ? <img src={thumb(art, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
-          {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
+          {r.inactive && <span className="tl"><Badge tone="glass">{t('неактуальна')}</Badge></span>}
         </div>
         <span className="nm">{r.title}</span>
-        <span className="sub">{[p.base && 'база', !p.owned && 'докупити', looksText(p.looks)].filter(Boolean).join(' · ')}</span>
+        <span className="sub">{[p.base && t('база'), !p.owned && t('докупити'), looksText(p.looks)].filter(Boolean).join(' · ')}</span>
       </a>
     );
   };
   return (
-    <section className="capsule-set" aria-label="Речі капсули">
+    <section className="capsule-set" aria-label={t('Речі капсули')}>
       <div className="section-head">
-        <h2 className="h2">Речі <span className={`count${over ? ' over' : ''}`}>{over ? `${set.counts.garments}/${CAPSULE_LIMITS.garments}` : set.counts.garments}</span></h2>
+        <h2 className="h2">{t('Речі')} <span className={`count${over ? ' over' : ''}`}>{over ? `${set.counts.garments}/${CAPSULE_LIMITS.garments}` : set.counts.garments}</span></h2>
         {set.combinations > 0 && <span className="set-combos">{combosText(set.combinations)}</span>}
       </div>
       {garments.length > 0 && <div className="ward-grid">{garments.map(tile)}</div>}
@@ -106,10 +106,10 @@ export function CapsuleSetEditor({ draft, onChange }: { draft: SetDraft; onChang
 
   return (
     <div className="field full set-edit">
-      <span>Речі</span>
+      <span>{t('Речі')}</span>
       <p className="set-counts">
         {(Object.keys(CAPSULE_LIMITS) as PieceGroup[]).map((g) => (
-          <span key={g} className={counts[g] > CAPSULE_LIMITS[g] ? 'over' : ''}>{GROUP_TEXT[g]} {counts[g]}/{CAPSULE_LIMITS[g]}</span>
+          <span key={g} className={counts[g] > CAPSULE_LIMITS[g] ? 'over' : ''}>{t(GROUP_TEXT[g])} {counts[g]}/{CAPSULE_LIMITS[g]}</span>
         ))}
       </p>
       <ul className="set-list">
@@ -122,27 +122,27 @@ export function CapsuleSetEditor({ draft, onChange }: { draft: SetDraft; onChang
           return (
             <li key={key} className={pendingGroup === g ? 'replaceable' : ''}>
               <span className="set-thumb">{art ? <img src={thumb(art, 160)} alt="" /> : <CategoryIcon category={res.category} size={16} />}</span>
-              <span className="set-name">{res.title}{r.kind === 'need' && <span className="buy"> · докупити</span>}</span>
+              <span className="set-name">{res.title}{r.kind === 'need' && <span className="buy"> · {t('докупити')}</span>}</span>
               {g === 'garments' && (
-                <button type="button" className={`quiet-toggle${isBase ? ' on' : ''}`} aria-pressed={isBase} disabled={!isBase && draft.base.length >= MAX_BASE_PIECES} onClick={() => toggleBase(r)}>база</button>
+                <button type="button" className={`quiet-toggle${isBase ? ' on' : ''}`} aria-pressed={isBase} disabled={!isBase && draft.base.length >= MAX_BASE_PIECES} onClick={() => toggleBase(r)}>{t('база')}</button>
               )}
               {pendingGroup === g
-                ? <button type="button" className="quiet-toggle" onClick={() => replace(r)}>замінити</button>
-                : <button type="button" className="icon-btn sm" aria-label={`Прибрати «${res.title}»`} onClick={() => remove(r)}><X size={13} /></button>}
+                ? <button type="button" className="quiet-toggle" onClick={() => replace(r)}>{t('замінити')}</button>
+                : <button type="button" className="icon-btn sm" aria-label={t('Прибрати «{title}»', { title: res.title })} onClick={() => remove(r)}><X size={13} /></button>}
             </li>
           );
         })}
       </ul>
       {draft.pending && pendingGroup && (
         <p className="set-note">
-          {GROUP_TEXT[pendingGroup]} уже {counts[pendingGroup]}/{CAPSULE_LIMITS[pendingGroup]}: що замінить «{resolveRef(db, draft.pending).title}»?
-          <button type="button" className="quiet-toggle" onClick={() => onChange({ ...draft, pending: null })}>Скасувати</button>
+          {t('{group} уже {n}/{max}: що замінить «{title}»?', { group: t(GROUP_TEXT[pendingGroup]), n: counts[pendingGroup], max: CAPSULE_LIMITS[pendingGroup], title: resolveRef(db, draft.pending).title })}
+          <button type="button" className="quiet-toggle" onClick={() => onChange({ ...draft, pending: null })}>{t('Скасувати')}</button>
         </p>
       )}
-      <select className="select" value="" aria-label="Додати річ у капсулу" onChange={(e) => add(e.target.value)}>
-        <option value="">Додати річ…</option>
-        {items.length > 0 && <optgroup label="Мої речі">{items.map((i) => <option key={i.id} value={`item:${i.id}`}>{i.title} — {CATEGORY_LABEL[i.category]}</option>)}</optgroup>}
-        {needs.length > 0 && <optgroup label="Докупити">{needs.map((n) => <option key={n.id} value={`need:${n.id}`}>{n.title} — {CATEGORY_LABEL[n.category]}</option>)}</optgroup>}
+      <select className="select" value="" aria-label={t('Додати річ у капсулу')} onChange={(e) => add(e.target.value)}>
+        <option value="">{t('Додати річ…')}</option>
+        {items.length > 0 && <optgroup label={t('Мої речі')}>{items.map((i) => <option key={i.id} value={`item:${i.id}`}>{i.title} — {t(CATEGORY_LABEL[i.category])}</option>)}</optgroup>}
+        {needs.length > 0 && <optgroup label={t('Докупити')}>{needs.map((n) => <option key={n.id} value={`need:${n.id}`}>{n.title} — {t(CATEGORY_LABEL[n.category])}</option>)}</optgroup>}
       </select>
     </div>
   );

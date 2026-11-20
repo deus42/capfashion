@@ -6,6 +6,7 @@ import { useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, Overlay, PageHead, RateButtons } from '../components/ui.tsx';
 import { hiddenLookIds } from '../rating.ts';
 import './Gallery.css';
+import { t } from '../i18n.ts';
 
 type Entry = { kind: 'tryon'; r: Result; at: string } | { kind: 'packshot' | 'inspiration' | 'original'; p: Photo; at: string; itemId?: string };
 
@@ -47,9 +48,9 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
         <div className="lightbox simple" role="dialog" aria-modal="true">
           <div className="lb-img"><img src={media(r.imagePath)} alt={look?.name} /></div>
           <div className="lb-bar">
-            {look ? <a className="grow lb-name" href={`/looks/${look.id}`} onClick={onClose}>{look.name}</a> : <b className="grow">Примірка</b>}
+            {look ? <a className="grow lb-name" href={`/looks/${look.id}`} onClick={onClose}>{look.name}</a> : <b className="grow">{t('Примірка')}</b>}
             {look && <RateButtons kind="look" target={look} size="sm" />}
-            <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Закрити')}><X size={16} /></button>
           </div>
         </div>
       </Overlay>
@@ -59,7 +60,7 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const job = db.jobs.find((j) => j.photoId === entry.p.id);
   const inspiration = entry.p.inspiration;
   const original = entry.kind === 'original';
-  const title = inspiration?.title ?? item?.title ?? (original ? 'Моє фото' : 'Фото');
+  const title = inspiration?.title ?? item?.title ?? (original ? t('Моє фото') : t('Фото'));
   return (
     <Overlay onClose={onClose}>
       <div className={`lightbox${inspiration || original ? ' inspiration-lightbox' : ''}`} role="dialog" aria-modal="true">
@@ -67,25 +68,25 @@ function Lightbox({ entry, onClose }: { entry: Entry; onClose: () => void }) {
         <div className="lb-side">
           <div className="drawer-head">
             <h2>{title}</h2>
-            <button className="icon-btn" onClick={onClose} aria-label="Закрити"><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Закрити')}><X size={16} /></button>
           </div>
           <div className="body">
             {inspiration?.sourceNote && <div className="note small">{inspiration.sourceNote}</div>}
             {inspiration && <div className="row wrap">{inspiration.tags.map((t) => <Badge key={t}>{t}</Badge>)}</div>}
           </div>
           <div className="drawer-foot">
-            {!original && <ConfirmButton className="btn sm ghost danger" title={inspiration ? 'Прибрати референс' : 'Видалити фото речі'} message={inspiration ? 'Прибрати цей референс із галереї? Архівне джерело залишиться.' : 'Видалити це згенероване фото? Річ і її оригінальні фото залишаться.'} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), 'Зображення прибрано'); if (ok !== undefined) onClose(); }}>
+            {!original && <ConfirmButton className="btn sm ghost danger" title={inspiration ? t('Прибрати референс') : t('Видалити фото речі')} message={inspiration ? t('Прибрати цей референс із галереї? Архівне джерело залишиться.') : t('Видалити це згенероване фото? Річ і її оригінальні фото залишаться.')} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/photos/${entry.p.id}`), t('Зображення прибрано')); if (ok !== undefined) onClose(); }}>
               <Trash2 size={13} />
             </ConfirmButton>}
             <span style={{ flex: 1 }} />
-            {inspiration && <a className="btn sm" href={inspiration.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Джерело</a>}
-            {original && <a className="btn sm" href={media(entry.p.originalPath ?? entry.p.path)} download><Download size={13} /> Оригінал</a>}
+            {inspiration && <a className="btn sm" href={inspiration.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={13} /> {t('Джерело')}</a>}
+            {original && <a className="btn sm" href={media(entry.p.originalPath ?? entry.p.path)} download><Download size={13} /> {t('Оригінал')}</a>}
             {!original && job && (
-              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${job.id}/retry`, { run: true }), 'Роблю нове фото речі')}>
-                <RotateCcw size={13} /> Нове фото
+              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/jobs/${job.id}/retry`, { run: true }), t('Роблю нове фото речі'))}>
+                <RotateCcw size={13} /> {t('Нове фото')}
               </button>
             )}
-            {item && <a className="btn sm primary" href={`/wardrobe/${item.id}`} onClick={onClose}>Картка речі</a>}
+            {item && <a className="btn sm primary" href={`/wardrobe/${item.id}`} onClick={onClose}>{t('Картка речі')}</a>}
           </div>
         </div>
       </div>
@@ -125,31 +126,31 @@ export function GalleryPage() {
 
   return (
     <div className="page">
-      <PageHead title="Галерея" />
+      <PageHead title={t('Галерея')} />
       <div className="toolbar">
         <div className="seg seg-scroll">
-          <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>Примірки <span className="faint">{counts.tryon}</span></button>
-          <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>Фото речей <span className="faint">{counts.packshot}</span></button>
-          <button className={type === 'original' ? 'on' : ''} onClick={() => setType('original')}>Мої фото <span className="faint">{counts.original}</span></button>
-          <button className={type === 'face' ? 'on' : ''} onClick={() => setType('face')}>Обличчя <span className="faint">{counts.face}</span></button>
-          <button className={type === 'inspiration' ? 'on' : ''} onClick={() => setType('inspiration')}>Натхнення <span className="faint">{counts.inspiration}</span></button>
+          <button className={type === 'tryon' ? 'on' : ''} onClick={() => setType('tryon')}>{t('Примірки')} <span className="faint">{counts.tryon}</span></button>
+          <button className={type === 'packshot' ? 'on' : ''} onClick={() => setType('packshot')}>{t('Фото речей')} <span className="faint">{counts.packshot}</span></button>
+          <button className={type === 'original' ? 'on' : ''} onClick={() => setType('original')}>{t('Мої фото')} <span className="faint">{counts.original}</span></button>
+          <button className={type === 'face' ? 'on' : ''} onClick={() => setType('face')}>{t('Обличчя')} <span className="faint">{counts.face}</span></button>
+          <button className={type === 'inspiration' ? 'on' : ''} onClick={() => setType('inspiration')}>{t('Натхнення')} <span className="faint">{counts.inspiration}</span></button>
         </div>
       </div>
       {/* Quiet text filters on their own row under the tabs (owner, 20.11: elegant, and the tabs never move). */}
       {type === 'inspiration' && tags.length > 0 && (
-        <div className="filters" role="group" aria-label="Тема натхнення">
-          <button className={tag === '' ? 'on' : ''} aria-pressed={tag === ''} onClick={() => setTag('')}>Усі теми</button>
+        <div className="filters" role="group" aria-label={t('Тема натхнення')}>
+          <button className={tag === '' ? 'on' : ''} aria-pressed={tag === ''} onClick={() => setTag('')}>{t('Усі теми')}</button>
           {tags.map((t) => <button key={t} className={tag === t ? 'on' : ''} aria-pressed={tag === t} onClick={() => setTag(t)}>{t}</button>)}
         </div>
       )}
       {type === 'tryon' && (
-        <div className="filters" role="group" aria-label="Які примірки">
-          <button className={filter === 'any' ? 'on' : ''} aria-pressed={filter === 'any'} onClick={() => setFilter('any')}>Усі</button>
-          <button className={filter === 'fav' ? 'on' : ''} aria-pressed={filter === 'fav'} onClick={() => setFilter('fav')}>Подобаються</button>
+        <div className="filters" role="group" aria-label={t('Які примірки')}>
+          <button className={filter === 'any' ? 'on' : ''} aria-pressed={filter === 'any'} onClick={() => setFilter('any')}>{t('Усі')}</button>
+          <button className={filter === 'fav' ? 'on' : ''} aria-pressed={filter === 'fav'} onClick={() => setFilter('fav')}>{t('Подобаються')}</button>
         </div>
       )}
       {groups.length === 0 ? (
-        <Empty icon={<Images />} title="Поки порожньо" />
+        <Empty icon={<Images />} title={t('Поки порожньо')} />
       ) : (
         groups.map(([day, es]) => (
           <section key={day}>
@@ -159,7 +160,7 @@ export function GalleryPage() {
                 e.kind === 'tryon' ? (
                   <button key={e.r.id} className="gtile tryon" onClick={() => setOpen(e)}>
                     <img src={thumb(e.r.imagePath, 520)} alt="" loading="lazy" />
-                    {db.looks.find((l) => l.id === e.r.lookId)?.favorite && <span className="tr liked-mark" aria-label="Подобається"><ThumbsUp size={12} fill="currentColor" /></span>}
+                    {db.looks.find((l) => l.id === e.r.lookId)?.favorite && <span className="tr liked-mark" aria-label={t('Подобається')}><ThumbsUp size={12} fill="currentColor" /></span>}
                     <span className="cap">{db.looks.find((l) => l.id === e.r.lookId)?.name}</span>
                   </button>
                 ) : (

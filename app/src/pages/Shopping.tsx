@@ -6,6 +6,7 @@ import { useApp, useDb } from '../store.tsx';
 import { Badge, CategoryIcon, ConfirmButton, Empty, Img, JobBar, Modal, UploadButton } from '../components/ui.tsx';
 import { distinctLooks, fmtDay, itemArt, looksUsing, plainShopName, purchasePlan, purchaseRanking, shopLocation, shopStores, siteLooks, storeKey } from '../lib.ts';
 import { TermInfo } from './Glossary.tsx';
+import { t } from '../i18n.ts';
 
 const STALE_DAYS = 14;
 
@@ -33,29 +34,29 @@ function ProductEditor({ need, product, onClose }: { need: Need; product?: Produ
   const set = (k: keyof ProductForm) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
   const save = async () => {
     const body = { ...f, checkedAt: new Date().toISOString().slice(0, 10), needId: need.id, rev: product?.rev };
-    const ok = await act(() => (product ? api('PATCH', `/api/products/${product.id}`, body) : api('POST', '/api/products', body)), 'Товар збережено');
+    const ok = await act(() => (product ? api('PATCH', `/api/products/${product.id}`, body) : api('POST', '/api/products', body)), t('Товар збережено'));
     if (ok) onClose();
   };
   const field = (k: keyof ProductForm, label: string, placeholder = '', full = false) => (
     <label className={`field${full ? ' full' : ''}`}>
-      <span>{label}</span>
-      <input className="input" value={f[k]} onChange={k === 'price' ? (e) => set(k)({ target: { value: e.target.value.replace(',', '.') } }) : set(k)} placeholder={placeholder} inputMode={k === 'price' ? 'decimal' : undefined} />
+      <span>{t(label)}</span>
+      <input className="input" value={f[k]} onChange={k === 'price' ? (e) => set(k)({ target: { value: e.target.value.replace(',', '.') } }) : set(k)} placeholder={t(placeholder)} inputMode={k === 'price' ? 'decimal' : undefined} />
     </label>
   );
   return (
     <Modal
-      title={product ? 'Редагувати товар' : `Товар для «${need.title}»`}
+      title={product ? t('Редагувати товар') : t('Товар для «{title}»', { title: need.title })}
       onClose={onClose}
       footer={
         <>
           {product && (
-            <ConfirmButton className="btn ghost danger" title="Видалити товар" message={`Видалити ${product.brand} ${product.model}?`} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/products/${product.id}`), 'Товар видалено'); if (ok !== undefined) onClose(); }}>
+            <ConfirmButton className="btn ghost danger" title={t('Видалити товар')} message={t('Видалити {name}?', { name: `${product.brand} ${product.model}` })} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/products/${product.id}`), t('Товар видалено')); if (ok !== undefined) onClose(); }}>
               <Trash2 size={14} />
             </ConfirmButton>
           )}
           <span style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>Скасувати</button>
-          <button className="btn primary" onClick={() => void save()}>Зберегти</button>
+          <button className="btn" onClick={onClose}>{t('Скасувати')}</button>
+          <button className="btn primary" onClick={() => void save()}>{t('Зберегти')}</button>
         </>
       }
     >
@@ -79,7 +80,7 @@ function RetireOld({ need, value, onChange }: { need?: Need; value: boolean; onC
   return (
     <label className="row" style={{ gap: 8 }}>
       <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-      <span>Прибрати «{old.title}» з гардероба</span>
+      <span>{t('Прибрати «{title}» з гардероба', { title: old.title })}</span>
     </label>
   );
 }
@@ -92,19 +93,19 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
   const [photoId, setPhotoId] = useState<string | undefined>();
   return (
     <Modal
-      title="Позначити купленим"
+      title={t('Позначити купленим')}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Скасувати</button>
+          <button className="btn" onClick={onClose}>{t('Скасувати')}</button>
           <button
             className="btn primary"
             onClick={async () => {
-              const ok = await act(() => api('POST', `/api/products/${product.id}/purchase`, { size, photoId, retire }), 'Річ додано в гардероб, образи оновлено');
+              const ok = await act(() => api('POST', `/api/products/${product.id}/purchase`, { size, photoId, retire }), t('Річ додано в гардероб, образи оновлено'));
               if (ok) onClose();
             }}
           >
-            <Check size={14} /> Куплено
+            <Check size={14} /> {t('Куплено')}
           </button>
         </>
       }
@@ -112,11 +113,11 @@ function PurchaseModal({ product, onClose }: { product: Product; onClose: () => 
       <div className="stack" style={{ gap: 12 }}>
         <p><b>{product.brand} {product.model}</b></p>
         <label className="field">
-          <span>Мій розмір (у системі бренду)</span>
-          <input className="input" value={size} onChange={(e) => setSize(e.target.value)} placeholder="напр. M або W32 L32" />
+          <span>{t('Мій розмір (у системі бренду)')}</span>
+          <input className="input" value={size} onChange={(e) => setSize(e.target.value)} placeholder={t('напр. M або W32 L32')} />
         </label>
         <div className="row">
-          <UploadButton kind="item" multiple={false} className="btn sm" label={photoId ? 'Фото додано ✓' : 'Додати своє фото'} onDone={(ids) => setPhotoId(ids[0])} />
+          <UploadButton kind="item" multiple={false} className="btn sm" label={photoId ? t('Фото додано ✓') : t('Додати своє фото')} onDone={(ids) => setPhotoId(ids[0])} />
         </div>
         <RetireOld need={db.needs.find((n) => n.id === product.needId)} value={retire} onChange={setRetire} />
       </div>
@@ -152,9 +153,9 @@ function storePlaces(db: ReturnType<typeof useDb>): Map<string, Where> {
     const name = plainShopName(s.name);
     // A store at the owner's own shopping place is named like the others there.
     const atHere = Boolean(here) && Boolean(s.place?.place.toLowerCase().includes(noCity(here.split(',')[0], '\\s+').toLowerCase()));
-    if (s.place && !s.place.online) out.set(s.key, { line: atHere ? here.split(',')[0] : `${noCity(s.place.place, ',\\s*')}${s.place.km ? ` · ≈ ${s.place.km} км` : ''}`, href: map(`${name} ${s.place.place}`) });
+    if (s.place && !s.place.online) out.set(s.key, { line: atHere ? here.split(',')[0] : `${noCity(s.place.place, ',\\s*')}${s.place.km ? ` · ≈ ${s.place.km} ${t('км')}` : ''}`, href: map(`${name} ${s.place.place}`) });
     else if (s.atPlace && here) out.set(s.key, { line: here.split(',')[0], href: map(`${name} ${here}`) });
-    else if (s.place?.online) out.set(s.key, { line: 'онлайн', href: s.place.url ?? (s.host ? `https://${s.host}` : undefined) });
+    else if (s.place?.online) out.set(s.key, { line: t('онлайн'), href: s.place.url ?? (s.host ? `https://${s.host}` : undefined) });
   }
   return out;
 }
@@ -175,17 +176,17 @@ function ProductLine({ p, need, best, where }: { p: Product; need: Need; best: b
       <span className="pl-img">{photo ? <Img path={photo.path} w={160} /> : concept ? <Img path={concept.path} w={160} /> : <CategoryIcon category={need.category} size={18} />}</span>
       <span className="pl-main">
         {p.url ? <a className="pl-name" href={p.url} target="_blank" rel="noreferrer">{name}</a> : <b className="pl-name">{name}</b>}
-        <span className="pl-sub">{[shop, p.recommendedSize ? `розмір ${p.recommendedSize}` : ''].filter(Boolean).join(' · ')}</span>
+        <span className="pl-sub">{[shop, p.recommendedSize ? `${t('розмір')} ${p.recommendedSize}` : ''].filter(Boolean).join(' · ')}</span>
       </span>
       {where?.href
         ? <a className="pl-where" href={where.href} target="_blank" rel="noreferrer"><MapPin size={13} />{where.line}</a>
         : <span className="pl-where">{where ? <><MapPin size={13} />{where.line}</> : null}</span>}
-      <span className="pl-price">{p.price != null ? money(p.price, p.currency) : ''}{stale && <span className="pl-stale">ціна {fmtDay(p.checkedAt!)}</span>}</span>
-      <span className="pl-score">{p.matchScore != null && <>{p.matchScore}/10{best && <span className="pl-best">найкраще</span>}<TermInfo texts={[]} notes={[{ title: 'Чому пасує', text: p.matchNote }]} /></>}</span>
+      <span className="pl-price">{p.price != null ? money(p.price, p.currency) : ''}{stale && <span className="pl-stale">{t('ціна')} {fmtDay(p.checkedAt!)}</span>}</span>
+      <span className="pl-score">{p.matchScore != null && <>{p.matchScore}/10{best && <span className="pl-best">{t('найкраще')}</span>}<TermInfo texts={[]} notes={[{ title: t('Чому пасує'), text: p.matchNote }]} /></>}</span>
       <span className="pl-act">
-        {p.status === 'purchased' && <Badge tone="ok">куплено</Badge>}
-        {open && <button className="btn sm quiet" onClick={() => setBuy(true)}><Check size={12} /> Куплено</button>}
-        {open && <button className="product-x" aria-label={`Прибрати варіант ${name}`} onClick={() => void act(() => api('DELETE', `/api/products/${p.id}`))}><X size={13} /></button>}
+        {p.status === 'purchased' && <Badge tone="ok">{t('куплено')}</Badge>}
+        {open && <button className="btn sm quiet" onClick={() => setBuy(true)}><Check size={12} /> {t('Куплено')}</button>}
+        {open && <button className="product-x" aria-label={t('Прибрати варіант {name}', { name })} onClick={() => void act(() => api('DELETE', `/api/products/${p.id}`))}><X size={13} /></button>}
       </span>
       {buy && <PurchaseModal product={p} onClose={() => setBuy(false)} />}
     </div>
@@ -195,7 +196,7 @@ function ProductLine({ p, need, best, where }: { p: Product; need: Need; best: b
 type CoverReply = { looks: number; queued: number; waiting: number };
 
 const coverToast = (verb: string, r: CoverReply) =>
-  [verb, r.looks ? `образів оновлено: ${r.looks}` : '', r.queued ? `нових примірок: ${r.queued}` : '', r.waiting ? `примірок чекає: ${r.waiting}` : ''].filter(Boolean).join(' · ');
+  [t(verb), r.looks ? t('образів оновлено: {n}', { n: r.looks }) : '', r.queued ? t('нових примірок: {n}', { n: r.queued }) : '', r.waiting ? t('примірок чекає: {n}', { n: r.waiting }) : ''].filter(Boolean).join(' · ');
 
 /** "Вже маю": pick the owner's item that is what the recommendation asked for. */
 function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
@@ -206,14 +207,14 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
   const cover = async (itemId: string) => {
     const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/cover`, { itemId, retire }));
     if (!r) return;
-    toast(coverToast('Прибрано з покупок', r));
+    toast(coverToast(t('Прибрано з покупок'), r));
     onClose();
   };
   return (
-    <Modal title={`Вже маю: ${need.title}`} onClose={onClose} wide>
+    <Modal title={`${t('Вже маю')}: ${need.title}`} onClose={onClose} wide>
       <RetireOld need={need} value={retire} onChange={setRetire} />
       {items.length === 0 ? (
-        <p className="muted">У гардеробі немає речей цієї категорії. Додай фото — збіг знайдеться сам.</p>
+        <p className="muted">{t('У гардеробі немає речей цієї категорії. Додай фото — збіг знайдеться сам.')}</p>
       ) : (
         <div className="own-picks">
           {items.map((i) => {
@@ -232,9 +233,9 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
 }
 
 /** «пасує до 5 образів · завершує 2» (owner, 19.11): what the spend really gives; «завершує» only when it completes something (20.11). */
-const planLine = (p: { fits: number; completes: number }) => `пасує до ${p.fits} ${p.fits === 1 ? 'образу' : 'образів'}${p.completes ? ` · завершує ${p.completes}` : ''}`;
+const planLine = (p: { fits: number; completes: number }) => `${t(p.fits === 1 ? 'пасує до {n} образу' : 'пасує до {n} образів', { n: p.fits })}${p.completes ? ` · ${t('завершує {n}', { n: p.completes })}` : ''}`;
 /** When one purchase is not enough: the rest of the smallest set and the look it makes wearable. */
-const planWith = (p: ReturnType<typeof purchasePlan>) => (p.with ? `ще ${p.with.others.join(', ')} — і готовий «${p.with.look.name}»` : '');
+const planWith = (p: ReturnType<typeof purchasePlan>) => (p.with ? t('ще {others} — і готовий «{look}»', { others: p.with.others.join(', '), look: p.with.look.name }) : '');
 
 function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; places: Map<string, Where> }) {
   const db = useDb();
@@ -251,7 +252,7 @@ function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; pl
   const waiting = Boolean(waitJob);
   // The last search that added nothing or failed says so in one grey line.
   const last = [...searches].filter((j) => j.state === 'done' || j.state === 'error').sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''))[0];
-  const lastNote = !waiting && last && (last.state === 'error' || !/^Знайдено/.test(last.stateNote ?? '')) ? last.stateNote : '';
+  const lastNote = !waiting && last && (last.state === 'error' || !/^Знайдено/.test(last.stateNote ?? '')) ? t(last.stateNote ?? '') : '';
   const search = () => act(() => api('POST', `/api/needs/${need.id}/search`));
   const covered = need.coveredByItem ? db.items.find((i) => i.id === need.coveredByItem) : undefined;
   const bought = products.find((p) => p.status === 'purchased');
@@ -264,11 +265,11 @@ function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; pl
   const bestId = products.length && (products[0].matchScore ?? 0) > (products[1]?.matchScore ?? -1) ? products[0].id : '';
   const uncover = async () => {
     const r = await act(() => api<CoverReply>('POST', `/api/needs/${need.id}/uncover`));
-    if (r) { toast(coverToast('Повернуто в покупки', r)); setEditing(false); }
+    if (r) { toast(coverToast(t('Повернуто в покупки'), r)); setEditing(false); }
   };
   const unbuy = async () => {
     if (!bought) return;
-    const ok = await act(() => api('POST', `/api/products/${bought.id}/unpurchase`), 'Покупку скасовано');
+    const ok = await act(() => api('POST', `/api/products/${bought.id}/unpurchase`), t('Покупку скасовано'));
     if (ok !== undefined) setEditing(false);
   };
   return (
@@ -288,12 +289,12 @@ function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; pl
       <div className="need-body">
         <div className="need-head">
           <div className="need-info">
-            {top && <span className="eyebrow-sm">Наступна покупка</span>}
-            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} notes={[{ title: 'Навіщо', text: need.why }, ...(need.status === 'open' ? [{ title: 'Що перевірити', text: need.fitCheck }] : [])]} /></span>{need.status === 'covered' && <Badge tone="ok">{bought ? 'куплено' : 'вже є'}</Badge>}</h3>
+            {top && <span className="eyebrow-sm">{t('Наступна покупка')}</span>}
+            <h3>{need.title.includes(' ') ? `${need.title.slice(0, need.title.lastIndexOf(' '))} ` : ''}<span className="nowrap">{need.title.slice(need.title.lastIndexOf(' ') + 1)}<TermInfo texts={[need.title, need.description]} notes={[{ title: t('Навіщо'), text: need.why }, ...(need.status === 'open' ? [{ title: t('Що перевірити'), text: need.fitCheck }] : [])]} /></span>{need.status === 'covered' && <Badge tone="ok">{bought ? t('куплено') : t('вже є')}</Badge>}</h3>
             <span className="need-line">
               {forCapsule && <a href={`/capsules/${forCapsule.id}`}>{forCapsule.name}</a>}
-              {replaces && <span>замінить <a href={`/wardrobe/${replaces.id}`}>{replaces.title}</a></span>}
-              {covered && <span>{bought ? 'куплено' : 'своя річ'}: <a href={`/wardrobe/${covered.id}`}>{covered.title}</a></span>}
+              {replaces && <span>{t('замінить')} <a href={`/wardrobe/${replaces.id}`}>{replaces.title}</a></span>}
+              {covered && <span>{bought ? t('куплено') : t('своя річ')}: <a href={`/wardrobe/${covered.id}`}>{covered.title}</a></span>}
               {need.status === 'open' && plan.fits > 0 && <span>{planLine(plan)}</span>}
             </span>
             {need.status === 'open' && plan.with && <span className="need-line">{planWith(plan)}</span>}
@@ -303,11 +304,11 @@ function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; pl
           </div>
           <div className="need-acts">
             {need.status === 'open' && (
-              <button className="icon-btn" disabled={waiting} onClick={() => void search()} aria-label={products.length ? 'Оновити пошук' : 'Знайти варіанти'} title={products.length ? 'Оновити пошук' : 'Знайти варіанти'}>
+              <button className="icon-btn" disabled={waiting} onClick={() => void search()} aria-label={products.length ? t('Оновити пошук') : t('Знайти варіанти')} title={products.length ? t('Оновити пошук') : t('Знайти варіанти')}>
                 <RefreshCw size={14} />
               </button>
             )}
-            <button className="icon-btn" aria-label="Редагувати покупку" onClick={() => setEditing(true)}><Pencil size={14} /></button>
+            <button className="icon-btn" aria-label={t('Редагувати покупку')} onClick={() => setEditing(true)}><Pencil size={14} /></button>
           </div>
         </div>
         {waitJob && <div className="search-run"><JobBar job={waitJob} label /></div>}
@@ -326,15 +327,15 @@ function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; pl
           footer={
             <>
               {!bought && (
-                <ConfirmButton className="btn ghost danger" title="Видалити покупку" message={<>Видалити «{need.title}»?{using.length ? ` Вона зникне з ${using.length} образів.` : ''}</>} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/needs/${need.id}`), 'Видалено'); if (ok !== undefined) setEditing(false); }}>
+                <ConfirmButton className="btn ghost danger" title={t('Видалити покупку')} message={<>{t('Видалити «{name}»?', { name: need.title })}{using.length ? ` ${t('Вона зникне з {n} образів.', { n: using.length })}` : ''}</>} onConfirm={async () => { const ok = await act(() => api('DELETE', `/api/needs/${need.id}`), 'Видалено'); if (ok !== undefined) setEditing(false); }}>
                   <Trash2 size={14} />
                 </ConfirmButton>
               )}
               <span style={{ flex: 1 }} />
-              {need.status === 'open' && <button className="btn" onClick={() => { setEditing(false); setAdding(true); }}><Plus size={14} /> Товар у магазині</button>}
-              {need.status === 'open' && <button className="btn primary" onClick={() => { setEditing(false); setOwning(true); }}><Check size={14} /> Вже маю</button>}
-              {need.status === 'covered' && covered && !bought && <button className="btn" onClick={() => void uncover()}><Undo2 size={14} /> Повернути в покупки</button>}
-              {bought && <ConfirmButton className="btn" title="Скасувати покупку" message={<>Скасувати покупку «{cleanName(`${bought.brand} ${bought.model}`)}»? Річ зникне з гардероба, покупка повернеться.</>} onConfirm={() => void unbuy()}><Undo2 size={14} /> Скасувати покупку</ConfirmButton>}
+              {need.status === 'open' && <button className="btn" onClick={() => { setEditing(false); setAdding(true); }}><Plus size={14} /> {t('Товар у магазині')}</button>}
+              {need.status === 'open' && <button className="btn primary" onClick={() => { setEditing(false); setOwning(true); }}><Check size={14} /> {t('Вже маю')}</button>}
+              {need.status === 'covered' && covered && !bought && <button className="btn" onClick={() => void uncover()}><Undo2 size={14} /> {t('Повернути в покупки')}</button>}
+              {bought && <ConfirmButton className="btn" title={t('Скасувати покупку')} message={<>{t('Скасувати покупку «{name}»? Річ зникне з гардероба, покупка повернеться.', { name: cleanName(`${bought.brand} ${bought.model}`) })}</>} onConfirm={() => void unbuy()}><Undo2 size={14} /> {t('Скасувати покупку')}</ConfirmButton>}
             </>
           }
         >
@@ -362,12 +363,12 @@ export function ShoppingPage({ focus }: { focus?: string }) {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Покупки</h1>
+          <h1>{t('Покупки')}</h1>
         </div>
       </div>
       {/* Where to buy sits on every product line (owner, 20.11), so there is no separate store list to scroll to. */}
       {needs.length === 0 ? (
-        <Empty icon={<ShoppingBag />} title="Відкритих покупок немає" />
+        <Empty icon={<ShoppingBag />} title={t('Відкритих покупок немає')} />
       ) : (
         <div className="needs">
           {needs.map((n, i) => <NeedCard key={n.id} need={n} top={i === 0 && n.status === 'open'} places={places} />)}

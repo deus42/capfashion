@@ -9,13 +9,17 @@ import { ratingOf } from '../rating.ts';
 import type { ResolvedRef } from '../lib.ts';
 import { REF_KIND_LABEL, currentCover, indoorOnly, expectedSeconds, jobProgress, lookJob, missingInfo, piecesOf, progressShare } from '../lib.ts';
 import { TermInfo } from '../pages/Glossary.tsx';
+import { t } from '../i18n.ts';
+
+/** Props that may be plain Ukrainian text are translated where they are shown; other nodes pass through. */
+const tr = <T,>(v: T): T | string => (typeof v === 'string' ? t(v) : v);
 
 export function Badge({ tone = '', children }: { tone?: string; children: ReactNode }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 
 export function KindDot({ kind }: { kind: ResolvedRef['kind'] }) {
-  return <span className={`kind-dot k-${kind}`} title={REF_KIND_LABEL[kind]} />;
+  return <span className={`kind-dot k-${kind}`} title={t(REF_KIND_LABEL[kind])} />;
 }
 
 export function KindLegend() {
@@ -23,7 +27,7 @@ export function KindLegend() {
     <div className="legend">
       {(['owned', 'candidate', 'need', 'product'] as const).map((k) => (
         <span key={k}>
-          <KindDot kind={k} /> {REF_KIND_LABEL[k]}
+          <KindDot kind={k} /> {t(REF_KIND_LABEL[k])}
         </span>
       ))}
     </div>
@@ -54,8 +58,8 @@ export function Modal({ title, onClose, children, footer, wide }: { title: React
     <Overlay onClose={onClose}>
       <div className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true">
         <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Закрити">
+          <h2>{tr(title)}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t('Закрити')}>
             <X size={16} />
           </button>
         </div>
@@ -92,7 +96,7 @@ export function UploadButton({
     const ids: string[] = [];
     await act(async () => {
       for (const f of Array.from(files)) ids.push((await uploadFile(f, { kind, ...params })).id);
-    }, files.length > 1 ? `Завантажено ${files.length} фото` : 'Фото завантажено');
+    }, files.length > 1 ? t('Завантажено {n} фото', { n: files.length }) : t('Фото завантажено'));
     setBusy(false);
     if (ref.current) ref.current.value = '';
     if (ids.length) onDone?.(ids);
@@ -101,7 +105,7 @@ export function UploadButton({
     <>
       <button type="button" className={className} onClick={() => ref.current?.click()} disabled={busy}>
         {busy ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
-        {label}
+        {t(label)}
       </button>
       <input ref={ref} type="file" accept="image/*,.heic,.heif" multiple={multiple} hidden onChange={(e) => void run(e.target.files)} />
     </>
@@ -127,13 +131,13 @@ export function Dropzone({ kind, params = {}, text, onDone }: { kind: PhotoKind;
         const ids: string[] = [];
         void act(async () => {
           for (const f of files) ids.push((await uploadFile(f, { kind, ...params })).id);
-        }, `Завантажено ${files.length} фото`).then(() => ids.length && onDone?.(ids));
+        }, t('Завантажено {n} фото', { n: files.length })).then(() => ids.length && onDone?.(ids));
       }}
     >
       <ImagePlus size={20} style={{ margin: '0 auto 6px' }} />
-      <div>{text}</div>
+      <div>{t(text)}</div>
       <div style={{ marginTop: 10 }}>
-        <UploadButton kind={kind} params={params} onDone={onDone} className="btn sm" label="Вибрати файли" />
+        <UploadButton kind={kind} params={params} onDone={onDone} className="btn sm" label={t('Вибрати файли')} />
       </div>
     </div>
   );
@@ -164,13 +168,13 @@ export function PhotoPicker({
       footer={
         <>
           <span className="muted small" style={{ marginRight: 'auto' }}>
-            Вибрано: {sel.length}
+            {t('Вибрано')}: {sel.length}
           </span>
           <button className="btn" onClick={onClose}>
-            Скасувати
+            {t('Скасувати')}
           </button>
           <button className="btn primary" onClick={() => onSave(sel)}>
-            Зберегти вибір
+            {t('Зберегти вибір')}
           </button>
         </>
       }
@@ -182,7 +186,7 @@ export function PhotoPicker({
               <Img path={p.path} w={360} />
               <span className="sel">{sel.includes(p.id) && <Check size={14} />}</span>
               <span className="corner">
-                <Badge tone={p.kind === 'base' ? 'dark' : ''}>{p.kind === 'source' ? 'чат 14.11' : p.kind === 'base' ? 'базове' : p.kind}</Badge>
+                <Badge tone={p.kind === 'base' ? 'dark' : ''}>{p.kind === 'source' ? t('чат 14.11') : p.kind === 'base' ? t('базове') : p.kind}</Badge>
               </span>
             </div>
             <div className="meta">
@@ -200,7 +204,7 @@ export function Empty({ icon, title, children }: { icon: ReactNode; title: strin
   return (
     <div className="card pad" style={{ textAlign: 'center', padding: 40 }}>
       <div style={{ color: 'var(--faint)', display: 'grid', placeItems: 'center', marginBottom: 10 }}>{icon}</div>
-      <b>{title}</b>
+      <b>{tr(title)}</b>
       {children && <div className="muted" style={{ marginTop: 6 }}>{children}</div>}
     </div>
   );
@@ -216,13 +220,13 @@ export function CategoryIcon({ category, size = 18 }: { category?: Category; siz
 export function Piece({ r, w = 520 }: { r: ResolvedRef; w?: number }) {
   if (r.art) {
     return (
-      <div className="piece" title={`${r.title} — ${REF_KIND_LABEL[r.kind]}`}>
+      <div className="piece" title={`${r.title} — ${t(REF_KIND_LABEL[r.kind])}`}>
         <img src={thumb(r.art, w)} alt={r.title} loading="lazy" />
       </div>
     );
   }
   return (
-    <div className="piece ph" title={`${r.title} — ${REF_KIND_LABEL[r.kind]}`}>
+    <div className="piece ph" title={`${r.title} — ${t(REF_KIND_LABEL[r.kind])}`}>
       <span className="ico"><CategoryIcon category={r.category} size={18} /></span>
     </div>
   );
@@ -235,7 +239,7 @@ export function PieceStrip({ slots, size = 44 }: { slots: Slots; size?: number }
   return (
     <div className="pstrip">
       {pieces.map((r) => (
-        <span key={`${r.ref.kind}-${r.ref.id}`} className={`pthumb k-${r.kind}`} style={{ width: size, height: size }} title={`${r.title} — ${REF_KIND_LABEL[r.kind]}`}>
+        <span key={`${r.ref.kind}-${r.ref.id}`} className={`pthumb k-${r.kind}`} style={{ width: size, height: size }} title={`${r.title} — ${t(REF_KIND_LABEL[r.kind])}`}>
           {r.art ? <img src={thumb(r.art, 160)} alt="" loading="lazy" /> : <CategoryIcon category={r.category} size={Math.round(size * 0.4)} />}
         </span>
       ))}
@@ -329,7 +333,7 @@ export function Composer({ value, onChange, onSend, busy, placeholder, label, ch
       <div className="composer-bar">
         {children}
         <span className="grow" />
-        <button type="button" className="composer-send" onClick={onSend} disabled={busy} aria-label={busy ? 'Шукаю' : label} title={busy ? 'Шукаю' : label}>
+        <button type="button" className="composer-send" onClick={onSend} disabled={busy} aria-label={busy ? t('Шукаю') : t(label)} title={busy ? t('Шукаю') : t(label)}>
           {busy ? <Loader2 size={16} className="spin" /> : <ArrowUp size={17} />}
         </button>
       </div>
@@ -364,14 +368,14 @@ export function Missing({ look }: { look: Look }) {
   if (!m && !indoor) return null;
   return <>
     {m && <span className="miss"><span className="miss-t">{m.text}</span>{m.more > 0 && <span className="miss-n">+{m.more}</span>}</span>}
-    {indoor && <span className="miss">у приміщенні</span>}
+    {indoor && <span className="miss">{t('у приміщенні')}</span>}
   </>;
 }
 
 export function LookCollage({ slots, max = 5 }: { slots: Slots; max?: number }) {
   const db = useDb();
   const pieces = piecesOf(db, slots).slice(0, max);
-  if (pieces.length === 0) return <div className="collage n1"><div className="piece ph"><Shirt size={20} /><span>Образ порожній</span></div></div>;
+  if (pieces.length === 0) return <div className="collage n1"><div className="piece ph"><Shirt size={20} /><span>{t('Образ порожній')}</span></div></div>;
   if (pieces.length <= 2) return <div className={`collage n${pieces.length}`}>{pieces.map((r) => <Piece key={r.ref.id} r={r} />)}</div>;
   const [first, ...rest] = pieces;
   return (
@@ -396,11 +400,11 @@ export function SubNav({ groups, value, onChange }: { groups: { label?: string; 
     <nav className="subnav">
       {groups.map((g, i) => (
         <div key={i} style={{ display: 'contents' }}>
-          {g.label && <div className="label">{g.label}</div>}
+          {g.label && <div className="label">{t(g.label)}</div>}
           {g.items.map((it) => (
             <button key={it.key} className={`subnav-item${value === it.key ? ' on' : ''}`} onClick={() => onChange(it.key)}>
               {it.icon}
-              <span>{it.label}</span>
+              <span>{t(it.label)}</span>
               {it.n !== undefined && <span className="n">{it.n}</span>}
             </button>
           ))}
@@ -416,7 +420,7 @@ export function PageHead({ crumb, title, sub, actions }: { crumb?: ReactNode; ti
       {crumb && <div className="crumb">{crumb}</div>}
       <div className="page-head">
         <div>
-          <h1>{title}</h1>
+          <h1>{tr(title)}</h1>
           {sub && <p>{sub}</p>}
         </div>
         {actions && <div className="actions">{actions}</div>}
@@ -445,7 +449,7 @@ export function ConfirmButton({
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <button type="button" className={className} onClick={() => setOpen(true)} title={title} aria-label={title}>
+      <button type="button" className={className} onClick={() => setOpen(true)} title={tr(title)} aria-label={tr(title)}>
         {children}
       </button>
       {open && (
@@ -454,7 +458,7 @@ export function ConfirmButton({
           onClose={() => setOpen(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setOpen(false)}>Скасувати</button>
+              <button className="btn" onClick={() => setOpen(false)}>{t('Скасувати')}</button>
               <button
                 className="btn primary"
                 style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}
@@ -466,12 +470,12 @@ export function ConfirmButton({
                   setOpen(false);
                 }}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : null} {confirmLabel}
+                {busy ? <Loader2 size={14} className="spin" /> : null} {t(confirmLabel)}
               </button>
             </>
           }
         >
-          <div style={{ fontSize: 15 }}>{message}</div>
+          <div style={{ fontSize: 15 }}>{tr(message)}</div>
         </Modal>
       )}
     </>
@@ -488,10 +492,10 @@ export function RenderPlaceholder({ lookIds }: { lookIds: string[] }) {
   const noBase = db.profile.basePhotoIds.length === 0;
   // Work in progress is only the thin bar (owner rule); words stay for what the owner can act on.
   return (
-    <div className="render-ph" title={!running && !queued ? waiting?.stateNote : undefined}>
+    <div className="render-ph" title={!running && !queued && waiting?.stateNote ? t(waiting.stateNote) : undefined}>
       {running && <JobBar job={running} />}
       <PersonStanding size={24} />
-      {!running && !queued && <span>{waiting ? 'Примірка чекає' : noBase ? 'Додай своє фото' : 'Примірки ще немає'}</span>}
+      {!running && !queued && <span>{waiting ? t('Примірка чекає') : noBase ? t('Додай своє фото') : t('Примірки ще немає')}</span>}
     </div>
   );
 }
@@ -506,16 +510,16 @@ export function RateButtons({ kind, target, size = 'md' }: { kind: 'look' | 'cap
   const rating = ratingOf(target);
   const set = (next: 'like' | 'dislike') => {
     const value = rating === next ? null : next;
-    const msg = value === 'dislike' ? 'Приховано — повернути можна в «Капсули → Приховані»' : value === 'like' ? 'Подобається — тепер першим' : 'Оцінку знято';
+    const msg = value === 'dislike' ? t('Приховано — повернути можна в «Капсули → Приховані»') : value === 'like' ? t('Подобається — тепер першим') : t('Оцінку знято');
     void act(() => api('POST', `/api/${kind === 'look' ? 'looks' : 'capsules'}/${target.id}/rating`, { rating: value }), msg);
   };
   const ic = size === 'sm' ? 14 : 16;
   return (
-    <div className={`rate ${size}`} role="group" aria-label="Оцінка">
-      <button className={`rate-btn${rating === 'like' ? ' on' : ''}`} aria-pressed={rating === 'like'} aria-label="Подобається" onClick={(e) => { e.preventDefault(); e.stopPropagation(); set('like'); }}>
+    <div className={`rate ${size}`} role="group" aria-label={t('Оцінка')}>
+      <button className={`rate-btn${rating === 'like' ? ' on' : ''}`} aria-pressed={rating === 'like'} aria-label={t('Подобається')} onClick={(e) => { e.preventDefault(); e.stopPropagation(); set('like'); }}>
         <ThumbsUp size={ic} fill={rating === 'like' ? 'currentColor' : 'none'} />
       </button>
-      <button className={`rate-btn${rating === 'dislike' ? ' on' : ''}`} aria-pressed={rating === 'dislike'} aria-label="Не подобається — сховати" onClick={(e) => { e.preventDefault(); e.stopPropagation(); set('dislike'); }}>
+      <button className={`rate-btn${rating === 'dislike' ? ' on' : ''}`} aria-pressed={rating === 'dislike'} aria-label={t('Не подобається — сховати')} onClick={(e) => { e.preventDefault(); e.stopPropagation(); set('dislike'); }}>
         <ThumbsDown size={ic} fill={rating === 'dislike' ? 'currentColor' : 'none'} />
       </button>
     </div>
@@ -538,7 +542,7 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
     <a key={`${r.ref.kind}-${r.ref.id}`} className="wtile" href={r.ref.kind === 'item' ? `/wardrobe/${r.ref.id}` : `/shopping?need=${r.ref.kind === 'need' ? r.ref.id : (db.products.find((p) => p.id === r.ref.id)?.needId ?? '')}`}>
       <div className="img">
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
-        {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
+        {r.inactive && <span className="tl"><Badge tone="glass">{t('неактуальна')}</Badge></span>}
       </div>
       <span className="nm">{r.title}<TermInfo texts={[r.title]} /></span>
     </a>
@@ -546,11 +550,11 @@ export function PieceBlocks({ pieces, ownTitle = 'Мої речі' }: { pieces: 
   return (
     <>
       {own.length > 0 && <>
-        <div className="section-head"><h2 className="h2">{ownTitle} <span className="count">{own.length}</span></h2></div>
+        <div className="section-head"><h2 className="h2">{t(ownTitle)} <span className="count">{own.length}</span></h2></div>
         <div className="ward-grid">{own.map(tile)}</div>
       </>}
       {buy.length > 0 && <>
-        <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="/shopping">Покупки</a></div>
+        <div className="section-head"><h2 className="h2">{t('Докупити')} <span className="count">{buy.length}</span></h2><a href="/shopping">{t('Покупки')}</a></div>
         <div className="ward-grid">{buy.map(tile)}</div>
       </>}
     </>

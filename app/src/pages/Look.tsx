@@ -10,6 +10,7 @@ import { hiddenLookIds } from '../rating.ts';
 import { rendersPaused } from '../render-need.ts';
 import { EditLook } from './Capsules.tsx';
 import { InfoMark, TermInfo } from './Glossary.tsx';
+import { t } from '../i18n.ts';
 
 const SLOTS: SlotKey[] = ['layer', 'top', 'bottom', 'shoes', 'accessories'];
 const same = (a: SlotRef, b: SlotRef) => a.kind === b.kind && a.id === b.id;
@@ -72,11 +73,11 @@ export function LookPage({ id }: { id: string }) {
   const askedJob = asked ? db.jobs.find((j) => j.id === asked) : undefined;
   const askedState = askedJob?.state;
   useEffect(() => {
-    if (askedState === 'error') toast(askedJob?.stateNote ?? 'Не вдалося оновити картинку', true);
+    if (askedState === 'error') toast(t(askedJob?.stateNote ?? 'Не вдалося оновити картинку'), true);
     if (askedState === 'error' || askedState === 'done' || askedState === 'needs_data') setAsked(null);
   }, [askedState, askedJob?.stateNote, toast]);
   const look = db.looks.find((l) => l.id === id);
-  if (!look) return <div className="page"><Empty icon={<ImageOff />} title="Образ не знайдено" /></div>;
+  if (!look) return <div className="page"><Empty icon={<ImageOff />} title={t('Образ не знайдено')} /></div>;
   const capsule = db.capsules.find((c) => c.id === look.capsuleId);
   const isSelection = capsule?.kind === 'selection';
   const cover = coverForLook(db, look);
@@ -89,7 +90,7 @@ export function LookPage({ id }: { id: string }) {
   const lookJobs = db.jobs.filter((j) => (j.kind ?? 'tryon') === 'tryon' && j.lookId === look.id);
   const busy = lookJobs.some((j) => j.state === 'queued' || j.state === 'running');
   const latest = lookJobs.filter((j) => j.lookVersion === look.version).at(-1);
-  const missingPhotos = latest?.state === 'needs_data' && latest.stateNote?.startsWith('Потрібні окремі фото речей:') ? latest.stateNote : undefined;
+  const missingPhotos = latest?.state === 'needs_data' && latest.stateNote?.startsWith('Потрібні окремі фото речей:') ? t(latest.stateNote) : undefined;
   const paused = rendersPaused(db);
   // Accounts: the month's try-ons are used up (or the budget paused generation).
   const limit = quotaNote(session, 'tryon');
@@ -105,7 +106,7 @@ export function LookPage({ id }: { id: string }) {
   const update = async () => {
     // The server uses the pinned identity reference when there is one.
     const job = await act(() => api<Job>('POST', '/api/jobs', { lookId: look.id, basePhotoIds: db.profile.basePhotoIds, instructions: '', run: true }));
-    if (job?.state === 'needs_data') toast(job.stateNote ?? 'Зараз не вийде', true);
+    if (job?.state === 'needs_data') toast(t(job.stateNote ?? 'Зараз не вийде'), true);
     else if (job) setAsked(job.id);
   };
   const keep = () => {
@@ -124,8 +125,8 @@ export function LookPage({ id }: { id: string }) {
     <a key={`${slot}-${r.ref.kind}-${r.ref.id}`} className="wtile" href={pieceHref(r)}>
       <span className="img">
         {r.art || r.photo ? <img src={thumb((r.art ?? r.photo)!, 480)} alt={r.title} loading="lazy" /> : <span className="render-ph"><CategoryIcon category={r.category} size={22} /></span>}
-        {r.inactive && <span className="tl"><Badge tone="glass">неактуальна</Badge></span>}
-        <button className="swap-btn" aria-label={`Замінити: ${r.title}`} title="Замінити" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSwap({ slot, current: r.ref }); }}>
+        {r.inactive && <span className="tl"><Badge tone="glass">{t('неактуальна')}</Badge></span>}
+        <button className="swap-btn" aria-label={`${t('Замінити')}: ${r.title}`} title={t('Замінити')} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSwap({ slot, current: r.ref }); }}>
           <ArrowLeftRight size={14} />
         </button>
       </span>
@@ -136,7 +137,7 @@ export function LookPage({ id }: { id: string }) {
   return (
     <div className="page">
       <div className="crumb">
-        <a href={isSelection ? '/capsules?tab=selections' : '/capsules'}>{isSelection ? 'Підбірки' : 'Капсули'}</a>
+        <a href={isSelection ? '/capsules?tab=selections' : '/capsules'}>{isSelection ? t('Підбірки') : t('Капсули')}</a>
         {capsule && <><span>›</span><a href={`/capsules/${capsule.id}`}>{capsule.name}</a></>}
       </div>
       <div className="page-head">
@@ -144,13 +145,13 @@ export function LookPage({ id }: { id: string }) {
           <h1>{look.name}</h1>
           {(lookRating(look) !== null || indoorOnly(db, look)) && <p className="item-verdict">
             {lookRating(look) !== null && <>{scoreLabel(lookRating(look)!)}{look.advice!.why && <InfoMark title={scoreLabel(lookRating(look)!)} text={look.advice!.why} />}</>}
-            {indoorOnly(db, look) && <>{lookRating(look) !== null ? ' · ' : ''}у приміщенні</>}
+            {indoorOnly(db, look) && <>{lookRating(look) !== null ? ' · ' : ''}{t('у приміщенні')}</>}
           </p>}
-          {hidden && <div className="row wrap" style={{ marginTop: 12 }}><Badge>{look.disliked ? 'приховано' : capsule?.disliked ? 'капсулу приховано' : 'схожий на прихований'}</Badge></div>}
+          {hidden && <div className="row wrap" style={{ marginTop: 12 }}><Badge>{look.disliked ? t('приховано') : capsule?.disliked ? t('капсулу приховано') : t('схожий на прихований')}</Badge></div>}
         </div>
         <div className="actions">
           <RateButtons kind="look" target={look} />
-          <button className="icon-btn" aria-label="Редагувати образ" onClick={() => setEditing(true)}><Pencil size={14} /></button>
+          <button className="icon-btn" aria-label={t('Редагувати образ')} onClick={() => setEditing(true)}><Pencil size={14} /></button>
         </div>
       </div>
 
@@ -161,44 +162,44 @@ export function LookPage({ id }: { id: string }) {
               <LookArt look={look} w={960} busy={busy} label />
             </a>
             {!paused && (
-              <button className="refresh-btn" disabled={busy || Boolean(limit)} onClick={() => void update()} aria-label="Оновити картинку" title={limit ?? 'Оновити картинку'}>
+              <button className="refresh-btn" disabled={busy || Boolean(limit)} onClick={() => void update()} aria-label={t('Оновити картинку')} title={limit ?? t('Оновити картинку')}>
                 <RefreshCw size={15} />
               </button>
             )}
           </div>
           {!busy && missingPhotos && <p className="miss" role="status" style={{ marginTop: 8 }}>{missingPhotos}</p>}
-          {limit && <p className="miss" role="status" style={{ marginTop: 8 }}>{limit}{session?.support && <> · <a href={session.support} target="_blank" rel="noreferrer">Підтримати</a></>}</p>}
+          {limit && <p className="miss" role="status" style={{ marginTop: 8 }}>{limit}{session?.support && <> · <a href={session.support} target="_blank" rel="noreferrer">{t('Підтримати')}</a></>}</p>}
           {askUpdate && (
             <div className="update-ask">
-              <span>Речі змінено</span>
-              <button className="btn sm" onClick={keep}>Ні</button>
-              <button className="btn sm primary" onClick={() => void update()}>Оновити</button>
+              <span>{t('Речі змінено')}</span>
+              <button className="btn sm" onClick={keep}>{t('Ні')}</button>
+              <button className="btn sm primary" onClick={() => void update()}>{t('Оновити')}</button>
             </div>
           )}
           {swapAdvice && (
             <div className="update-ask">
-              <span>Порада: {swapAdvice.from.title} → {swapAdvice.to.title}</span>
-              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/looks/${look.id}/advice`, { accept: false }))}>Ні</button>
-              <button className="btn sm primary" onClick={() => void act(() => api('POST', `/api/looks/${look.id}/advice`, { accept: true }))}>Так</button>
+              <span>{t('Порада:')} {swapAdvice.from.title} → {swapAdvice.to.title}</span>
+              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/looks/${look.id}/advice`, { accept: false }))}>{t('Ні')}</button>
+              <button className="btn sm primary" onClick={() => void act(() => api('POST', `/api/looks/${look.id}/advice`, { accept: true }))}>{t('Так')}</button>
             </div>
           )}
         </div>
         <div className="look-side">
-          <div className="section-head"><h2 className="h2">Речі образу <span className="count">{own.length}</span></h2></div>
+          <div className="section-head"><h2 className="h2">{t('Речі образу')} <span className="count">{own.length}</span></h2></div>
           <div className="ward-grid">
             {own.map(tile)}
             <button className="wtile add" onClick={() => setSwap({})}>
               <span className="img"><Plus size={22} /></span>
-              <span className="nm">Додати річ</span>
+              <span className="nm">{t('Додати річ')}</span>
             </button>
           </div>
           {buy.length > 0 && <>
-            <div className="section-head"><h2 className="h2">Докупити <span className="count">{buy.length}</span></h2><a href="/shopping">Покупки</a></div>
+            <div className="section-head"><h2 className="h2">{t('Докупити')} <span className="count">{buy.length}</span></h2><a href="/shopping">{t('Покупки')}</a></div>
             <div className="ward-grid">{buy.map(tile)}</div>
           </>}
           {options.map((o) => (
             <Fragment key={`${o.current.kind}-${o.current.id}`}>
-              <div className="section-head"><h2 className="h2">Або замість «{o.title}»</h2></div>
+              <div className="section-head"><h2 className="h2">{t('Або замість «')}{o.title}»</h2></div>
               <div className="ward-grid">
                 {o.options.map((i) => {
                   const r = resolveRef(db, { kind: 'item', id: i.id });
@@ -217,7 +218,7 @@ export function LookPage({ id }: { id: string }) {
 
       {variants.length > 0 && (
         <>
-          <div className="section-head"><h2 className="h2">Варіанти <span className="count">{variants.length}</span></h2></div>
+          <div className="section-head"><h2 className="h2">{t('Варіанти')} <span className="count">{variants.length}</span></h2></div>
           <div className="sib-strip">
             {variants.map((l) => <SiblingCard key={l.id} look={l} />)}
           </div>
@@ -225,7 +226,7 @@ export function LookPage({ id }: { id: string }) {
       )}
       {siblings.length > 0 && (
         <>
-          <div className="section-head"><h2 className="h2">{isSelection ? 'Ще в підбірці' : 'Ще в капсулі'} <span className="count">{siblings.length}</span></h2>{capsule && <a href={`/capsules/${capsule.id}`}>{isSelection ? 'Уся підбірка' : 'Уся капсула'}</a>}</div>
+          <div className="section-head"><h2 className="h2">{isSelection ? t('Ще в підбірці') : t('Ще в капсулі')} <span className="count">{siblings.length}</span></h2>{capsule && <a href={`/capsules/${capsule.id}`}>{isSelection ? t('Уся підбірка') : t('Уся капсула')}</a>}</div>
           <div className="sib-strip">
             {siblings.map((l) => <SiblingCard key={l.id} look={l} />)}
           </div>
@@ -249,7 +250,7 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
     const own = current?.kind === 'item' ? db.items.find((i) => i.id === current.id)?.category : current?.kind === 'need' ? db.needs.find((n) => n.id === current.id)?.category : undefined;
     return [
       ...db.items.filter((i) => cats.includes(i.category) && i.status !== 'inactive' && !i.mergedInto && accessoryKind(i.title) !== 'glasses').sort((a, b) => Number(b.category === own) - Number(a.category === own)).map((i) => ({ ref: { kind: 'item' as const, id: i.id }, title: i.title, photo: art(i.packshotId) ?? art(i.photoIds[0]) })),
-      ...db.needs.filter((n) => n.status === 'open' && cats.includes(n.category)).map((n) => ({ ref: { kind: 'need' as const, id: n.id }, title: `${n.title} · докупити`, photo: art(n.conceptPhotoId) })),
+      ...db.needs.filter((n) => n.status === 'open' && cats.includes(n.category)).map((n) => ({ ref: { kind: 'need' as const, id: n.id }, title: `${n.title} · ${t('докупити')}`, photo: art(n.conceptPhotoId) })),
     ];
   };
   const save = async (s: SlotKey, next: SlotRef[]) => {
@@ -265,13 +266,13 @@ function SwapModal({ look, slot, current, onClose }: { look: Look; slot?: SlotKe
   const slots = slot ? [slot] : SLOTS;
   return (
     <Modal
-      title={current ? <a href={current.kind === 'item' ? `/wardrobe/${current.id}` : `/shopping?need=${current.kind === 'need' ? current.id : (db.products.find((p) => p.id === current.id)?.needId ?? '')}`} onClick={onClose}>{resolveRef(db, current).title}</a> : 'Додати річ'}
+      title={current ? <a href={current.kind === 'item' ? `/wardrobe/${current.id}` : `/shopping?need=${current.kind === 'need' ? current.id : (db.products.find((p) => p.id === current.id)?.needId ?? '')}`} onClick={onClose}>{resolveRef(db, current).title}</a> : t('Додати річ')}
       onClose={onClose}
       wide
     >
       {current && slot && (
         <button className="btn sm ghost danger" style={{ marginBottom: 14 }} onClick={() => void save(slot, look.slots[slot].filter((r) => !same(r, current)))}>
-          <Trash2 size={13} /> Прибрати з образу
+          <Trash2 size={13} /> {t('Прибрати з образу')}
         </button>
       )}
       {slots.map((s) => (
@@ -295,7 +296,7 @@ function SiblingCard({ look }: { look: Look }) {
   return (
     <a className="sib" href={`/looks/${look.id}`}>
       <span className="img"><LookArt look={look} w={480} /></span>
-      <span className="nm">{look.favorite && <b className="liked-dot" aria-label="Подобається" />}{look.name}</span>
+      <span className="nm">{look.favorite && <b className="liked-dot" aria-label={t('Подобається')} />}{look.name}</span>
       <Missing look={look} />
     </a>
   );

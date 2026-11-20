@@ -6,6 +6,7 @@ import { go, useApp, useDb } from '../store.tsx';
 import { Composer, Empty, LookCollage } from '../components/ui.tsx';
 import { openSuggestions } from '../lib.ts';
 import { isCapsuleHidden } from '../rating.ts';
+import { LOOKS, plural, t } from '../i18n.ts';
 
 /**
  * «Нові» (owner, 19.11; spec 2026-11-19-fashion-capsules-design.md, part 6): one line «Що шукаємо?», an optional
@@ -21,21 +22,21 @@ export function NewLooks() {
   // The newest first: what a search just found comes before older proposals.
   const list = [...openSuggestions(db)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const search = async () => {
-    const ok = await act(() => api('POST', '/api/discover', { prompt: text, capsuleId }), 'Шукаю нові образи');
+    const ok = await act(() => api('POST', '/api/discover', { prompt: text, capsuleId }), t('Шукаю нові образи'));
     if (ok) setText('');
   };
   return (
     <>
-      <Composer className="new-search" value={text} onChange={setText} onSend={() => void search()} busy={Boolean(job)} label="Шукати" placeholder="Що шукаємо? Напр.: пальто на прогулянку, вечеря в місті">
-        <select className="composer-pick" value={capsuleId} onChange={(e) => setCapsuleId(e.target.value)} aria-label="Капсула">
-          <option value="">Усі капсули</option>
+      <Composer className="new-search" value={text} onChange={setText} onSend={() => void search()} busy={Boolean(job)} label={t('Шукати')} placeholder={t('Що шукаємо? Напр.: пальто на прогулянку, вечеря в місті')}>
+        <select className="composer-pick" value={capsuleId} onChange={(e) => setCapsuleId(e.target.value)} aria-label={t('Капсула')}>
+          <option value="">{t('Усі капсули')}</option>
           {capsules.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </Composer>
       {list.length ? (
         <div className="look-grid">{list.map((s) => <NewCard key={s.id} s={s} />)}</div>
       ) : (
-        <Empty icon={<Sparkles />} title="Нових образів ще немає" />
+        <Empty icon={<Sparkles />} title={t('Нових образів ще немає')} />
       )}
     </>
   );
@@ -53,21 +54,21 @@ function NewCard({ s }: { s: Suggestion }) {
     return (kind === 'item' ? db.items.find((i) => i.id === id)?.title : db.needs.find((n) => n.id === id)?.title) ?? id;
   };
   const add = async () => {
-    const r = await act(() => api<{ href: string }>('POST', `/api/suggestions/${s.id}/accept`), 'Додано');
+    const r = await act(() => api<{ href: string }>('POST', `/api/suggestions/${s.id}/accept`), t('Додано'));
     if (r?.href) go(r.href);
   };
   return (
     <div className="look-card new-card">
       <div className="cover" style={{ aspectRatio: '3 / 4' }}><LookCollage slots={look.slots} max={5} /></div>
       <div>
-        <span className="eyebrow-sm best-mark">{s.kind === 'capsule' ? `Нова капсула · ${s.looks.length} образів` : capsule?.name ?? 'Новий образ'}</span>
+        <span className="eyebrow-sm best-mark">{s.kind === 'capsule' ? `${t('Нова капсула')} · ${plural(s.looks.length, LOOKS)}` : capsule?.name ?? t('Новий образ')}</span>
         <h4>{s.name}</h4>
         {s.why && <span className="miss">{s.why}</span>}
-        {buy.length > 0 && <span className="miss">докупити: {buy.map((b) => b.replaces ? `${b.title} замість «${replacedTitle(b.replaces)}»` : b.title).join(', ')}</span>}
+        {buy.length > 0 && <span className="miss">{t('докупити')}: {buy.map((b) => b.replaces ? t('{title} замість «{old}»', { title: b.title, old: replacedTitle(b.replaces) }) : b.title).join(', ')}</span>}
       </div>
       <div className="card-foot">
-        <button className="btn sm" onClick={() => void act(() => api('POST', `/api/suggestions/${s.id}/reject`))}>Ні</button>
-        <button className="btn sm primary" onClick={() => void add()}>Додати</button>
+        <button className="btn sm" onClick={() => void act(() => api('POST', `/api/suggestions/${s.id}/reject`))}>{t('Ні')}</button>
+        <button className="btn sm primary" onClick={() => void add()}>{t('Додати')}</button>
       </div>
     </div>
   );

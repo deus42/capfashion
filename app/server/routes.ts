@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { DB, Item, Job, Look, Need, Photo, PhotoKind, ReworkReason, SlotKey, SlotRef, Slots, SnapshotSlot, Language, WardrobeFocus } from './schema.ts';
+import type { Capsule, DB, Item, Job, Look, Need, Photo, PhotoKind, ReworkReason, SlotKey, SlotRef, Slots, SnapshotSlot, Language, WardrobeFocus } from './schema.ts';
 import { CATEGORIES, ITEM_STATUSES, LANGUAGES, MEASURE_KEYS, PHOTO_KINDS, REWORK_REASONS, SEASONS, SLOT_KEYS, WARDROBE_FOCUS } from './schema.ts';
 import type { Store } from './store.ts';
 import { HttpError, bump, findOr404, newId, now } from './store.ts';
@@ -10,6 +10,7 @@ import { looksNeedingRender } from '../src/render-need.ts';
 import { isEyewear } from '../src/lib.ts';
 import { productKey, queueStoreFind } from './shop-search.ts';
 import { quotaKind, type QuotaKind } from './quota.ts';
+import { STYLE_CATALOGUE, styleBrief } from '../src/style-catalogue.ts';
 import { tooClose, withBuys } from '../src/look-memory.ts';
 import { queueDiscover } from './discover.ts';
 import { sameIdentity } from './identity.ts';
@@ -1006,6 +1007,23 @@ on('PATCH', '/api/settings', (ctx, _p, b) =>
 
 // ── Delete endpoints ───────────────────────────────────────────────────────
 on('DELETE', '/api/capsules/:id', (ctx, [id]) => ctx.store.mutate((db) => deleteCapsule(db, id)));
+
+// «Капсули для тебе» (spec §3, §7): a capsule started from a catalogue style, its brief in the person's language and wardrobe.
+on('POST', '/api/capsules/from-style', (ctx, _p, b) =>
+  ctx.store.mutate((db) => {
+    const style = STYLE_CATALOGUE.find((s) => s.id === str(b.styleId));
+    if (!style) throw new HttpError(404, 'Стиль не знайдено');
+    if (db.capsules.some((c) => c.name === style.name && !c.redirectCapsuleIds)) throw new HttpError(409, 'Така капсула вже є');
+    const at = now();
+    const capsule: Capsule = {
+      id: newId('C'), rev: 1, kind: 'capsule', name: style.name, season: style.season, periods: [...style.periods],
+      description: styleBrief(style, db.profile.wardrobeFocus, db.profile.language === 'en' ? 'en' : 'uk'),
+      situations: [], favorite: false, lookIds: [], origin: 'owner', sourceNote: `Каталог стилів: ${style.id}`, createdAt: at, updatedAt: at,
+    };
+    db.capsules.push(capsule);
+    return capsule;
+  }),
+);
 on('DELETE', '/api/looks/:id', (ctx, [id]) => ctx.store.mutate((db) => deleteLook(db, id)));
 on('DELETE', '/api/items/:id', async (ctx, [id]) => {
   await ctx.store.mutate((db) => {

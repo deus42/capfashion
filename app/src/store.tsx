@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import type { AppState, Session } from './api.ts';
 import { ApiError, getSession, getState, setUploadConversion } from './api.ts';
+import { t } from './i18n.ts';
 
 interface Ctx {
   state: AppState | null;
@@ -94,7 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (j.kind === 'discover') {
         if (j.state === 'queued' || j.state === 'running') uploads.current.add(j.id);
         else if (uploads.current.delete(j.id)) {
-          notes.push(j.stateNote ?? 'Пошук завершено');
+          notes.push(t(j.stateNote ?? 'Пошук завершено'));
           href ??= '/capsules?tab=new';
           bad ||= j.state === 'error';
         }
@@ -105,7 +106,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       else if (uploads.current.delete(j.id)) {
         const created = (j.createdItemIds ?? []).map((id) => state.db.items.find((i) => i.id === id)?.title).filter(Boolean);
         const rest = (j.stateNote ?? '').split(' · ').filter((x) => x && !(created.length && x.startsWith('нових речей')));
-        const parts = [...(created.length ? [`${created.length === 1 ? 'нова річ' : 'нові речі'}: ${created.map((t) => `«${t}»`).join(', ')}`] : []), ...rest];
+        const parts = [...(created.length ? [`${created.length === 1 ? t('нова річ') : t('нові речі')}: ${created.map((x) => `«${x}»`).join(', ')}`] : []), ...rest.map((x) => t(x))];
         if (parts.length) notes.push(parts.join(' · '));
         href ??= [...(j.createdItemIds ?? []), ...(j.attachedItemIds ?? [])].map((id) => `/wardrobe/${id}`)[0];
         bad ||= j.state === 'error';
@@ -113,7 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     if (notes.length) {
       const msg = notes.join(' · ');
-      toast(href === '/capsules?tab=new' ? msg : `Фото: ${msg}`, bad, href);
+      toast(href === '/capsules?tab=new' ? msg : `${t('Фото')}: ${msg}`, bad, href);
     }
   }, [state, toast]);
 

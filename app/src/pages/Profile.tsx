@@ -51,23 +51,23 @@ function BasePhotos() {
   const intake = useIntake();
   const busy = db.jobs.filter((j) => j.kind === 'intake' && (j.state === 'queued' || j.state === 'running')).length;
   const originals = (prof.identity ? [prof.identity.sourcePhotoId] : prof.basePhotoIds).map((id) => db.photos.find((p) => p.id === id)).filter(Boolean) as typeof db.photos;
-  const base = prof.identity?.approvedPortrait ? originals.map((p) => ({ ...p, path: prof.identity!.face.path, originalName: 'Схвалений портрет' })) : originals;
+  const base = prof.identity?.approvedPortrait ? originals.map((p) => ({ ...p, path: prof.identity!.face.path, originalName: t('Схвалений портрет') })) : originals;
   const ok = base.filter((p) => p.meetsStandard).length;
   return (
     <Section
-      title="Мої фото"
-      sub={prof.identity?.disabledReason ?? (prof.identity ? `${base[0]?.originalName ?? 'Оригінал'} — опора обличчя. ${prof.identity.preserveHeadAngle ? 'Оригінальний ракурс.' : 'Прямий погляд, голова рівно.'} ${prof.identity.noGlasses ? 'Без окулярів.' : ''} ${prof.identity.hairstyle ?? ''}` : 'Обличчя для примірок береться лише з цих фото.')}
-      actions={!prof.identity && <button className="btn" onClick={() => setPicker(true)}>Вибрати з наявних</button>}
+      title={t('Мої фото')}
+      sub={prof.identity?.disabledReason ?? (prof.identity ? `${base[0]?.originalName ?? t('Оригінал')} ${t('— опора обличчя.')} ${t(prof.identity.preserveHeadAngle ? 'Оригінальний ракурс.' : 'Прямий погляд, голова рівно.')} ${prof.identity.noGlasses ? t('Без окулярів.') : ''} ${prof.identity.hairstyle ?? ''}` : t('Обличчя для примірок береться лише з цих фото.'))}
+      actions={!prof.identity && <button className="btn" onClick={() => setPicker(true)}>{t('Вибрати з наявних')}</button>}
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 24 }} className="profile-base">
         <div className="stack" style={{ gap: 18 }}>
           {intake.field}
-          <a className="btn" href="/gallery?type=original">Усі мої оригінали й референси</a>
-          <a className="btn" href="/gallery?type=face">Референси обличчя · {db.photos.filter((p) => p.referenceRole === 'face').length}</a>
+          <a className="btn" href="/gallery?type=original">{t('Усі мої оригінали й референси')}</a>
+          <a className="btn" href="/gallery?type=face">{t('Референси обличчя ·')} {db.photos.filter((p) => p.referenceRole === 'face').length}</a>
           <button className="dropzone" onClick={intake.pick} disabled={intake.busy} style={{ cursor: 'pointer', width: '100%' }}>
             {intake.busy || busy ? <Loader2 size={22} className="spin" style={{ margin: '0 auto' }} /> : <Camera size={22} style={{ margin: '0 auto' }} />}
-            <b>{busy ? `Розбираю фото: ${busy}` : 'Додати фото'}</b>
-            Сайт сам визначить: твоє фото для примірок, одяг чи етикетка.
+            <b>{busy ? t('Розбираю фото: {n}', { n: busy }) : t('Додати фото')}</b>
+            {t('Сайт сам визначить: твоє фото для примірок, одяг чи етикетка.')}
           </button>
           {base.length > 0 && (
             <div className="photo-grid">
@@ -77,17 +77,17 @@ function BasePhotos() {
                     <img src={thumb(p.path, 480)} alt="" />
                     <span className="tl">
                       <Badge tone={`${p.meetsStandard ? 'ok' : p.meetsStandard === false ? 'warn' : ''} glass`}>
-                        {p.meetsStandard ? 'за стандартом' : p.meetsStandard === false ? 'не за стандартом' : 'не перевірено'}
+                        {p.meetsStandard ? t('за стандартом') : p.meetsStandard === false ? t('не за стандартом') : t('не перевірено')}
                       </Badge>
                     </span>
                     {!prof.identity && <span className="tr">
-                      <button className="icon-btn" aria-label="Прибрати з моїх фото" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }), 'Прибрано')}>
+                      <button className="icon-btn" aria-label={t('Прибрати з моїх фото')} onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: prof.basePhotoIds.filter((x) => x !== p.id) }), t('Прибрано'))}>
                         <X size={14} />
                       </button>
                     </span>}
                   </div>
                   <button className={`btn sm${p.meetsStandard ? ' primary' : ''}`} onClick={() => void act(() => api('PATCH', `/api/photos/${p.id}`, { meetsStandard: !p.meetsStandard }))}>
-                    {p.meetsStandard ? <Check size={13} /> : <TriangleAlert size={13} />} {p.meetsStandard ? 'Відповідає' : 'Позначити як відповідне'}
+                    {p.meetsStandard ? <Check size={13} /> : <TriangleAlert size={13} />} {p.meetsStandard ? t('Відповідає') : t('Позначити як відповідне')}
                   </button>
                 </div>
               ))}
@@ -96,24 +96,24 @@ function BasePhotos() {
         </div>
         <div className="note" style={{ padding: 18, alignSelf: 'start' }}>
           <div className="row" style={{ marginBottom: 12 }}>
-            <b>Стандарт фото</b>
+            <b>{t('Стандарт фото')}</b>
             <span style={{ flex: 1 }} />
-            <Badge tone={ok >= 2 ? 'ok' : 'warn'}>{ok}/2 готово</Badge>
+            <Badge tone={ok >= 2 ? 'ok' : 'warn'}>{ok}{t('/2 готово')}</Badge>
           </div>
           <ul className="checklist">
-            {STANDARD.map((s) => <li key={s}><CircleCheck size={15} />{s}</li>)}
+            {STANDARD.map((s) => <li key={s}><CircleCheck size={15} />{t(s)}</li>)}
           </ul>
         </div>
       </div>
       {picker && (
         <PhotoPicker
-          title="Мої фото з наявних"
+          title={t('Мої фото з наявних')}
           selected={prof.basePhotoIds}
           filter={(p) => p.kind === 'base' || p.kind === 'source'}
           onClose={() => setPicker(false)}
           onSave={(ids) => {
             setPicker(false);
-            void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: ids }), 'Мої фото оновлено');
+            void act(() => api('PATCH', '/api/profile', { rev: prof.rev, basePhotoIds: ids }), t('Мої фото оновлено'));
           }}
         />
       )}
@@ -139,7 +139,7 @@ function MeasureFigure({ active }: { active: MeasureKey | null }) {
     { key: 'foot', d: 'M66 436L94 436M66 432L66 440M94 432L94 440', at: [80, 436] },
   ];
   return (
-    <svg className="measure-figure" viewBox="0 0 200 446" role="img" aria-label="Як міряти">
+    <svg className="measure-figure" viewBox="0 0 200 446" role="img" aria-label={t('Як міряти')}>
       <ellipse className="body" cx="100" cy="32" rx="15" ry="19" />
       <path className="body" d={body} />
       <path className="body" d={body} transform="translate(200 0) scale(-1 1)" />
@@ -185,12 +185,12 @@ function Measurements() {
           {MEASURES.map((m, i) => (
             <div key={m.key} className={`measure-row${active === m.key ? ' on' : ''}`} onMouseEnter={() => setActive(m.key)} onMouseLeave={() => setActive(null)} onFocus={() => setActive(m.key)} onBlur={() => setActive(null)}>
               <span className="m-num">{i + 1}</span>
-              <span className="m-label">{m.label}<InfoMark title={m.label} text={m.how} /></span>
+              <span className="m-label">{t(m.label)}<InfoMark title={t(m.label)} text={t(m.how)} /></span>
               <span className="stepper">
-                <button type="button" aria-label={`Менше: ${m.label}`} onClick={() => step(m.key, -1)}><Minus size={14} /></button>
-                <input inputMode="decimal" value={values[m.key]} placeholder="—" aria-label={`${m.label}, см`} onChange={(e) => set(m.key, e.target.value.replace(',', '.'))} />
-                <span className="unit">см</span>
-                <button type="button" aria-label={`Більше: ${m.label}`} onClick={() => step(m.key, 1)}><Plus size={14} /></button>
+                <button type="button" aria-label={`${t('Менше')}: ${t(m.label)}`} onClick={() => step(m.key, -1)}><Minus size={14} /></button>
+                <input inputMode="decimal" value={values[m.key]} placeholder="—" aria-label={`${t(m.label)}, ${t('см')}`} onChange={(e) => set(m.key, e.target.value.replace(',', '.'))} />
+                <span className="unit">{t('см')}</span>
+                <button type="button" aria-label={`${t('Більше')}: ${t(m.label)}`} onClick={() => step(m.key, 1)}><Plus size={14} /></button>
               </span>
             </div>
           ))}
@@ -250,11 +250,11 @@ function Shops() {
   // No rev: each field saves only itself, so quick changes in a row never conflict.
   const save = (patch: Record<string, unknown>) => void act(() => api('PATCH', '/api/profile', patch));
   const locate = () => {
-    if (!('geolocation' in navigator)) { toast('Цей браузер не ділиться місцем'); return; }
+    if (!('geolocation' in navigator)) { toast(t('Цей браузер не ділиться місцем')); return; }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => { setLocating(false); save({ coords: { lat: pos.coords.latitude, lon: pos.coords.longitude }, location: MY_PLACE }); },
-      () => { setLocating(false); toast('Місце не отримано — дозволь браузеру доступ до геолокації'); },
+      () => { setLocating(false); toast(t('Місце не отримано — дозволь браузеру доступ до геолокації')); },
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 },
     );
   };
@@ -265,13 +265,13 @@ function Shops() {
     <Section>
       <div className="stack" style={{ gap: 26 }}>
         <div className="field">
-          <span>Де шукати</span>
+          <span>{t('Де шукати')}</span>
           <div className="place-field">
             <MapPin size={16} />
             <input
               value={place}
-              placeholder="Місто чи торговий центр"
-              aria-label="Де шукати"
+              placeholder={t('Місто чи торговий центр')}
+              aria-label={t('Де шукати')}
               onChange={(e) => setPlace(e.target.value)}
               onBlur={() => { if (place.trim() !== shopLocation(db)) save({ location: place.trim(), coords: null }); }}
               onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
@@ -282,13 +282,13 @@ function Shops() {
           </div>
         </div>
         <div className="field">
-          <span>Відстань</span>
-          <div className="filters start" role="group" aria-label="Відстань до магазинів">
-            {RADII.map((r) => <button key={r.label} type="button" className={radius === r.v ? 'on' : ''} aria-pressed={radius === r.v} onClick={() => save({ radiusKm: r.v })}>{r.label}</button>)}
+          <span>{t('Відстань')}</span>
+          <div className="filters start" role="group" aria-label={t('Відстань до магазинів')}>
+            {RADII.map((r) => <button key={r.label} type="button" className={radius === r.v ? 'on' : ''} aria-pressed={radius === r.v} onClick={() => save({ radiusKm: r.v })}>{t(r.label)}</button>)}
           </div>
         </div>
-        <PickField label="Мої магазини" selected={prof.stores ?? []} options={stores} placeholder="+ інший магазин" onSave={(next) => save({ stores: next })} />
-        <PickField label="Мої бренди" selected={prof.brands ?? wardrobeBrands(db)} options={brands} placeholder="+ інший бренд" onSave={(next) => save({ brands: next })} />
+        <PickField label={t('Мої магазини')} selected={prof.stores ?? []} options={stores} placeholder={t('+ інший магазин')} onSave={(next) => save({ stores: next })} />
+        <PickField label={t('Мої бренди')} selected={prof.brands ?? wardrobeBrands(db)} options={brands} placeholder={t('+ інший бренд')} onSave={(next) => save({ brands: next })} />
       </div>
     </Section>
   );
@@ -301,17 +301,17 @@ function Preferences() {
   const [prefs, setPrefs] = useState(prof.preferences);
   useEffect(() => setPrefs(prof.preferences), [prof.rev]);
   const fields = [
-    ['comfort', 'Комфорт', 'Як має відчуватися одяг протягом дня.'],
-    ['materials', 'Матеріали', 'Тканини, яким віддаєш перевагу або яких уникаєш.'],
-    ['fit', 'Посадка', 'Крій штанів, сорочок, верхнього одягу; довжина.'],
-    ['branding', 'Брендування', 'Наскільки помітними можуть бути логотипи.'],
+    ['comfort', t('Комфорт'), t('Як має відчуватися одяг протягом дня.')],
+    ['materials', t('Матеріали'), t('Тканини, яким віддаєш перевагу або яких уникаєш.')],
+    ['fit', t('Посадка'), t('Крій штанів, сорочок, верхнього одягу; довжина.')],
+    ['branding', t('Брендування'), t('Наскільки помітними можуть бути логотипи.')],
   ] as const;
   // Language, what to dress the person in and the hemisphere save at once, like every quiet toggle.
   const choose = (patch: Record<string, string>) => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, ...patch }));
   const rows: { label: string; key: 'language' | 'wardrobeFocus' | 'hemisphere'; current?: string; options: [string, string][] }[] = [
-    { label: 'Мова', key: 'language', current: currentLanguage(), options: [['uk', 'Українська'], ['en', 'English']] },
-    { label: 'Одяг', key: 'wardrobeFocus', current: prof.wardrobeFocus, options: [['men', 'Чоловічий'], ['women', 'Жіночий'], ['any', 'Будь-який']] },
-    { label: 'Півкуля', key: 'hemisphere', current: prof.hemisphere ?? 'north', options: [['north', 'Північна'], ['south', 'Південна']] },
+    { label: t('Мова'), key: 'language', current: currentLanguage(), options: [['uk', t('Українська')], ['en', 'English']] },
+    { label: t('Одяг'), key: 'wardrobeFocus', current: prof.wardrobeFocus, options: [['men', t('Чоловічий')], ['women', t('Жіночий')], ['any', t('Будь-який')]] },
+    { label: t('Півкуля'), key: 'hemisphere', current: prof.hemisphere ?? 'north', options: [['north', t('Північна')], ['south', t('Південна')]] },
   ];
   return (
     <Section actions={<button className="btn primary" onClick={() => void act(() => api('PATCH', '/api/profile', { rev: prof.rev, preferences: prefs }), t('Побажання збережено'))}>{t('Зберегти')}</button>}>
@@ -364,21 +364,21 @@ function Account() {
           <b>{session.user.name}</b>
           <p className="small muted">{session.user.email}</p>
         </div>
-        <button className="quiet-toggle" onClick={() => void signOut()}>Вийти</button>
+        <button className="quiet-toggle" onClick={() => void signOut()}>{t('Вийти')}</button>
       </section>
       {session.quota && <MonthUsage quota={session.quota} support={session.support ?? null} />}
       {owner && (
         <section className="stack" style={{ gap: 10 }}>
           <div className="section-head" style={{ margin: 0 }}>
-            <h2 className="h2">Запрошення <span className="count">{open.length}</span></h2>
-            <button className="quiet-toggle" onClick={() => void act(() => api<{ code: string }>('POST', '/api/invites')).then((inv) => { if (inv) { load(); void copy(inv.code); } })}>Нове запрошення</button>
+            <h2 className="h2">{t('Запрошення')} <span className="count">{open.length}</span></h2>
+            <button className="quiet-toggle" onClick={() => void act(() => api<{ code: string }>('POST', '/api/invites')).then((inv) => { if (inv) { load(); void copy(inv.code); } })}>{t('Нове запрошення')}</button>
           </div>
           <ul className="set-list">
             {open.map((i) => (
               <li key={i.code}>
-                <span className="set-name">{link(i.code).replace(/^https?:\/\//, '')}<span className="buy"> · до {fmtDay(i.expiresAt)}</span></span>
-                <button className="icon-btn" aria-label="Скопіювати посилання" onClick={() => void copy(i.code)}><Copy size={13} /></button>
-                <button className="icon-btn" aria-label="Скасувати запрошення" onClick={() => void act(() => api('DELETE', `/api/invites/${encodeURIComponent(i.code)}`)).then(load)}><X size={13} /></button>
+                <span className="set-name">{link(i.code).replace(/^https?:\/\//, '')}<span className="buy"> {t('· до')} {fmtDay(i.expiresAt)}</span></span>
+                <button className="icon-btn" aria-label={t('Скопіювати посилання')} onClick={() => void copy(i.code)}><Copy size={13} /></button>
+                <button className="icon-btn" aria-label={t('Скасувати запрошення')} onClick={() => void act(() => api('DELETE', `/api/invites/${encodeURIComponent(i.code)}`)).then(load)}><X size={13} /></button>
               </li>
             ))}
           </ul>
@@ -387,14 +387,14 @@ function Account() {
       <section>
         <ConfirmButton
           className="btn ghost danger"
-          title="Видалити акаунт"
-          message={<>Видалити акаунт і все в ньому — фото, речі, капсули, образи й примірки — назавжди?</>}
+          title={t('Видалити акаунт')}
+          message={<>{t('Видалити акаунт і все в ньому — фото, речі, капсули, образи й примірки — назавжди?')}</>}
           onConfirm={async () => {
             const ok = await act(() => api('DELETE', '/api/account'));
             if (ok !== undefined) window.location.href = '/';
           }}
         >
-          <Trash2 size={14} /> Видалити акаунт
+          <Trash2 size={14} /> {t('Видалити акаунт')}
         </ConfirmButton>
       </section>
     </div>
@@ -408,27 +408,27 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 function MonthUsage({ quota, support }: { quota: QuotaStatus; support: string | null }) {
   const line = USAGE_LABEL.map(([k, label]) => {
     const { used, limit } = quota.kinds[k];
-    return `${label} ${limit === null ? used : Math.min(used, limit)} з ${limit ?? '—'}`;
+    return `${t(label)} ${limit === null ? used : Math.min(used, limit)} ${t('з')} ${limit ?? '—'}`;
   }).join(' · ');
   return (
     <section className="stack" style={{ gap: 6 }}>
-      <h2 className="h2">Цього місяця</h2>
+      <h2 className="h2">{t('Цього місяця')}</h2>
       {quota.owner
-        ? <p className="small muted">Акаунти: {usd(quota.spentUsd ?? 0)}{quota.budgetUsd != null && <> з {usd(quota.budgetUsd)}</>} · твої: {usd(quota.ownSpentUsd ?? 0)}</p>
+        ? <p className="small muted">{t('Акаунти:')} {usd(quota.spentUsd ?? 0)}{quota.budgetUsd != null && <> {t('з')} {usd(quota.budgetUsd)}</>} {t('· твої:')} {usd(quota.ownSpentUsd ?? 0)}</p>
         : <p className="small muted">{line}</p>}
-      {quota.paused && <p className="small muted">Генерацію призупинено до 1-го числа.</p>}
-      {!quota.owner && support && <p className="small"><a href={support} target="_blank" rel="noreferrer">Підтримати Capsula</a></p>}
+      {quota.paused && <p className="small muted">{t('Генерацію призупинено до 1-го числа.')}</p>}
+      {!quota.owner && support && <p className="small"><a href={support} target="_blank" rel="noreferrer">{t('Підтримати Capsula')}</a></p>}
     </section>
   );
 }
 
 export function ProfilePage({ tab }: { tab?: string }) {
   const { session } = useApp();
-  const tabs = session?.mode === 'accounts' ? [...TABS, { key: 'account', label: 'Акаунт', icon: <UserRound size={17} /> }] : TABS;
+  const tabs = session?.mode === 'accounts' ? [...TABS, { key: 'account', label: t('Акаунт'), icon: <UserRound size={17} /> }] : TABS;
   const current = tabs.some((t) => t.key === tab) ? tab! : 'base';
   return (
     <div className="page">
-      <PageHead title="Мій профіль" />
+      <PageHead title={t('Мій профіль')} />
       <div className="split">
         <SubNav value={current} onChange={(k) => go(`/profile/${k}`)} groups={[{ items: tabs }]} />
         <div>

@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
-import { ShoppingBag, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Plus, ShoppingBag, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { api, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
 import { Composer, LookArt, Missing, RenderPlaceholder } from '../components/ui.tsx';
-import { capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, lookRating, openSuggestions, periodLine, purchaseRanking, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { capsuleLooks, capsuleRating, currentPeriod, distinctLooks, isAutoCapsule, lookRating, openSuggestions, periodLine, purchaseRanking, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { STYLE_CATALOGUE, stylePieces, type CatalogueStyle } from '../style-catalogue.ts';
+import { LOOKS, currentLanguage, plural, t } from '../i18n.ts';
 import type { DB, Look } from '../api.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
 
@@ -37,15 +39,43 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
         {shownLooks.length === 0 ? <RenderPlaceholder lookIds={c.lookIds} /> : shownLooks.map((l) => (
           <span key={l.id} className="cell"><LookArt look={l} w={shownLooks.length === 1 ? 900 : 480} max={shownLooks.length === 1 ? 5 : 3} /></span>
         ))}
-        {c.favorite && <span className="corner-r liked-mark" aria-label="Подобається"><ThumbsUp size={14} fill="currentColor" /></span>}
-        {c.disliked && <span className="corner-r liked-mark" aria-label="Не подобається"><ThumbsDown size={14} fill="currentColor" /></span>}
+        {c.favorite && <span className="corner-r liked-mark" aria-label={t('Подобається')}><ThumbsUp size={14} fill="currentColor" /></span>}
+        {c.disliked && <span className="corner-r liked-mark" aria-label={t('Не подобається')}><ThumbsDown size={14} fill="currentColor" /></span>}
       </div>
       <div>
         {c.periods?.length ? <span className="eyebrow-sm tile-period">{periodLine(c)}</span> : null}
         <h3>{c.name}</h3>
-        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || `${looks.length} ${looks.length === 1 ? 'образ' : looks.length >= 2 && looks.length <= 4 ? 'образи' : 'образів'}`}{score !== null && ` · ${scoreLabel(score)}`}</div>
+        <div className="meta">{(c.id !== WARDROBE_CAPSULE_ID && readyLine(db, c)) || plural(looks.length, LOOKS)}{score !== null && ` · ${scoreLabel(score)}`}</div>
       </div>
     </a>
+  );
+}
+
+/**
+ * «Капсули для тебе» (spec §3): while there are fewer than three capsules, styles from the catalogue that are not
+ * added yet — the current weather period first. «Додати» starts the capsule; «Нові» then finds its looks.
+ */
+function catalogueStyles(db: DB, have: number): CatalogueStyle[] {
+  const taken = new Set(db.capsules.map((c) => c.name));
+  const now = currentPeriod(new Date(), db.profile.hemisphere);
+  const free = STYLE_CATALOGUE.filter((s) => !taken.has(s.name));
+  return [...free.filter((s) => s.periods.includes(now)), ...free.filter((s) => !s.periods.includes(now))].slice(0, Math.max(0, 3 - have));
+}
+
+function StyleTile({ s }: { s: CatalogueStyle }) {
+  const db = useDb();
+  const { act } = useApp();
+  const lang = currentLanguage();
+  return (
+    <div className="capsule-card style-card">
+      <div>
+        <span className="eyebrow-sm tile-period">{periodLine({ periods: s.periods })}</span>
+        <h3>{s.name}</h3>
+        <p className="style-idea">{s.idea[lang]}</p>
+        <p className="style-pieces">{stylePieces(s, db.profile.wardrobeFocus).slice(0, 6).map((x) => x[lang]).join(' · ')}</p>
+      </div>
+      <button className="icon-btn style-add" aria-label={t('Додати капсулу')} title={t('Додати капсулу')} onClick={() => void act(() => api('POST', '/api/capsules/from-style', { styleId: s.id }), t('Капсулу додано'))}><Plus size={15} /></button>
+    </div>
   );
 }
 
@@ -68,7 +98,7 @@ export function useIntake() {
         setBusy(true);
         await act(async () => {
           for (const f of files) await uploadFile(f, { kind: 'intake' });
-        }, files.length > 1 ? `Додано фото: ${files.length}` : 'Фото додано');
+        }, files.length > 1 ? t('Додано фото: {n}', { n: files.length }) : t('Фото додано'));
         setBusy(false);
         if (input.current) input.current.value = '';
       }}
@@ -91,7 +121,7 @@ export function HomePage() {
 
   const analyze = async () => {
     // The same search as «Капсули → Нові» (owner, 19.11): results come there as cards «Ні / Додати».
-    const ok = await act(() => api('POST', '/api/discover', { prompt: text }), 'Шукаю — нові образи зʼявляться в «Нових»');
+    const ok = await act(() => api('POST', '/api/discover', { prompt: text }), t('Шукаю — нові образи зʼявляться в «Нових»'));
     if (ok) setText('');
   };
 
@@ -102,16 +132,19 @@ export function HomePage() {
   return (
     <div className="page home">
       <section className="home-top">
-        <h1 className="home-title">Що одягнемо сьогодні?</h1>
-        <Composer className="home-ask" value={text} onChange={setText} onSend={() => void analyze()} busy={analyzing} label="Підібрати" placeholder="Уточни: вечеря, довга прогулянка, буду в приміщенні" />
+        <h1 className="home-title">{t('Що одягнемо сьогодні?')}</h1>
+        <Composer className="home-ask" value={text} onChange={setText} onSend={() => void analyze()} busy={analyzing} label={t('Підібрати')} placeholder={t('Уточни: вечеря, довга прогулянка, буду в приміщенні')} />
         {(fresh > 0 || (next && next.looksIn > 0)) && (
           <div className="home-chips">
-            {fresh > 0 && <a href="/capsules?tab=new" className="home-chip"><span className="chip-ic"><Sparkles size={14} /></span>Нові образи<span className="chip-n">{fresh}</span></a>}
-            {next && next.looksIn > 0 && <a href={`/shopping?need=${next.need.id}`} className="home-chip"><span className="chip-ic"><ShoppingBag size={14} /></span>Наступна покупка</a>}
+            {fresh > 0 && <a href="/capsules?tab=new" className="home-chip"><span className="chip-ic"><Sparkles size={14} /></span>{t('Нові образи')}<span className="chip-n">{fresh}</span></a>}
+            {next && next.looksIn > 0 && <a href={`/shopping?need=${next.need.id}`} className="home-chip"><span className="chip-ic"><ShoppingBag size={14} /></span>{t('Наступна покупка')}</a>}
           </div>
         )}
       </section>
-      <div className="home-caps">{capsules.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
+      <div className="home-caps">
+        {capsules.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}
+        {catalogueStyles(db, capsules.length).map((s) => <StyleTile key={s.id} s={s} />)}
+      </div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts'
 import { CapsuleTile, tileCovers } from './Home.tsx';
 import { NewLooks } from './NewLooks.tsx';
 import { CapsuleSetEditor, CapsuleSetSection, initialSetDraft, sameSetDraft, setDraftPayload } from '../components/CapsuleSet.tsx';
+import { t } from '../i18n.ts';
 
 
 export function CapsulesPage() {
@@ -38,7 +39,7 @@ export function CapsulesPage() {
   const hiddenLooks = capsuleLooks(db, [...hiddenLookIds(db)]).filter((l) => !hiddenCaps.some((c) => c.lookIds.includes(l.id)));
   const hiddenCount = hiddenCaps.length + hiddenLooks.length;
   // With a filter on, the title stays «Усі образи»: the active button already says it.
-  const title = { capsules: 'Капсули', new: 'Нові', selections: 'Підбірки', looks: 'Усі образи', hidden: 'Приховані' }[tab];
+  const title = t({ capsules: 'Капсули', new: 'Нові', selections: 'Підбірки', looks: 'Усі образи', hidden: 'Приховані' }[tab]);
   const newCount = openSuggestions(db).length;
   // On a phone the tabs scroll sideways: the active one is always brought into view.
   useEffect(() => { document.querySelector('.page-head .seg-scroll button.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [tab]);
@@ -49,26 +50,26 @@ export function CapsulesPage() {
         <div><h1>{title}</h1></div>
         <div className="actions">
           <div className="seg seg-scroll">
-            <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>Капсули <span className="faint">{capsules.length}</span></button>
-            <button className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>Нові <span className="faint">{newCount}</span></button>
-            {(selections.length > 0 || tab === 'selections') && <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>Підбірки <span className="faint">{selections.length}</span></button>}
-            <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>Усі образи <span className="faint">{allLooks.length}</span></button>
-            {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> Приховані <span className="faint">{hiddenCount}</span></button>}
+            <button className={tab === 'capsules' ? 'on' : ''} onClick={() => setTab('capsules')}>{t('Капсули')} <span className="faint">{capsules.length}</span></button>
+            <button className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>{t('Нові')} <span className="faint">{newCount}</span></button>
+            {(selections.length > 0 || tab === 'selections') && <button className={tab === 'selections' ? 'on' : ''} onClick={() => setTab('selections')}>{t('Підбірки')} <span className="faint">{selections.length}</span></button>}
+            <button className={tab === 'looks' ? 'on' : ''} onClick={() => setTab('looks')}>{t('Усі образи')} <span className="faint">{allLooks.length}</span></button>
+            {hiddenCount > 0 && <button className={tab === 'hidden' ? 'on' : ''} onClick={() => setTab('hidden')}><EyeOff size={13} /> {t('Приховані')} <span className="faint">{hiddenCount}</span></button>}
           </div>
         </div>
       </div>
       {/* Below the tabs, not beside them: a button appearing next to the tabs made them jump when switching. */}
-      {tab === 'looks' && <div className="filters" role="group" aria-label="Фільтр образів">
-        <Filter active={bestOnly} href={looksHref(readyOnly, !bestOnly)}>{BEST_CAPSULE_NAME}</Filter>
-        <Filter active={readyOnly} href={looksHref(!readyOnly, bestOnly)}>{WARDROBE_CAPSULE_NAME}</Filter>
+      {tab === 'looks' && <div className="filters" role="group" aria-label={t('Фільтр образів')}>
+        <Filter active={bestOnly} href={looksHref(readyOnly, !bestOnly)}>{t(BEST_CAPSULE_NAME)}</Filter>
+        <Filter active={readyOnly} href={looksHref(!readyOnly, bestOnly)}>{t(WARDROBE_CAPSULE_NAME)}</Filter>
       </div>}
       {tab === 'hidden' ? (
-        hiddenCount === 0 ? <Empty icon={<EyeOff />} title="Нічого не приховано" /> : <>
+        hiddenCount === 0 ? <Empty icon={<EyeOff />} title={t('Нічого не приховано')} /> : <>
           {hiddenCaps.length > 0 && <div className="capsule-grid" style={{ marginBottom: 30 }}>{hiddenCaps.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
           {hiddenLooks.length > 0 && <div className="look-grid">{hiddenLooks.map((l) => <LookCard key={l.id} look={l} />)}</div>}
         </>
       ) : tab === 'new' ? <NewLooks /> : tab === 'looks' ? <LookGrid looks={filteredLooks} heading={false} mark={!bestOnly} /> : list.length === 0 ? (
-        tab === 'selections' ? <Empty icon={<Sparkles />} title="Підбірок ще немає" /> : <Empty icon={<Sparkles />} title="Капсул ще немає" />
+        tab === 'selections' ? <Empty icon={<Sparkles />} title={t('Підбірок ще немає')} /> : <Empty icon={<Sparkles />} title={t('Капсул ще немає')} />
       ) : (
         <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
       )}
@@ -93,8 +94,8 @@ function LookGrid({ looks, heading = true, filter, mark = true }: { looks: Look[
   // «Найкращий» only where it tells something; when some cards carry it, the others keep its line so names line up.
   const marked = mark && looks.some((l) => isBestLook(db, l.id));
   return <>
-    {heading && <div className="section-head"><h2 className="h2">Образи <span className="count">{looks.length}</span></h2>{filter}</div>}
-    {looks.length ? <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} mark={marked} />)}</div> : <Empty icon={<ImageOff />} title="Образів ще немає" />}
+    {heading && <div className="section-head"><h2 className="h2">{t('Образи')} <span className="count">{looks.length}</span></h2>{filter}</div>}
+    {looks.length ? <div className="look-grid">{looks.map((l) => <LookCard key={l.id} look={l} mark={marked} />)}</div> : <Empty icon={<ImageOff />} title={t('Образів ще немає')} />}
   </>;
 }
 
@@ -108,16 +109,16 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
   const renders = db.results.filter((r) => r.lookId === look.id).length;
   return (
     <Modal
-      title="Образ"
+      title={t('Образ')}
       onClose={onClose}
       footer={
         <>
           <ConfirmButton
             className="btn ghost danger"
-            title="Видалити образ"
-            message={<>Видалити «{look.name}»?{renders ? ` Разом з ним зникнуть ${renders} примірок цього образу.` : ''} Речі в гардеробі залишаться.</>}
+            title={t('Видалити образ')}
+            message={<>{t('Видалити «{name}»?', { name: look.name })}{renders ? ` ${t('Разом з ним зникнуть {n} примірок цього образу.', { n: renders })}` : ''} {t('Речі в гардеробі залишаться.')}</>}
             onConfirm={async () => {
-              const ok = await act(() => api('DELETE', `/api/looks/${look.id}`), 'Образ видалено');
+              const ok = await act(() => api('DELETE', `/api/looks/${look.id}`), t('Образ видалено'));
               if (ok === undefined) return;
               onClose();
               // Leaving the deleted look's own page: back to its capsule.
@@ -127,27 +128,27 @@ export function EditLook({ look, onClose }: { look: Look; onClose: () => void })
             <Trash2 size={15} />
           </ConfirmButton>
           <span style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>Скасувати</button>
+          <button className="btn" onClick={onClose}>{t('Скасувати')}</button>
           <button
             className="btn primary"
             disabled={!capsuleId}
             onClick={async () => {
-              const ok = await act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, name, note, capsuleId }), 'Збережено');
+              const ok = await act(() => api('PATCH', `/api/looks/${look.id}`, { rev: look.rev, name, note, capsuleId }), t('Збережено'));
               if (ok) onClose();
             }}
           >
-            Зберегти
+            {t('Зберегти')}
           </button>
         </>
       }
     >
       <div className="grid-form">
-        <label className="field full"><span>Назва</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="field full"><span>Капсула</span><select className="select" value={capsuleId} onChange={(e) => setCapsuleId(e.target.value)}>
-          {!capsuleId && <option value="" disabled>Вибери капсулу</option>}
+        <label className="field full"><span>{t('Назва')}</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="field full"><span>{t('Капсула')}</span><select className="select" value={capsuleId} onChange={(e) => setCapsuleId(e.target.value)}>
+          {!capsuleId && <option value="" disabled>{t('Вибери капсулу')}</option>}
           {capsules.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select></label>
-        <label className="field full"><span>Нотатка</span><textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <label className="field full"><span>{t('Нотатка')}</span><textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} /></label>
       </div>
     </Modal>
   );
@@ -162,7 +163,7 @@ function LookCard({ look, mark = false }: { look: Look; mark?: boolean }) {
         <LookArt look={look} />
       </a>
       {/* Above the name, not on the picture: on a phone a corner label covered the face. */}
-      <a href={`/looks/${look.id}`}>{mark && <span className={`eyebrow-sm best-mark${best ? '' : ' ghost'}`} aria-hidden={!best}>Найкращий</span>}<h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
+      <a href={`/looks/${look.id}`}>{mark && <span className={`eyebrow-sm best-mark${best ? '' : ' ghost'}`} aria-hidden={!best}>{t('Найкращий')}</span>}<h4 title={look.note}>{look.name}</h4><Missing look={look} /></a>
       <div className="card-foot">
         <RateButtons kind="look" target={look} size="sm" />
         {lookRating(look) !== null && <span className="score">{scoreLabel(lookRating(look)!)}</span>}
@@ -184,42 +185,42 @@ function EditCapsule({ capsule, onClose }: { capsule: Capsule; onClose: () => vo
   const [situations, setSituations] = useState(capsule.situations.join('\n'));
   const save = async () => {
     const set = !isSelection && !sameSetDraft(setDraft, initialSet) ? setDraftPayload(setDraft) : {};
-    const ok = await act(() => api('PATCH', `/api/capsules/${capsule.id}`, { rev: capsule.rev, name, description, season, situations: situations.split('\n'), ...set }), 'Збережено');
+    const ok = await act(() => api('PATCH', `/api/capsules/${capsule.id}`, { rev: capsule.rev, name, description, season, situations: situations.split('\n'), ...set }), t('Збережено'));
     if (ok) onClose();
   };
   return (
     <Modal
-      title="Редагувати"
+      title={t('Редагувати')}
       onClose={onClose}
       footer={
         <>
           <ConfirmButton
             className="btn ghost danger"
-            title={capsule.kind === 'selection' ? 'Видалити підбірку' : 'Видалити капсулу'}
-            message={<>Видалити «{capsule.name}» і її образи назавжди? Щоб просто прибрати з очей — постав 👎. Речі в гардеробі залишаться.</>}
+            title={capsule.kind === 'selection' ? t('Видалити підбірку') : t('Видалити капсулу')}
+            message={<>{t('Видалити «{name}» і її образи назавжди? Щоб просто прибрати з очей — постав 👎. Речі в гардеробі залишаться.', { name: capsule.name })}</>}
             onConfirm={async () => {
-              const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), 'Видалено');
+              const ok = await act(() => api('DELETE', `/api/capsules/${capsule.id}`), t('Видалено'));
               if (ok !== undefined) go(capsule.kind === 'selection' ? '/capsules?tab=selections' : '/capsules', true);
             }}
           >
             <Trash2 size={14} />
           </ConfirmButton>
           <span style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>Скасувати</button>
-          <button className="btn primary" onClick={() => void save()}>Зберегти</button>
+          <button className="btn" onClick={onClose}>{t('Скасувати')}</button>
+          <button className="btn primary" onClick={() => void save()}>{t('Зберегти')}</button>
         </>
       }
     >
       <div className="grid-form">
-        <label className="field full"><span>Назва</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="field full"><span>Опис</span><textarea className="textarea" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+        <label className="field full"><span>{t('Назва')}</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="field full"><span>{t('Опис')}</span><textarea className="textarea" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
         <label className="field">
-          <span>Сезон</span>
+          <span>{t('Сезон')}</span>
           <select className="select" value={season} onChange={(e) => setSeason(e.target.value as Season)}>
-            {(['all', 'warm', 'transitional', 'cold'] as Season[]).map((s) => <option key={s} value={s}>{SEASON_LABEL[s]}</option>)}
+            {(['all', 'warm', 'transitional', 'cold'] as Season[]).map((s) => <option key={s} value={s}>{t(SEASON_LABEL[s])}</option>)}
           </select>
         </label>
-        <label className="field full"><span>Ситуації (по рядку)</span><textarea className="textarea" value={situations} onChange={(e) => setSituations(e.target.value)} /></label>
+        <label className="field full"><span>{t('Ситуації (по рядку)')}</span><textarea className="textarea" value={situations} onChange={(e) => setSituations(e.target.value)} /></label>
         {!isSelection && <CapsuleSetEditor draft={setDraft} onChange={setSetDraft} />}
       </div>
     </Modal>
@@ -233,7 +234,7 @@ export function CapsuleDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const capsule = db.capsules.find((c) => c.id === id);
   const allLooks = useMemo(() => capsuleLooks(db, capsule?.lookIds ?? []), [capsule, db]);
-  if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
+  if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title={t('Не знайдено')} /></div>;
   if (capsule.redirectCapsuleIds) {
     // A merged or dissolved capsule (owner, 20.11): one destination opens directly; several are shown without the old name.
     // Follow chains of moves (an old capsule moved into one that moved again) to the live, shown capsules.
@@ -250,8 +251,8 @@ export function CapsuleDetail({ id }: { id: string }) {
     }
     if (targets.length === 1) return <MovedTo href={`/capsules/${targets[0].id}`} />;
     return <div className="page">
-      <div className="crumb"><a href="/capsules">Капсули</a></div>
-      <div className="page-head"><h1>Капсулу перенесено</h1></div>
+      <div className="crumb"><a href="/capsules">{t('Капсули')}</a></div>
+      <div className="page-head"><h1>{t('Капсулу перенесено')}</h1></div>
       {targets.length > 0 && <div className="capsule-grid">{targets.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
     </div>;
   }
@@ -263,32 +264,32 @@ export function CapsuleDetail({ id }: { id: string }) {
   const isSelection = capsule.kind === 'selection';
 
   const addLook = async () => {
-    const look = await act(() => api<Look>('POST', '/api/looks', { capsuleId: capsule.id, name: `Образ ${allLooks.length + 1}`, slots: {} }), 'Образ додано');
+    const look = await act(() => api<Look>('POST', '/api/looks', { capsuleId: capsule.id, name: `${t('Образ')} ${allLooks.length + 1}`, slots: {} }), t('Образ додано'));
     if (look) go(`/looks/${look.id}`);
   };
 
   return (
     <div className="page">
-      <div className="crumb"><a href={isSelection ? '/capsules?tab=selections' : '/capsules'}>{isSelection ? 'Підбірки' : 'Капсули'}</a></div>
+      <div className="crumb"><a href={isSelection ? '/capsules?tab=selections' : '/capsules'}>{isSelection ? t('Підбірки') : t('Капсули')}</a></div>
       <div className="page-head">
         <div>
           {capsule.periods?.length ? <span className="eyebrow-sm">{periodLine(capsule, true)}</span> : null}
           <h1>{capsule.name}</h1>
           {(readyLine(db, capsule) || capsuleRating(db, capsule) !== null) && <p className="miss" style={{ marginTop: 6 }}>{[readyLine(db, capsule), capsuleRating(db, capsule) !== null ? scoreLabel(capsuleRating(db, capsule)!) : ''].filter(Boolean).join(' · ')}</p>}
           <div className="row wrap" style={{ marginTop: 12 }}>
-            {capsule.season !== 'all' && !capsule.periods?.length && <Badge>{SEASON_LABEL[capsule.season]}</Badge>}
-            {hidden && <Badge>приховано</Badge>}
+            {capsule.season !== 'all' && !capsule.periods?.length && <Badge>{t(SEASON_LABEL[capsule.season])}</Badge>}
+            {hidden && <Badge>{t('приховано')}</Badge>}
             {capsule.situations.filter((s) => s.length <= 24).slice(0, 3).map((s) => <Badge key={s}>{s}</Badge>)}
           </div>
         </div>
         <div className="actions">
           <RateButtons kind="capsule" target={capsule} />
-          <button className="icon-btn" aria-label="Редагувати" onClick={() => setEditing(true)}><Pencil size={14} /></button>
-          <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> Образ</button>
+          <button className="icon-btn" aria-label={t('Редагувати')} onClick={() => setEditing(true)}><Pencil size={14} /></button>
+          <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> {t('Образ')}</button>
         </div>
       </div>
-      <LookGrid looks={looks} filter={!hidden && <div className="filters" role="group" aria-label="Фільтр образів"><Filter active={readyOnly} href={`/capsules/${capsule.id}${readyOnly ? '' : '?owned=1'}`}>{WARDROBE_CAPSULE_NAME}</Filter></div>} />
-      {isSelection ? <PieceBlocks pieces={pieces} ownTitle="Речі капсули" /> : <CapsuleSetSection capsule={capsule} />}
+      <LookGrid looks={looks} filter={!hidden && <div className="filters" role="group" aria-label={t('Фільтр образів')}><Filter active={readyOnly} href={`/capsules/${capsule.id}${readyOnly ? '' : '?owned=1'}`}>{t(WARDROBE_CAPSULE_NAME)}</Filter></div>} />
+      {isSelection ? <PieceBlocks pieces={pieces} ownTitle={t('Речі капсули')} /> : <CapsuleSetSection capsule={capsule} />}
       {editing && <EditCapsule capsule={capsule} onClose={() => setEditing(false)} />}
     </div>
   );

@@ -7,5 +7,6 @@
 !app/tsconfig.json
 !app/server/
 !app/src/
+!scripts/import-user.ts
 app/server/*.test.ts
 app/server/*.swift

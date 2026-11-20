@@ -1,0 +1,10 @@
+[Unit]
+Description=Snapshot Capsula's databases and account folders
+After=local-fs.target docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/capsula-backup

@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Capsula snapshot (the recovery Mac pulls and encrypts it)
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

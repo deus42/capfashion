@@ -343,28 +343,21 @@ function NeedCard({ need, top = false, places }: { need: Need; top?: boolean; pl
 
 export function ShoppingPage({ focus }: { focus?: string }) {
   const db = useDb();
-  const [show, setShow] = useState<'open' | 'all'>('open');
-  const focusCovered = Boolean(focus && db.needs.find((n) => n.id === focus)?.status === 'covered');
   useEffect(() => {
-    // A link to a covered recommendation (from the wardrobe) must still find it.
-    if (focusCovered) setShow('all');
     if (focus) window.setTimeout(() => document.getElementById(`need-${focus}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-  }, [focus, focusCovered]);
-  // Ordered by the next-purchase rating; closed ones after the open ones.
+  }, [focus]);
+  // Open purchases only, by the next-purchase rating (owner, 20.11: no «Відкриті / Усі» filter). A link to a closed one
+  // (from a wardrobe item) still shows it, after the open ones.
   const order = new Map(purchaseRanking(db).map((r, i) => [r.need.id, i]));
   const needs = db.needs
-    .filter((n) => show === 'all' || n.status === 'open')
-    .sort((a, b) => (order.get(a.id) ?? 1e6) - (order.get(b.id) ?? 1e6));
+    .filter((n) => n.status === 'open' || n.id === focus)
+    .sort((a, b) => Number(a.status !== 'open') - Number(b.status !== 'open') || (order.get(a.id) ?? 1e6) - (order.get(b.id) ?? 1e6));
   const places = storePlaces(db);
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Покупки</h1>
-        </div>
-        <div className="filters" role="group" aria-label="Які покупки">
-          <button className={show === 'open' ? 'on' : ''} aria-pressed={show === 'open'} onClick={() => setShow('open')}>Відкриті</button>
-          <button className={show === 'all' ? 'on' : ''} aria-pressed={show === 'all'} onClick={() => setShow('all')}>Усі</button>
         </div>
       </div>
       {/* Where to buy sits on every product line (owner, 20.11), so there is no separate store list to scroll to. */}

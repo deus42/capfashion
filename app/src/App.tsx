@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import {
-  House, ImagePlus, Images, LayoutGrid, Loader2, Plus, Shirt, ShoppingBag, TriangleAlert, User,
+  House, Images, LayoutGrid, Loader2, Plus, Shirt, ShoppingBag, TriangleAlert, User,
 } from 'lucide-react';
 import { useApp, useRoute, go } from './store.tsx';
 import { Img, SpanBar } from './components/ui.tsx';
@@ -59,7 +59,10 @@ export default function App() {
   const ic = 20;
 
   let page: ReactNode;
-  if (section === 'capsules' && parts[1]) page = <CapsuleDetail id={parts[1]} />;
+  // «Найкращі» and «З моїх речей» became filters of «Усі образи» (owner, 20.11); old links land there.
+  if (section === 'capsules' && parts[1] === 'best') page = <Redirect to="/capsules?tab=looks&best=1" />;
+  else if (section === 'capsules' && parts[1] === 'my-wardrobe') page = <Redirect to="/capsules?tab=looks&owned=1" />;
+  else if (section === 'capsules' && parts[1]) page = <CapsuleDetail id={parts[1]} />;
   else if (section === 'capsules') page = <CapsulesPage />;
   else if (section === 'looks' && parts[1]) page = <LookPage id={parts[1]} />;
   else if (section === 'wardrobe') page = <WardrobePage openId={parts[1]} />;
@@ -82,10 +85,7 @@ export default function App() {
         <RailItem to="gallery" icon={<Images size={ic} />} label="Галерея" active={section === 'gallery'} />
         <button type="button" className="rail-item rail-upload" aria-label="Додати фото" title="Додати фото" onClick={intake.pick} disabled={intake.busy}>
           <span className="upload-icon" aria-hidden="true">
-            {intake.busy ? <Loader2 size={ic} className="spin" /> : <>
-              <ImagePlus size={ic} className="upload-desktop-icon" />
-              <Plus size={22} className="m-only" />
-            </>}
+            {intake.busy ? <Loader2 size={ic} className="spin" /> : <Plus size={ic} />}
           </span>
           <span>Додати фото</span>
         </button>

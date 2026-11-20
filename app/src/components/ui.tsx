@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, ThumbsDown, ThumbsUp, Upload, Watch, X } from 'lucide-react';
+import { ArrowUp, Check, Footprints, ImagePlus, Layers, Loader2, PersonStanding, Shirt, ThumbsDown, ThumbsUp, Upload, Watch, X } from 'lucide-react';
 import type { Category, Job, Look, Photo, PhotoKind, Slots } from '../api.ts';
 import { thumb, uploadFile } from '../api.ts';
 import { useApp, useDb } from '../store.tsx';
@@ -294,6 +294,49 @@ export function SpanBar({ jobs, className = '' }: { jobs: Job[]; className?: str
 }
 
 /** Just the words: «ще ≈ 2 хв», «майже готово», «у черзі» — ticking on its own. */
+/**
+ * A chat composer (owner, 20.11: «стандартна для чат-ботів, контроли менші — як у Codex або Claude»): the text grows
+ * with what is typed, quiet controls sit bottom left, a small round send button bottom right. Enter sends; an empty
+ * text is allowed (the search then picks on its own).
+ */
+export function Composer({ value, onChange, onSend, busy, placeholder, label, children, className = '' }: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  busy: boolean;
+  placeholder: string;
+  label: string;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`composer ${className}`}>
+      <div className="composer-text" data-value={(value || placeholder) + ' '}>
+        <textarea
+          value={value}
+          rows={1}
+          aria-label={label}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              if (!busy) onSend();
+            }
+          }}
+        />
+      </div>
+      <div className="composer-bar">
+        {children}
+        <span className="grow" />
+        <button type="button" className="composer-send" onClick={onSend} disabled={busy} aria-label={busy ? 'Шукаю' : label} title={busy ? 'Шукаю' : label}>
+          {busy ? <Loader2 size={16} className="spin" /> : <ArrowUp size={17} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function JobEta({ job }: { job: Job }) {
   const db = useDb();
   const now = useNow();

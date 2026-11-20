@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Loader2, Search, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import type { Suggestion } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb } from '../store.tsx';
-import { Empty, JobEta, LookCollage } from '../components/ui.tsx';
+import { Composer, Empty, LookCollage } from '../components/ui.tsx';
 import { openSuggestions } from '../lib.ts';
 import { isCapsuleHidden } from '../rating.ts';
 
@@ -26,30 +26,12 @@ export function NewLooks() {
   };
   return (
     <>
-      <div className="prompt-box new-search">
-        <textarea
-          value={text}
-          rows={2}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !job) {
-              e.preventDefault();
-              void search();
-            }
-          }}
-          placeholder="Що шукаємо? Напр.: пальто на прогулянку, вечеря в місті"
-        />
-        <div className="bar">
-          <select className="select sm" value={capsuleId} onChange={(e) => setCapsuleId(e.target.value)} aria-label="Капсула">
-            <option value="">Усі капсули</option>
-            {capsules.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <span className="grow" />
-          <button className="btn primary" onClick={() => void search()} disabled={Boolean(job)}>
-            {job ? <><Loader2 size={16} className="spin" /> Шукаю · <JobEta job={job} /></> : <><Search size={16} /> Шукати</>}
-          </button>
-        </div>
-      </div>
+      <Composer className="new-search" value={text} onChange={setText} onSend={() => void search()} busy={Boolean(job)} label="Шукати" placeholder="Що шукаємо? Напр.: пальто на прогулянку, вечеря в місті">
+        <select className="composer-pick" value={capsuleId} onChange={(e) => setCapsuleId(e.target.value)} aria-label="Капсула">
+          <option value="">Усі капсули</option>
+          {capsules.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Composer>
       {list.length ? (
         <div className="look-grid">{list.map((s) => <NewCard key={s.id} s={s} />)}</div>
       ) : (

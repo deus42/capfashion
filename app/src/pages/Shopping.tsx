@@ -214,31 +214,10 @@ function CoverModal({ need, onClose }: { need: Need; onClose: () => void }) {
   );
 }
 
-/** «пасує до 5 образів · завершує 0» (owner, 19.11): what the spend really gives. */
-const planLine = (p: { fits: number; completes: number }) => `пасує до ${p.fits} ${p.fits === 1 ? 'образу' : 'образів'} · завершує ${p.completes}`;
+/** «пасує до 5 образів · завершує 2» (owner, 19.11): what the spend really gives; «завершує» only when it completes something (20.11). */
+const planLine = (p: { fits: number; completes: number }) => `пасує до ${p.fits} ${p.fits === 1 ? 'образу' : 'образів'}${p.completes ? ` · завершує ${p.completes}` : ''}`;
 /** When one purchase is not enough: the rest of the smallest set and the look it makes wearable. */
 const planWith = (p: ReturnType<typeof purchasePlan>) => (p.with ? `ще ${p.with.others.join(', ')} — і готовий «${p.with.look.name}»` : '');
-
-/** The one purchase that helps most right now (owner, 17.11): it completes or brings closer the most looks. */
-export function NextPurchase() {
-  const db = useDb();
-  const top = purchaseRanking(db)[0];
-  if (!top || top.looksIn === 0) return null;
-  const n = top.need;
-  const plan = purchasePlan(db, n.id);
-  const art = n.conceptPhotoId ? db.photos.find((p) => p.id === n.conceptPhotoId)?.path : undefined;
-  return (
-    <a className="next-buy" href={`/shopping?need=${n.id}`}>
-      <span className="img">{art ? <img src={thumb(art, 600)} alt={n.title} /> : <CategoryIcon category={n.category} size={34} />}</span>
-      <span className="txt">
-        <span className="eyebrow">Наступна покупка</span>
-        <span className="t">{n.title}</span>
-        <span className="miss">{planLine(plan)}</span>
-        {plan.with && <span className="miss">{planWith(plan)}</span>}
-      </span>
-    </a>
-  );
-}
 
 function NeedCard({ need, focus, top = false }: { need: Need; focus: boolean; top?: boolean }) {
   const db = useDb();

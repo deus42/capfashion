@@ -1,12 +1,11 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, Loader2, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { ShoppingBag, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { api, uploadFile } from '../api.ts';
-import { go, useApp, useDb } from '../store.tsx';
-import { JobEta, LookArt, LookCollage, Missing, RenderPlaceholder } from '../components/ui.tsx';
-import { autoCapsules, capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, lookRating, openSuggestions, periodLine, rankCapsules, readyLine, scoreLabel, todayLooks, WARDROBE_CAPSULE_ID } from '../lib.ts';
+import { useApp, useDb } from '../store.tsx';
+import { Composer, LookArt, Missing, RenderPlaceholder } from '../components/ui.tsx';
+import { capsuleLooks, capsuleRating, distinctLooks, isAutoCapsule, lookRating, openSuggestions, periodLine, purchaseRanking, rankCapsules, readyLine, scoreLabel, WARDROBE_CAPSULE_ID } from '../lib.ts';
 import type { DB, Look } from '../api.ts';
 import { isCapsuleHidden, type CapsuleView } from '../rating.ts';
-import { NextPurchase } from './Shopping.tsx';
 
 /** A tile's looks: a hidden capsule still shows its looks (never empty); the automatic ones keep their own order. */
 const tileLooks = (db: DB, c: CapsuleView) => (isCapsuleHidden(db, c) || isAutoCapsule(c.id) ? capsuleLooks(db, c.lookIds) : distinctLooks(db, capsuleLooks(db, c.lookIds)));
@@ -50,58 +49,6 @@ export function CapsuleTile({ c, cover }: { c: CapsuleView; cover?: Look[] }) {
   );
 }
 
-/** Two ready looks for today (owner, 19.11): owned pieces only, the current weather period first. */
-function TodayLooks() {
-  const db = useDb();
-  const looks = todayLooks(db);
-  if (!looks.length) return null;
-  return (
-    <div className="today-grid">
-      {looks.map((l) => (
-        <div key={l.id} className="look-card">
-          <a className="cover" style={{ aspectRatio: '2 / 3' }} href={`/looks/${l.id}`}><LookArt look={l} w={800} /></a>
-          <a href={`/looks/${l.id}`}><span className="eyebrow-sm best-mark">{db.capsules.find((c) => c.id === l.capsuleId)?.name}</span><h4>{l.name}</h4><Missing look={l} /></a>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Advisor proposals (owner, 18.11): a new look or capsule from owned items, added only on «Додати». */
-function Advice() {
-  const db = useDb();
-  const { act } = useApp();
-  // The advisor's proposals; search results live in «Капсули → Нові».
-  const list = openSuggestions(db).filter((s) => s.source !== 'search').slice(0, 2);
-  if (!list.length) return null;
-  const add = async (id: string) => {
-    const r = await act(() => api<{ href: string }>('POST', `/api/suggestions/${id}/accept`), 'Додано');
-    if (r?.href) go(r.href);
-  };
-  return (
-    <details className="advice-group">
-      <summary>
-        <span className="h2">Нові образи <span className="count">{list.length}</span></span>
-        <ChevronDown size={18} aria-hidden="true" />
-      </summary>
-      {list.map((s) => (
-        <div key={s.id} className="next-buy advice-card">
-          <span className="img"><LookCollage slots={s.looks[0].slots} max={4} /></span>
-          <span className="txt">
-            {s.kind === 'capsule' && <span className="eyebrow">Нова капсула · {s.looks.length} {s.looks.length === 1 ? 'образ' : s.looks.length < 5 ? 'образи' : 'образів'}</span>}
-            <span className="t">{s.name}</span>
-            {s.why && <span className="miss">{s.why}</span>}
-            <span className="row" style={{ gap: 8 }}>
-              <button className="btn sm" onClick={() => void act(() => api('POST', `/api/suggestions/${s.id}/reject`))}>Ні</button>
-              <button className="btn sm primary" onClick={() => void add(s.id)}>Додати</button>
-            </span>
-          </span>
-        </div>
-      ))}
-    </details>
-  );
-}
-
 /** Starts photo intake: every chosen photo becomes a recognition job. */
 export function useIntake() {
   const { act } = useApp();
@@ -135,9 +82,9 @@ export function HomePage() {
   const { act } = useApp();
   const [text, setText] = useState('');
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
-  const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
-  // Fashion capsules first (the current period leads), the automatic ones after them (owner, 19.11).
-  const capsules = [...rankCapsules(db, shown.filter((c) => c.kind !== 'selection')), ...autoCapsules(db)];
+  // Only the fashion capsules, the best rated first, left to right (owner, 20.11); ties keep the current period first.
+  // «З моїх речей» and «Найкращі» are filters, not capsules (20.11).
+  const capsules = [...rankCapsules(db, shown.filter((c) => c.kind !== 'selection'))].sort((a, b) => (capsuleRating(db, b) ?? -1) - (capsuleRating(db, a) ?? -1));
   const covers = tileCovers(db, capsules);
   const analyzeJob = db.jobs.find((j) => j.kind === 'discover' && j.state === 'running') ?? db.jobs.find((j) => j.kind === 'discover' && j.state === 'queued');
   const analyzing = Boolean(analyzeJob);
@@ -148,45 +95,23 @@ export function HomePage() {
     if (ok) setText('');
   };
 
+  const fresh = openSuggestions(db).length;
+  const next = purchaseRanking(db)[0];
+  // Cap Fashion is about capsules (owner, 20.11): the question and the composer in the centre, two small chips,
+  // then the capsules as tiles, the best rated first, left to right — like app.fashn.ai.
   return (
-    <div className="page">
-      <section className="home-hero">
-        <h1>Що одягнемо сьогодні?</h1>
-        <TodayLooks />
-        <div className="prompt-box hero-prompt">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !analyzing) {
-                e.preventDefault();
-                void analyze();
-              }
-            }}
-            rows={2}
-            placeholder="Уточни: вечеря, довга прогулянка, буду в приміщенні"
-          />
-          <div className="bar">
-            <span className="grow" />
-            <button className="btn primary" onClick={() => void analyze()} disabled={analyzing}>
-              {analyzing ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} {analyzeJob ? <>Підбираю · <JobEta job={analyzeJob} /></> : 'Підібрати'}
-            </button>
+    <div className="page home">
+      <section className="home-top">
+        <h1 className="home-title">Що одягнемо сьогодні?</h1>
+        <Composer className="home-ask" value={text} onChange={setText} onSend={() => void analyze()} busy={analyzing} label="Підібрати" placeholder="Уточни: вечеря, довга прогулянка, буду в приміщенні" />
+        {(fresh > 0 || (next && next.looksIn > 0)) && (
+          <div className="home-chips">
+            {fresh > 0 && <a href="/capsules?tab=new" className="home-chip"><span className="chip-ic"><Sparkles size={14} /></span>Нові образи<span className="chip-n">{fresh}</span></a>}
+            {next && next.looksIn > 0 && <a href={`/shopping?need=${next.need.id}`} className="home-chip"><span className="chip-ic"><ShoppingBag size={14} /></span>Наступна покупка</a>}
           </div>
-        </div>
+        )}
       </section>
-
-      <NextPurchase />
-      <Advice />
-
-      {selections.length > 0 && (
-        <>
-          <div className="section-head"><h2 className="h2">Підбірки з моїх речей</h2><a href="/capsules?tab=selections">Усі <ArrowRight size={13} style={{ verticalAlign: '-2px' }} /></a></div>
-          <div className="capsule-grid">{selections.slice(0, 3).map((c) => <CapsuleTile key={c.id} c={c} />)}</div>
-        </>
-      )}
-
-      <div className="section-head"><h2 className="h2">Капсули</h2></div>
-      <div className="capsule-grid">{capsules.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
+      <div className="home-caps">{capsules.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
     </div>
   );
 }

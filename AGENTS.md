@@ -99,6 +99,14 @@
 
 ## Project-Specific Rules
 
+### Site direction — Cap Fashion is built around capsules (owner, 20 November 2026)
+
+- Cap Fashion is the owner's personal capsule-wardrobe site, and everything on it is organised around CAPSULES. A capsule is a distinct, refined fashion style: currently Smart Casual, Mediterranean Casual and Outdoor Casual.
+- Structure: capsule → its looks (variants fold into one) → pieces, owned or to buy. The wardrobe, purchases, stores, the advisor, the «Нові» search and try-ons exist to serve the capsules. They fill a capsule's gaps, find new looks in its style and show how a look will wear.
+- Home opens on the capsules: the question «Що одягнемо сьогодні?» with the chat composer, small chips, then capsule tiles by rating. It is not a catalogue of every look; looks live inside their capsule and in «Капсули → Усі образи».
+- Fashion first: capsules are judged as fashion (distinct, beautiful, current, refined), not by what is already owned. Ownership is a quiet filter or mark («З моїх речей»), and missing pieces become purchases.
+- The design is elegant fashion-site quality (see «Design is ELEGANT first»). Before adding or changing a screen, check that it serves the capsules; anything that does not stays off the primary screens.
+
 ### Personal fashion stylist
 
 - Use the `fashion-stylist` role on request and before creating or changing a look or capsule in a Codex/Claude task. Give it the draft and the relevant current catalogue context. Return the review in the same chat. Discuss significant replacements, mergers or changes of direction with the owner before applying them. Routine software changes do not need a style review.
@@ -110,9 +118,26 @@
 - ALWAYS minimal design: the fewest elements that do the job; no explanatory text, duplicate buttons/selectors, history, IDs or debug data on owner screens; editing and secondary actions behind one pencil modal. Before shipping a screen, remove everything that does not block the main task.
 - NEVER a panel that slides out from the side on click (drawer, slide-over, side sheet) for details or forms; open details as their own page (the wardrobe item is a page). The established layout stays: the left navigation rail (bottom bar on phones), filter columns and the gallery are not side panels. Global source: `/Users/deus/Projects/Vault-Tec/34 Preferences/Interface and frontend preferences.md`.
 - Change only what the owner asked; never redesign the layout or other screens on your own. When the request is unclear, ask the owner (in Ukrainian) before changing anything.
-- Keep content visible. The owner requested one accordion on Home for the advisor’s «Нові образи» (19 November 2026). Elsewhere avoid accordions, collapsible sections and show-more toggles. Help is inline (info mark next to a term, hover or tap), never a separate page.
+- Keep content visible. NEVER use a design that hides content and expands it on demand: accordions, collapsible sections, `<details>`, show-more or expand toggles. The owner calls this an antipattern and forbids it everywhere (20 November 2026). This withdraws the earlier Home accordion for «Нові образи», which is now one visible chip linking to «Капсули → Нові». Help is inline (info mark next to a term, hover or tap), never a separate page.
 - Minimal screens: one look screen (best picture or the look's pieces, «Це я?», swap pieces, accessory options); no queue or background-processing controls — show a thin progress bar while work runs.
 - For UI work apply the shared `frontend-skill`; the rules above override any skill or template suggesting drawers or sidebars.
+
+### Design is ELEGANT first — owner rule, 20 November 2026
+
+- Every screen must look calm, refined and premium, like a strong fashion site; elegance comes before any other visual choice. Prefer quiet type, fine lines and generous space over heavy filled buttons, bold blocks and loud pills.
+- Filters are quiet text toggles (muted words; the active one in ink with a fine underline), never heavy buttons. Primary actions stay small and precise, e.g. a small round black icon button.
+- Text input for the stylist or search follows the standard chat-bot composer (as in Claude or Codex): text that grows as you type, small quiet controls bottom left, a small round send button bottom right.
+- Use space well without cramming (owner, 20 November 2026): the goal is no oversized renders and no wasted space, not forcing everything onto one screen. Cap Fashion is built around CAPSULES. Home follows app.fashn.ai: the question and the chat composer sit in the centre, small chips under it («Нові образи», «Наступна покупка»), and below are simply the capsule tiles, best rated first from left to right. Home does not list every look. Avoid boxes inside boxes and giant hero renders.
+- Desktop and phone share one visual language: the global «Додати фото» is the same black circle with a plus in both, with its label like every other navigation item. On the desktop rail it sits at the bottom, right above the profile; on the phone it stays in the centre of the bottom bar.
+
+### Capsules are distinct fashion styles — owner rules, 19–20 November 2026
+
+- A capsule is ONE distinctive fashion style with a unique, recognisable look: silhouette, palette, materials and key pieces. A capsule is never a grouping of existing looks, a season bucket, a ranking or a filter. Ownership does not define a capsule; a look may need purchases.
+- Capsules must clearly differ from each other. When two read as one style, merge them; when one is not a style of its own, dissolve it and place each look where it belongs. On 20 November, Nordic Casual was merged into Smart Casual and Ivy Casual was dissolved into Smart, Workwear and Mediterranean.
+- Current capsules: Smart Casual, Mediterranean Casual and Outdoor Casual. Workwear Casual was hidden with its looks on 20 November («Приховані», restorable). Names are English, in the spirit of «Smart Casual», «Urban Casual» and «Mediterranean Casual». «Refined modern» is a research direction drawn from strong fashion sites, never a capsule name; no names like «Олива».
+- Home shows the capsules as tiles, best rated first, left to right.
+- «Найкращі» and «З моїх речей» are filters of the looks, never capsules or capsule tiles. Complete looks are marked elegantly; looks that need a purchase say so quietly.
+- Each capsule belongs to one or more of the five weather periods. New looks keep the capsule's style and period. They must not repeat or nearly repeat (one piece apart) anything that existed, was refused or was deleted. They leave out weak pieces.
 
 ### Mandatory original-photo identity — owner instruction, 17 November 2026
 

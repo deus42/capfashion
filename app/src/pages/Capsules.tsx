@@ -4,7 +4,7 @@ import type { Capsule, Look, Season } from '../api.ts';
 import { api } from '../api.ts';
 import { go, useApp, useDb, useRoute } from '../store.tsx';
 import { Badge, ConfirmButton, Empty, LookArt, Missing, Modal, PieceBlocks, RateButtons } from '../components/ui.tsx';
-import { SEASON_LABEL, openSuggestions, periodLine, autoCapsules, bestCapsule, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_ID, WARDROBE_CAPSULE_ID, WARDROBE_CAPSULE_NAME } from '../lib.ts';
+import { SEASON_LABEL, openSuggestions, periodLine, bestLooks, capsuleLooks, capsuleRating, distinctLooks, isBestLook, lookRating, scoreLabel, isComplete, piecesOf, rankCapsules, rankLooks, readyLine, wardrobeCapsule, BEST_CAPSULE_NAME, WARDROBE_CAPSULE_NAME } from '../lib.ts';
 import { hiddenLookIds, isCapsuleArchived, isCapsuleHidden } from '../rating.ts';
 import { CapsuleTile, tileCovers } from './Home.tsx';
 import { NewLooks } from './NewLooks.tsx';
@@ -18,19 +18,24 @@ export function CapsulesPage() {
   const setTab = (t: typeof tab) => go(t === 'capsules' ? '/capsules' : `/capsules?tab=${t}`);
   const shown = db.capsules.filter((c) => !isCapsuleHidden(db, c));
   const ready = wardrobeCapsule(db);
-  const capsules = [...rankCapsules(db, shown.filter((c) => c.kind !== 'selection')), ...autoCapsules(db)];
+  // Only the fashion capsules: «Найкращі» and «З моїх речей» are filters of «Усі образи», not capsules (owner, 20.11).
+  const capsules = rankCapsules(db, shown.filter((c) => c.kind !== 'selection'));
   const selections = rankCapsules(db, shown.filter((c) => c.kind === 'selection').reverse());
   const list = tab === 'capsules' ? capsules : selections;
   const covers = tileCovers(db, list);
   // Each capsule's lead look first, then the rest of the catalogue.
   const orderedLooks = capsuleLooks(db, [...new Set([...db.capsules.flatMap((c) => c.lookIds.slice(0, 1)), ...db.looks.map((l) => l.id)])]);
   const allLooks = distinctLooks(db, orderedLooks);
+  // Two quick filters of «Усі образи»: «Найкращі» (owner, 20.11: a filter, not a capsule) and «З моїх речей».
   const readyOnly = tab === 'looks' && query.get('owned') === '1';
-  const filteredLooks = readyOnly ? capsuleLooks(db, ready.lookIds) : allLooks;
+  const bestOnly = tab === 'looks' && query.get('best') === '1';
+  const readyIds = new Set(ready.lookIds);
+  const filteredLooks = (bestOnly ? bestLooks(db) : readyOnly ? capsuleLooks(db, ready.lookIds) : allLooks).filter((l) => !readyOnly || readyIds.has(l.id));
+  const looksHref = (owned: boolean, best: boolean) => `/capsules?tab=looks${owned ? '&owned=1' : ''}${best ? '&best=1' : ''}`;
   const hiddenCaps = db.capsules.filter((c) => !isCapsuleArchived(c) && isCapsuleHidden(db, c));
   const hiddenLooks = capsuleLooks(db, [...hiddenLookIds(db)]).filter((l) => !hiddenCaps.some((c) => c.lookIds.includes(l.id)));
   const hiddenCount = hiddenCaps.length + hiddenLooks.length;
-  // With the «З моїх речей» filter on, the title stays «Усі образи»: the active button already says it.
+  // With a filter on, the title stays «Усі образи»: the active button already says it.
   const title = { capsules: 'Капсули', new: 'Нові', selections: 'Підбірки', looks: 'Усі образи', hidden: 'Приховані' }[tab];
   const newCount = openSuggestions(db).length;
 
@@ -49,13 +54,16 @@ export function CapsulesPage() {
         </div>
       </div>
       {/* Below the tabs, not beside them: a button appearing next to the tabs made them jump when switching. */}
-      {tab === 'looks' && <div className="toolbar"><span className="grow" /><ReadyFilter active={readyOnly} href={readyOnly ? '/capsules?tab=looks' : '/capsules?tab=looks&owned=1'} /></div>}
+      {tab === 'looks' && <div className="filters" role="group" aria-label="Фільтр образів">
+        <Filter active={bestOnly} href={looksHref(readyOnly, !bestOnly)}>{BEST_CAPSULE_NAME}</Filter>
+        <Filter active={readyOnly} href={looksHref(!readyOnly, bestOnly)}>{WARDROBE_CAPSULE_NAME}</Filter>
+      </div>}
       {tab === 'hidden' ? (
         hiddenCount === 0 ? <Empty icon={<EyeOff />} title="Нічого не приховано" /> : <>
           {hiddenCaps.length > 0 && <div className="capsule-grid" style={{ marginBottom: 30 }}>{hiddenCaps.map((c) => <CapsuleTile key={c.id} c={c} />)}</div>}
           {hiddenLooks.length > 0 && <div className="look-grid">{hiddenLooks.map((l) => <LookCard key={l.id} look={l} />)}</div>}
         </>
-      ) : tab === 'new' ? <NewLooks /> : tab === 'looks' ? <LookGrid looks={filteredLooks} heading={false} /> : list.length === 0 ? (
+      ) : tab === 'new' ? <NewLooks /> : tab === 'looks' ? <LookGrid looks={filteredLooks} heading={false} mark={!bestOnly} /> : list.length === 0 ? (
         tab === 'selections' ? <Empty icon={<Sparkles />} title="Підбірок ще немає" /> : <Empty icon={<Sparkles />} title="Капсул ще немає" />
       ) : (
         <div className="capsule-grid">{list.map((c) => <CapsuleTile key={c.id} c={c} cover={covers.get(c.id)} />)}</div>
@@ -64,8 +72,9 @@ export function CapsulesPage() {
   );
 }
 
-function ReadyFilter({ active, href }: { active: boolean; href: string }) {
-  return <button type="button" className={`btn sm${active ? ' primary' : ''}`} aria-pressed={active} onClick={() => go(href)}>{WARDROBE_CAPSULE_NAME}</button>;
+/** A quiet text filter (owner, 20.11: elegant, not a heavy button): the active one is ink with a fine underline. */
+function Filter({ active, href, children }: { active: boolean; href: string; children: React.ReactNode }) {
+  return <button type="button" className={active ? 'on' : ''} aria-pressed={active} onClick={() => go(href)}>{children}</button>;
 }
 
 /** Looks already reduced to one card per look (see distinctLooks). */
@@ -207,15 +216,6 @@ export function CapsuleDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const capsule = db.capsules.find((c) => c.id === id);
   const allLooks = useMemo(() => capsuleLooks(db, capsule?.lookIds ?? []), [capsule, db]);
-  if (id === WARDROBE_CAPSULE_ID || id === BEST_CAPSULE_ID) {
-    const ready = id === BEST_CAPSULE_ID ? bestCapsule(db) : wardrobeCapsule(db);
-    const looks = capsuleLooks(db, ready.lookIds);
-    return <div className="page">
-      <div className="crumb"><a href="/capsules">Капсули</a></div>
-      <div className="page-head"><div><h1>{ready.name}</h1>{capsuleRating(db, ready) !== null && <p className="miss" style={{ marginTop: 6 }}>{scoreLabel(capsuleRating(db, ready)!)}</p>}</div></div>
-      <LookGrid looks={looks} mark={id !== BEST_CAPSULE_ID} />
-    </div>;
-  }
   if (!capsule) return <div className="page"><Empty icon={<ImageOff />} title="Не знайдено" /></div>;
   if (capsule.redirectCapsuleIds) {
     const targets = db.capsules.filter((c) => capsule.redirectCapsuleIds!.includes(c.id));
@@ -257,7 +257,7 @@ export function CapsuleDetail({ id }: { id: string }) {
           <button className="btn primary" onClick={() => void addLook()}><Plus size={16} /> Образ</button>
         </div>
       </div>
-      <LookGrid looks={looks} filter={!hidden && <ReadyFilter active={readyOnly} href={`/capsules/${capsule.id}${readyOnly ? '' : '?owned=1'}`} />} />
+      <LookGrid looks={looks} filter={!hidden && <div className="filters" role="group" aria-label="Фільтр образів"><Filter active={readyOnly} href={`/capsules/${capsule.id}${readyOnly ? '' : '?owned=1'}`}>{WARDROBE_CAPSULE_NAME}</Filter></div>} />
       <PieceBlocks pieces={pieces} ownTitle="Речі капсули" />
       {editing && <EditCapsule capsule={capsule} onClose={() => setEditing(false)} />}
     </div>

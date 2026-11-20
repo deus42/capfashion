@@ -303,11 +303,7 @@ export const itemRating = (item: Item) => (item.rating && item.status !== 'inact
 export const bestCapsule = (db: DB) => ({ id: BEST_CAPSULE_ID, name: BEST_CAPSULE_NAME, lookIds: bestLooks(db).map((l) => l.id), favorite: false });
 /** The site's own capsules (no data of their own): «Найкращі» and «З моїх речей». */
 export const isAutoCapsule = (id: string) => id === BEST_CAPSULE_ID || id === WARDROBE_CAPSULE_ID;
-/** The automatic capsules shown first on Home and «Капсули»; «Найкращі» only once it has looks. */
-export const autoCapsules = (db: DB) => {
-  const best = bestCapsule(db);
-  return [...(best.lookIds.length ? [best] : []), wardrobeCapsule(db)];
-};
+// «Найкращі» and «З моїх речей» are not capsules but filters of the looks (owner, 20.11): a capsule is one distinct style.
 
 /** Count where an item is used, including when it appears only in a saved variant. */
 export function itemPlacements(db: DB, itemId: string, ready = wardrobeCapsule(db)) {

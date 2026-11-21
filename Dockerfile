@@ -10,8 +10,10 @@ COPY app/ ./
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:24-slim
-# Codex CLI, the version the local site runs; its sign-in and generated images live in /data/codex.
-RUN npm install -g @openai/codex@0.169.1 --no-audit --no-fund && npm cache clean --force
+# Codex CLI, the version the local site runs; its sign-in and generated images live in /data/codex. Unlike Node,
+# Codex reads the system CA store, which the slim image does not ship.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @openai/codex@0.169.1 --no-audit --no-fund && npm cache clean --force
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4317 \

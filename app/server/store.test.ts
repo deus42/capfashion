@@ -1857,6 +1857,20 @@ test('owner-only accounts: only the owner signs up, invites admit no one, and ot
   owner.runner.stop();
 });
 
+test('private alias: Google returns to the registered address, which relays the browser to the alias once', async () => {
+  const { authConfigFromEnv, callbackRelay, RELAY_MARK } = await import('./auth.ts');
+  const env = { GOOGLE_CLIENT_ID: 'x.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'y', BETTER_AUTH_URL: 'https://capsula.home.arpa', GOOGLE_REDIRECT_URI: 'https://stage.capsula.example/api/auth/callback/google', BETTER_AUTH_TRUSTED_ORIGINS: 'https://stage.capsula.example/, https://other.example' };
+  const cfg = authConfigFromEnv(env, '/tmp')!;
+  assert.deepEqual(cfg.trustedOrigins, ['https://stage.capsula.example', 'https://other.example']);
+  assert.throws(() => authConfigFromEnv({ ...env, GOOGLE_REDIRECT_URI: 'http://stage.capsula.example/cb' }, '/tmp'), /GOOGLE_REDIRECT_URI/);
+  const back = new URL('https://stage.capsula.example/api/auth/callback/google?code=c1&state=s1');
+  const relay = callbackRelay(cfg, back)!;
+  assert.equal(relay, `https://capsula.home.arpa/api/auth/callback/google?code=c1&state=s1&${RELAY_MARK}=1`, 'code and state go to the alias, where the state cookie is');
+  assert.equal(callbackRelay(cfg, new URL(relay)), null, 'a relayed callback is handled, not relayed again (the gateway presents the registered host)');
+  assert.equal(callbackRelay(cfg, new URL('https://stage.capsula.example/api/auth/get-session')), null, 'only the callback is relayed');
+  assert.equal(callbackRelay({ baseURL: 'https://capsula.fit' }, new URL('https://capsula.fit/api/auth/callback/google?code=c')), null, 'no relay without a separate registered address');
+});
+
 test("Codex without commands (servers): shell tools off, read-only, the app collects the image from Codex's folder, no server secrets", async () => {
   const { dir, store, call } = setup();
   const home = path.join(dir, 'codex-home');

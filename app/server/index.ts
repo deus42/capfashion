@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { HttpError } from './store.ts';
 import { createLimiter } from './runner.ts';
 import { createTenants, emptyDb, type Tenant } from './tenants.ts';
-import { INVITE_COOKIE, authConfigFromEnv, createAuth } from './auth.ts';
+import { INVITE_COOKIE, RELAY_MARK, authConfigFromEnv, callbackRelay, createAuth } from './auth.ts';
 import { createOpenAIEngine, openAIConfigFromEnv } from './openai-engine.ts';
 import { createUsage, quotaConfigFromEnv } from './quota.ts';
 import { stateView } from './state-view.ts';
@@ -170,6 +170,16 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
   const address = clientAddress(req, TRUST_CLOUDFLARE);
   if ((url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/i/')) && limited(res, [[`sign-in:${address}`, RATE_RULES.signIn]])) return null;
   if (url.pathname.startsWith('/api/auth/')) {
+    const relay = method === 'GET' ? callbackRelay(authConfig!, url) : null;
+    if (relay) {
+      res.writeHead(302, { location: relay, 'cache-control': 'no-store' });
+      res.end();
+      return null;
+    }
+    if (url.searchParams.has(RELAY_MARK)) {
+      url.searchParams.delete(RELAY_MARK);
+      req.url = url.pathname + url.search;
+    }
     await auth.handler(req, res);
     return null;
   }

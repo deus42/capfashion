@@ -13,6 +13,8 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { google, verifyGoogleIdToken } from 'better-auth/social-providers';
 
 export const INVITE_COOKIE = 'capsula_invite';
+/** Marks a Google callback already relayed to the canonical address, so it is handled there and not relayed again. */
+export const RELAY_MARK = 'capsula_relay';
 const INVITE_DAYS = 14;
 const DEV_SECRET = 'capsula-development-only-secret-not-for-production';
 
@@ -26,6 +28,13 @@ export interface AuthConfig {
   openSignup: boolean;
   /** Only the owner may have an account (AI runs on the owner's own subscription); invites admit no one. */
   ownerOnly?: boolean;
+  /**
+   * A private alias such as https://capsula.home.arpa cannot be registered with Google (not a public domain). Then
+   * Google returns to this registered address on the same server, which relays the browser to the alias.
+   */
+  googleRedirectURI?: string;
+  /** Further origins the server is reached under, e.g. the registered address a private gateway presents. */
+  trustedOrigins?: string[];
 }
 
 /** Who may create an account: the owner always; anyone else needs open sign-up or a valid invite, and never when owner-only. */
@@ -43,7 +52,24 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv, dataDir: string): Auth
   const baseURL = new URL(env.BETTER_AUTH_URL?.trim() || 'http://localhost:4317').origin;
   const secret = env.BETTER_AUTH_SECRET?.trim();
   if (env.NODE_ENV === 'production' && (!secret || secret.length < 32)) throw new Error('BETTER_AUTH_SECRET (32+ characters) is required in production.');
-  return { dataDir, baseURL, secret: secret || DEV_SECRET, googleClientId, googleClientSecret, ownerEmail: env.OWNER_EMAIL?.trim().toLowerCase() || undefined, openSignup: env.SIGNUP === 'open' };
+  const redirect = env.GOOGLE_REDIRECT_URI?.trim();
+  if (redirect && !/^https:\/\/[^/]+\/api\/auth\/callback\/google$/.test(redirect)) throw new Error('GOOGLE_REDIRECT_URI must be https://<host>/api/auth/callback/google.');
+  const trustedOrigins = (env.BETTER_AUTH_TRUSTED_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => new URL(o).origin);
+  return { dataDir, baseURL, secret: secret || DEV_SECRET, googleClientId, googleClientSecret, ownerEmail: env.OWNER_EMAIL?.trim().toLowerCase() || undefined, openSignup: env.SIGNUP === 'open', googleRedirectURI: redirect || undefined, trustedOrigins };
+}
+
+/**
+ * The Google callback on the registered address of a private alias: where to send the browser so the callback is
+ * handled on the alias, where its sign-in state cookie lives. Null when no relay is needed. State and PKCE are
+ * still checked by Better Auth on the alias, and the code exchange uses the registered address.
+ */
+export function callbackRelay(cfg: Pick<AuthConfig, 'baseURL' | 'googleRedirectURI'>, url: URL): string | null {
+  if (!cfg.googleRedirectURI) return null;
+  const registered = new URL(cfg.googleRedirectURI);
+  if (registered.origin === cfg.baseURL || url.pathname !== registered.pathname || url.searchParams.has(RELAY_MARK)) return null;
+  const params = new URLSearchParams(url.searchParams);
+  params.set(RELAY_MARK, '1');
+  return `${cfg.baseURL}${registered.pathname}?${params}`;
 }
 
 function cookieValue(header: string | null | undefined, name: string) {
@@ -83,7 +109,7 @@ export async function createAuth(cfg: AuthConfig) {
     appName: 'Capsula',
     baseURL: cfg.baseURL,
     secret: cfg.secret,
-    trustedOrigins: [cfg.baseURL],
+    trustedOrigins: [cfg.baseURL, ...(cfg.trustedOrigins ?? [])],
     database: db,
     session: { expiresIn: 60 * 60 * 24 * 30 },
     // No address is kept with a session; sign-in is rate-limited in front of better-auth (rate-limit.ts).
@@ -95,6 +121,7 @@ export async function createAuth(cfg: AuthConfig) {
         clientSecret: cfg.googleClientSecret,
         prompt: 'select_account',
         accessType: 'online',
+        ...(cfg.googleRedirectURI ? { redirectURI: cfg.googleRedirectURI } : {}),
         async getUserInfo(tokens) {
           // The ID token is verified, not only decoded; an unverified email never signs in.
           if (!tokens.idToken) return null;

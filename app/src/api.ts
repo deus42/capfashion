@@ -34,7 +34,8 @@ async function parse<T>(res: Response): Promise<T> {
 
 /** Accounts mode signs people in with Google; the owner's local site has no accounts. */
 export interface SessionUser { id: string; name: string; email: string; image: string | null; owner: boolean }
-export interface Session { mode: 'local' | 'accounts'; user: SessionUser | null; quota?: QuotaStatus | null; support?: string | null }
+/** `invites: false` when only the owner may have an account. */
+export interface Session { mode: 'local' | 'accounts'; user: SessionUser | null; quota?: QuotaStatus | null; support?: string | null; invites?: boolean }
 
 const QUOTA_OUT: Record<QuotaKind, string> = {
   tryon: 'Ліміт примірок на цей місяць вичерпано',

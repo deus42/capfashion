@@ -24,6 +24,15 @@ export interface AuthConfig {
   googleClientSecret: string;
   ownerEmail?: string;
   openSignup: boolean;
+  /** Only the owner may have an account (AI runs on the owner's own subscription); invites admit no one. */
+  ownerOnly?: boolean;
+}
+
+/** Who may create an account: the owner always; anyone else needs open sign-up or a valid invite, and never when owner-only. */
+export function mayCreateAccount(c: { owner: boolean; ownerOnly?: boolean; openSignup: boolean; validInvite: boolean }) {
+  if (c.owner) return true;
+  if (c.ownerOnly) return false;
+  return c.openSignup || c.validInvite;
 }
 
 export function authConfigFromEnv(env: NodeJS.ProcessEnv, dataDir: string): AuthConfig | null {
@@ -101,9 +110,8 @@ export async function createAuth(cfg: AuthConfig) {
       user: {
         create: {
           before: async (user, ctx) => {
-            if (cfg.openSignup || isOwner(user.email)) return { data: user };
             const code = cookieValue(requestHeaders(ctx)?.get('cookie'), INVITE_COOKIE);
-            if (!validInvite(code)) throw new APIError('FORBIDDEN', { message: 'invite_required' });
+            if (!mayCreateAccount({ owner: isOwner(user.email), ownerOnly: cfg.ownerOnly, openSignup: cfg.openSignup, validInvite: Boolean(validInvite(code)) })) throw new APIError('FORBIDDEN', { message: 'invite_required' });
             return { data: user };
           },
           after: async (user, ctx) => {
@@ -133,7 +141,7 @@ export async function createAuth(cfg: AuthConfig) {
       const { id, name, email, image } = session.user;
       return { id, name, email, image: image ?? null, owner: isOwner(email) };
     },
-    validInvite,
+    validInvite: (code: string | undefined) => (cfg.ownerOnly ? null : validInvite(code)),
     invites: {
       list: () => db.prepare('SELECT * FROM invite ORDER BY createdAt DESC').all() as unknown as Invite[],
       create() {

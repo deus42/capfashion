@@ -15,8 +15,9 @@ separate Mac pulls and encrypts. `user@server` below stands for an SSH login ove
    ```
 
 2. Secrets: copy [`capsula.env.example`](capsula.env.example) to `/srv/capsula/capsula.env`, fill it in and
-   `sudo chmod 600` it. Production refuses to start without the OAuth client, `BETTER_AUTH_SECRET`, the OpenAI key,
-   model names, `OPENAI_PRICES` and `MONTHLY_BUDGET_USD`.
+   `sudo chmod 600` it. Production refuses to start without the OAuth client and `BETTER_AUTH_SECRET`. Without an
+   OpenAI key it also needs `OWNER_EMAIL` and a closed `SIGNUP`; with one, the model names, `OPENAI_PRICES` and
+   `MONTHLY_BUDGET_USD`.
 3. Tunnel: add an ingress rule `capsula.fit → http://127.0.0.1:4317` to the host's Cloudflare Tunnel. The
    container publishes its port on loopback only; `TRUST_PROXY=cloudflare` lets the rate limits see the visitor's
    address.
@@ -37,6 +38,22 @@ DOCKER_CONTEXT=colima scripts/deploy.sh user@server
 
 It builds `linux/amd64`, pushes `ghcr.io/deus42/capsula:sha-<commit>`, installs `compose.yaml` and the backup
 script, pulls that exact image, restarts and waits for `/health`; an unhealthy start goes back to the previous tag.
+
+## AI without an API key
+
+Without `OPENAI_API_KEY` the container runs Codex on the owner's ChatGPT subscription. The subscription's terms
+do not allow making the account available to others, so only `OWNER_EMAIL` can sign in and use AI, and invites
+are off. Sign Codex in once after the first deploy:
+
+```sh
+cd /srv/capsula
+sudo docker compose exec capsula codex login --device-auth
+```
+
+Open the address it prints, enter the code and sign in with the owner's ChatGPT account. `codex login status`
+checks it. The sign-in lives in `/srv/capsula/data/codex` and is not in the backups: after a restore, sign in
+again. Codex has no command sandbox inside the container, so it runs without commands: the app collects each
+generated image from Codex's own folder.
 
 ## Moving the owner's data (once)
 

@@ -66,6 +66,8 @@ export const en: Record<string, string> = {
   // Server messages and limits
   "Помилка {status}": "Error {status}",
   "Ліміт примірок на цей місяць вичерпано": "This month's try-ons are used up",
+  "AI поки працює лише для власника сайту": "For now AI works only for the site's owner",
+  "Запрошення вимкнені: AI працює на підписці власника": "Invites are off: AI runs on the owner's subscription",
   "Ліміт фото речей на цей місяць вичерпано": "This month's piece pictures are used up",
   "Ліміт розпізнавання фото на цей місяць вичерпано": "This month's photo recognitions are used up",
   "Ліміт підборів на цей місяць вичерпано": "This month's styling runs are used up",

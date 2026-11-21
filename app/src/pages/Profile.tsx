@@ -344,8 +344,9 @@ function Account() {
   const { session, act, toast } = useApp();
   const [invites, setInvites] = useState<{ code: string; expiresAt: string; usedBy: string | null; disabled: number }[]>([]);
   const owner = Boolean(session?.user?.owner);
+  const invitesOn = owner && session?.invites !== false;
   const load = () => void api<typeof invites>('GET', '/api/invites').then(setInvites).catch(() => undefined);
-  useEffect(() => { if (owner) load(); }, [owner]);
+  useEffect(() => { if (invitesOn) load(); }, [invitesOn]);
   if (!session?.user) return null;
   const link = (code: string) => `${window.location.origin}/i/${code}`;
   const copy = async (code: string) => {
@@ -367,7 +368,7 @@ function Account() {
         <button className="quiet-toggle" onClick={() => void signOut()}>{t('Вийти')}</button>
       </section>
       {session.quota && <MonthUsage quota={session.quota} support={session.support ?? null} />}
-      {owner && (
+      {invitesOn && (
         <section className="stack" style={{ gap: 10 }}>
           <div className="section-head" style={{ margin: 0 }}>
             <h2 className="h2">{t('Запрошення')} <span className="count">{open.length}</span></h2>

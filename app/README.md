@@ -17,7 +17,7 @@ Checks: `npm run check` runs the typecheck, the server tests and the production 
 ## Two modes
 
 - **Local** (no Google credentials): one wardrobe, stored in `../.local/app-data/` and ignored by Git. It starts empty. AI work runs through the local Codex CLI (`CAPSULA_CODEX_BIN` overrides the binary), with model and effort set in Profile.
-- **Accounts** (`GOOGLE_CLIENT_ID` and the other settings in [`../deploy/capsula.env.example`](../deploy/capsula.env.example)): Google sign-in by invitation, one folder per account, the OpenAI API, monthly allowances, a hard monthly budget and rate limits. [`../deploy/README.md`](../deploy/README.md) describes the production setup.
+- **Accounts** (`GOOGLE_CLIENT_ID` and the other settings in [`../deploy/capsula.env.example`](../deploy/capsula.env.example)): Google sign-in by invitation, one folder per account, the OpenAI API, monthly allowances, a hard monthly budget and rate limits. Without an API key, production runs Codex on the owner's own ChatGPT subscription, and then only the owner can sign in. [`../deploy/README.md`](../deploy/README.md) describes the production setup.
 
 ## How it works
 

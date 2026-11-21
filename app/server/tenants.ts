@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DB } from './schema.ts';
 import { MEASURE_KEYS, SCHEMA_VERSION } from './schema.ts';
-import { createStore, now, type Store } from './store.ts';
+import { HttpError, createStore, now, type Store } from './store.ts';
 import { createRunner, type Limiter } from './runner.ts';
 import type { OpenAIEngine } from './openai-engine.ts';
 import { ACCOUNT_LIMITS, type StorageLimits } from './media.ts';
@@ -57,10 +57,13 @@ export function emptyDb(): DB {
   } as DB;
 }
 
+export const AI_OWNER_ONLY = 'AI поки працює лише для власника сайту';
+
 /** Account ids come from the auth database; anything else is refused before it can name a folder. */
 const SAFE_ID = /^[A-Za-z0-9_-]{6,64}$/;
 
-export function createTenants(opts: { projectRoot: string; dataDir: string; seed: () => DB; limiter?: Limiter; codexBin?: string; engine?: OpenAIEngine; quota?: { cfg: QuotaConfig; usage: Usage } }) {
+/** `aiOwnerOnly`: AI runs on the owner's own subscription, so no other account may queue or start AI work. */
+export function createTenants(opts: { projectRoot: string; dataDir: string; seed: () => DB; limiter?: Limiter; codexBin?: string; engine?: OpenAIEngine; quota?: { cfg: QuotaConfig; usage: Usage }; aiOwnerOnly?: boolean }) {
   const cache = new Map<string, Tenant>();
 
   function open(id: string, root: string, dataDir: string, seed: () => DB, account?: { owner: boolean }): Tenant {
@@ -68,9 +71,12 @@ export function createTenants(opts: { projectRoot: string; dataDir: string; seed
     const quota = account && opts.quota ? accountQuota(opts.quota.cfg, opts.quota.usage, id, account.owner) : undefined;
     const store = quota ? meteredStore(raw, quota) : raw;
     const engine = quota && opts.engine ? meteredEngine(opts.engine, quota.cost) : opts.engine;
+    const noAI = Boolean(opts.aiOwnerOnly && account && !account.owner);
     // Accounts start try-ons themselves: no automatic try-on of every new look.
-    const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine, autoTryOn: !account, canStart: quota?.canStart });
-    const admit = quota ? (kind: QuotaKind, n?: number) => quota.admit(store.read(), kind, n) : undefined;
+    const runner = createRunner(store, root, opts.codexBin, { limiter: opts.limiter, engine, autoTryOn: !account, canStart: noAI ? () => false : quota?.canStart });
+    const admit = noAI
+      ? () => { throw new HttpError(403, AI_OWNER_ONLY); }
+      : quota ? (kind: QuotaKind, n?: number) => quota.admit(store.read(), kind, n) : undefined;
     const limits = account && !account.owner ? ACCOUNT_LIMITS : undefined;
     const tenant: Tenant = { id, root, store, runner, quota, ctx: { store, projectRoot: root, drain: () => void runner.drain(), admit, limits } };
     // A run stopped by a restart continues when its account is opened again; an account's queue resumes too

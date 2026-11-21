@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { DB, Job, SnapshotSlot } from './schema.ts';
@@ -42,6 +43,37 @@ export function findCodex() {
   if (process.env.CAPSULA_CODEX_BIN) return process.env.CAPSULA_CODEX_BIN;
   if (fs.existsSync(BUNDLED_CODEX)) return BUNDLED_CODEX;
   return 'codex';
+}
+
+/**
+ * Off macOS, Codex's command sandbox (bubblewrap) cannot start inside a locked-down container, so Codex runs
+ * without commands there: its shell tools are off, the sandbox stays read-only, and the app collects a generated
+ * image from Codex's own folder (`$CODEX_HOME/generated_images/<thread id>/`) instead of the model saving it.
+ */
+export const CODEX_SHELL_DEFAULT = process.platform === 'darwin';
+const NO_COMMANDS = ['-c', 'features.shell_tool=false', '-c', 'features.unified_exec=false', '-c', 'approval_policy="never"'];
+/** Without commands, Codex gets only what it needs from the environment, not the server's secrets. */
+const CODEX_ENV = ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy'];
+export const codexHomeDefault = () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+
+/** The image prompt when the app, not the model, saves the file. */
+export function collectedImagePrompt(prompt: string) {
+  return prompt
+    .replace(/ and save it as a PNG file at this exact path: .*$/m, '. Do not run commands or save files: the app collects the generated image itself.')
+    .replace('When the PNG is saved at the path above, reply', 'When the image is generated, reply');
+}
+
+/** Copies the newest image Codex generated in this run (named by the thread id in its JSON log) to `target`. */
+export function collectGeneratedImage(codexHome: string, logFile: string, target: string): boolean {
+  const thread = /"thread_id":"([0-9a-f-]{36})"/.exec(fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '')?.[1];
+  if (!thread) return false;
+  const dir = path.join(codexHome, 'generated_images', thread);
+  const images = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => f.endsWith('.png')).map((f) => path.join(dir, f)).sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs)
+    : [];
+  if (images.length) fs.copyFileSync(images[images.length - 1], target);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return images.length > 0;
 }
 
 const REPLY_RULES = [
@@ -191,9 +223,14 @@ export function createLimiter(max: number): Limiter {
 
 /**
  * `autoTryOn: false` (accounts) leaves a new selection's looks without automatic try-ons; `canStart` holds queued
- * jobs back (an account whose month's budget is spent).
+ * jobs back (an account whose month's budget is spent). `codexShell: false` runs Codex without commands
+ * (see CODEX_SHELL_DEFAULT); `codexHome` is where that Codex keeps its generated images.
  */
-export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter; engine?: OpenAIEngine; autoTryOn?: boolean; canStart?: (job: Job) => boolean } = {}) {
+export function createRunner(store: Store, projectRoot: string, codexBin = findCodex(), opts: { limiter?: Limiter; engine?: OpenAIEngine; autoTryOn?: boolean; canStart?: (job: Job) => boolean; codexShell?: boolean; codexHome?: string } = {}) {
+  const shell = opts.codexShell ?? CODEX_SHELL_DEFAULT;
+  const codexHome = opts.codexHome ?? codexHomeDefault();
+  const noCommands = shell ? [] : NO_COMMANDS;
+  const codexEnv = shell ? process.env : { ...Object.fromEntries(CODEX_ENV.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])), CODEX_HOME: codexHome };
   const active = new Set<string>();
   // Item revisions each advise run saw when its prompt was built (see seenRevs).
   const adviseRevs = new Map<string, Map<string, number>>();
@@ -209,7 +246,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       const log = fs.createWriteStream(logFile);
       let child;
       try {
-        child = spawn(codexBin, args, { cwd: jobDir, stdio: ['pipe', 'pipe', 'pipe'] });
+        child = spawn(codexBin, args, { cwd: jobDir, stdio: ['pipe', 'pipe', 'pipe'], env: codexEnv });
       } catch (e) {
         resolve({ code: null, err: String(e) });
         return;
@@ -224,8 +261,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       });
       child.on('close', (code) => {
         clearTimeout(timer);
-        log.end();
-        resolve({ code });
+        // Resolved once the log is on disk: the image collection reads the thread id from it.
+        log.end(() => resolve({ code }));
       });
       // A Codex that exits before reading the prompt closes the pipe (EPIPE); its exit code reports the failure.
       child.stdin.on('error', () => {});
@@ -233,24 +270,32 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     });
   }
 
-  async function locateGarments(jobDir: string, settings: DB['settings'], { prompt, images }: { prompt: string; images: string[] }): Promise<unknown> {
-    if (opts.engine) {
-      const out = await opts.engine.json({ prompt, schema: GARMENT_BOUNDS_SCHEMA, images, logFile: path.join(jobDir, 'garment-bounds.log') });
-      if (!out.reply) throw Error('Не вдалося підготувати кадри речей. Спробуй оновити примірку.');
-      return out.reply;
-    }
-    const schema = path.join(jobDir, 'garment-schema.json');
-    const answer = path.join(jobDir, 'garment-bounds.json');
-    fs.writeFileSync(schema, JSON.stringify(GARMENT_BOUNDS_SCHEMA));
+  /** One structured Codex answer for a step inside a job (`name` names its schema, answer and log files). */
+  async function codexJson(jobDir: string, settings: DB['settings'], name: string, req: { prompt: string; schema: object; images: string[] }): Promise<Record<string, unknown> | null> {
+    const schema = path.join(jobDir, `${name}-schema.json`);
+    const answer = path.join(jobDir, `${name}.json`);
+    fs.writeFileSync(schema, JSON.stringify(req.schema));
     fs.rmSync(answer, { force: true });
     const args = [
       'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
       '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`,
-      ...WORKER_ISOLATION, '--output-schema', schema, '-o', answer, ...images.flatMap((p) => ['-i', p]),
+      ...WORKER_ISOLATION, ...noCommands, '--output-schema', schema, '-o', answer, ...req.images.flatMap((p) => ['-i', p]),
     ];
-    const exit = await spawnCodex(args, prompt, jobDir, path.join(jobDir, 'garment-bounds.log'));
-    if (exit.code !== 0 || !fs.existsSync(answer)) throw Error('Не вдалося підготувати кадри речей. Спробуй оновити примірку.');
-    return JSON.parse(fs.readFileSync(answer, 'utf8'));
+    const exit = await spawnCodex(args, req.prompt, jobDir, path.join(jobDir, `${name}.log`));
+    if (exit.code !== 0 || !fs.existsSync(answer)) return null;
+    try {
+      return JSON.parse(fs.readFileSync(answer, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  async function locateGarments(jobDir: string, settings: DB['settings'], { prompt, images }: { prompt: string; images: string[] }): Promise<unknown> {
+    const reply = opts.engine
+      ? (await opts.engine.json({ prompt, schema: GARMENT_BOUNDS_SCHEMA, images, logFile: path.join(jobDir, 'garment-bounds.log') })).reply
+      : await codexJson(jobDir, settings, 'garment-bounds', { prompt, schema: GARMENT_BOUNDS_SCHEMA, images });
+    if (!reply) throw Error('Не вдалося підготувати кадри речей. Спробуй оновити примірку.');
+    return reply;
   }
 
   /** Intake (photo → wardrobe candidates) and analyzer (owned-only outfits): JSON answers, read-only sandbox. */
@@ -323,7 +368,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       // Shop search needs live web search; the other analyses stay offline.
       ...(job.kind === 'shopsearch' || job.kind === 'storefind' ? ['--search'] : []),
       'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json',
-      '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`, ...WORKER_ISOLATION,
+      '-s', 'read-only', '-C', jobDir, '-m', settings.codexModel, '-c', `model_reasoning_effort="${settings.reasoningEffort}"`, ...WORKER_ISOLATION, ...noCommands,
       '--output-schema', schemaFile, '-o', lastMsg, ...images.flatMap((p) => ['-i', p]),
     ];
     await store.mutate((db) => {
@@ -466,9 +511,13 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       });
       const mediaDir = path.join(store.dataDir, 'media', 'tryon-references', job.id);
       // Where macOS Vision is absent, the model checks each crop for a face; a crop with a face is never used.
-      const faceCheck = opts.engine
-        ? async (files: string[]) => ((await opts.engine!.json({ prompt: FACE_CHECK_PROMPT, schema: FACE_CHECK_SCHEMA, images: files, logFile: path.join(jobDir, 'face-check.log') })).reply?.faces as boolean[] | undefined) ?? files.map(() => true)
-        : undefined;
+      // Any failed or unclear answer counts as a face.
+      const faceCheck = async (files: string[]) => {
+        const reply = opts.engine
+          ? (await opts.engine.json({ prompt: FACE_CHECK_PROMPT, schema: FACE_CHECK_SCHEMA, images: files, logFile: path.join(jobDir, 'face-check.log') })).reply
+          : await codexJson(jobDir, settings, 'face-check', { prompt: FACE_CHECK_PROMPT, schema: FACE_CHECK_SCHEMA, images: files });
+        return (reply?.faces as boolean[] | undefined) ?? files.map(() => true);
+      };
       const prepared = await prepareGarmentCrops({ slots: job.snapshot.slots, projectRoot, mediaDir, jobDir, resolve, locate: (request) => locateGarments(jobDir, settings, request), faceCheck });
       const canRender = await store.mutate((db) => {
         const current = db.jobs.find((j) => j.id === jobId);
@@ -506,7 +555,8 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       refs.packshotStyle = upperStyle;
     }
     const uniqueImages = [...refs.identity, ...refs.garments, ...(refs.packshotStyle ? [refs.packshotStyle] : [])];
-    const prompt = buildPrompt(job, resultFile, refs);
+    const built = buildPrompt(job, resultFile, refs);
+    const prompt = shell || opts.engine ? built : collectedImagePrompt(built);
     fs.writeFileSync(path.join(jobDir, 'references.json'), JSON.stringify({ ...refs, contract: job.snapshot.identity }, null, 2));
     fs.writeFileSync(path.join(jobDir, 'prompt.txt'), prompt);
     const args = [
@@ -516,11 +566,13 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
       '--ephemeral',
       '--color', 'never',
       '--json',
-      '-s', 'workspace-write',
+      // With commands, the model saves the PNG into the job folder; without them it writes nothing.
+      '-s', shell ? 'workspace-write' : 'read-only',
       '-C', jobDir,
       '-m', settings.codexModel,
       '-c', `model_reasoning_effort="${settings.reasoningEffort}"`,
       ...WORKER_ISOLATION,
+      ...noCommands,
       '--enable', 'image_generation',
       '-o', lastMsg,
       ...uniqueImages.flatMap((p) => ['-i', p]),
@@ -551,6 +603,7 @@ export function createRunner(store: Store, projectRoot: string, codexBin = findC
     } else {
       exit = await spawnCodex(args, prompt, jobDir, logFile);
       reply = fs.existsSync(lastMsg) ? parseReply(fs.readFileSync(lastMsg, 'utf8')) : {};
+      if (!shell && !fs.existsSync(resultFile)) collectGeneratedImage(codexHome, logFile, resultFile);
     }
     let image = fs.existsSync(resultFile) ? resultFile : null;
     const note = reply.notes;

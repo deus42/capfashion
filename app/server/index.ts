@@ -26,13 +26,17 @@ const HOST = process.env.HOST || '127.0.0.1';
 const authConfig = authConfigFromEnv(process.env, DATA_DIR);
 const ACCOUNTS = Boolean(authConfig);
 fs.mkdirSync(DATA_DIR, { recursive: true });
-// Generation: the OpenAI API when configured (always in production accounts mode), else the local Codex worker.
+// Generation: the OpenAI API when configured, else Codex.
 const openAI = openAIConfigFromEnv(process.env);
 const PRODUCTION = process.env.NODE_ENV === 'production';
-if (ACCOUNTS && PRODUCTION && !openAI) throw new Error('Accounts in production need OPENAI_API_KEY, OPENAI_TEXT_MODEL and OPENAI_IMAGE_MODEL.');
-// Accounts have monthly allowances; production also needs the budget and the prices it is counted with.
+// Without an API key, production accounts run on the owner's own ChatGPT subscription through Codex. Its terms
+// do not allow making an account available to others, so only the owner signs in and uses AI; invites wait.
+const OWNER_ONLY = ACCOUNTS && PRODUCTION && !openAI;
+if (OWNER_ONLY && (!authConfig!.ownerEmail || authConfig!.openSignup)) throw new Error('Without OPENAI_API_KEY, production runs on the owner\'s Codex subscription: set OWNER_EMAIL and keep SIGNUP closed.');
+if (OWNER_ONLY && process.env.CODEX_HOME) fs.mkdirSync(process.env.CODEX_HOME, { recursive: true, mode: 0o700 });
+// Accounts have monthly allowances; production with the API also needs the budget and the prices it is counted with.
 const quotaConfig = ACCOUNTS ? quotaConfigFromEnv(process.env) : null;
-if (ACCOUNTS && PRODUCTION && (quotaConfig!.budgetUsd === null || !openAI?.prices)) throw new Error('Accounts in production need MONTHLY_BUDGET_USD and OPENAI_PRICES.');
+if (ACCOUNTS && PRODUCTION && openAI && (quotaConfig!.budgetUsd === null || !openAI.prices)) throw new Error('Accounts in production need MONTHLY_BUDGET_USD and OPENAI_PRICES.');
 const usage = ACCOUNTS ? createUsage(path.join(DATA_DIR, 'usage.sqlite')) : null;
 /** Ko-fi or another page for «Підтримати»; shown when an allowance runs out. */
 const SUPPORT_URL = process.env.SUPPORT_URL?.trim() || null;
@@ -43,8 +47,9 @@ const tenants = createTenants({
   limiter: ACCOUNTS ? createLimiter(Math.max(1, Number(process.env.MAX_JOBS) || 2)) : undefined,
   engine: openAI ? createOpenAIEngine(openAI) : undefined,
   quota: quotaConfig && usage ? { cfg: quotaConfig, usage } : undefined,
+  aiOwnerOnly: OWNER_ONLY,
 });
-const auth = authConfig ? await createAuth(authConfig) : null;
+const auth = authConfig ? await createAuth({ ...authConfig, ownerOnly: OWNER_ONLY }) : null;
 const localTenant = ACCOUNTS ? null : tenants.local();
 
 const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
@@ -185,7 +190,7 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
   const user = await auth.userOf(req);
   if (method === 'GET' && url.pathname === '/api/session') {
     const tenant = user ? tenants.forUser(user.id, user.owner) : null;
-    send(res, 200, { mode: 'accounts', user, quota: tenant?.quota?.status(tenant.store.read()) ?? null, support: SUPPORT_URL });
+    send(res, 200, { mode: 'accounts', user, quota: tenant?.quota?.status(tenant.store.read()) ?? null, support: SUPPORT_URL, invites: !OWNER_ONLY });
     return null;
   }
   if (!user) {
@@ -199,6 +204,7 @@ async function accountTenant(req: http.IncomingMessage, res: http.ServerResponse
   // Owner: invite links. Everyone: delete their own account and everything in it.
   if (url.pathname === '/api/invites' || url.pathname.startsWith('/api/invites/')) {
     if (!user.owner) send(res, 403, { error: 'Лише для власника' });
+    else if (OWNER_ONLY && method === 'POST') send(res, 403, { error: 'Запрошення вимкнені: AI працює на підписці власника' });
     else if (method === 'GET') send(res, 200, auth.invites.list());
     else if (method === 'POST') send(res, 200, auth.invites.create());
     else if (method === 'DELETE') send(res, 200, (auth.invites.disable(decodeURIComponent(url.pathname.split('/')[3] ?? '')), { ok: true }));
@@ -303,5 +309,5 @@ if (localTenant) {
   prewarm(PROJECT_ROOT, DATA_DIR, [...db.photos.map((p) => p.path), ...db.results.map((r) => r.imagePath)]);
 }
 server.listen(PORT, HOST, () => {
-  console.log(`${new Date().toISOString()} Capsula: http://${HOST}:${PORT}  (${ACCOUNTS ? `акаунти, ${authConfig!.baseURL}` : `дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${localTenant!.runner.state.codexBin}`})`);
+  console.log(`${new Date().toISOString()} Capsula: http://${HOST}:${PORT}  (${ACCOUNTS ? `акаунти, ${authConfig!.baseURL}, AI: ${openAI ? 'OpenAI API' : OWNER_ONLY ? 'Codex, лише власник' : 'Codex'}` : `дані: ${path.relative(PROJECT_ROOT, DATA_DIR)}, Codex: ${localTenant!.runner.state.codexBin}`})`);
 });

@@ -1836,6 +1836,60 @@ test('accounts: config needs both Google keys and a strong secret in production;
   auth.close();
 });
 
+test('owner-only accounts: only the owner signs up, invites admit no one, and other accounts get no AI', async () => {
+  const { authConfigFromEnv, createAuth, mayCreateAccount } = await import('./auth.ts');
+  const { createTenants, emptyDb, AI_OWNER_ONLY } = await import('./tenants.ts');
+  assert.equal(mayCreateAccount({ owner: true, ownerOnly: true, openSignup: false, validInvite: false }), true);
+  assert.equal(mayCreateAccount({ owner: false, ownerOnly: true, openSignup: true, validInvite: true }), false, 'neither open sign-up nor an invite admits anyone else');
+  assert.equal(mayCreateAccount({ owner: false, openSignup: false, validInvite: true }), true);
+  assert.equal(mayCreateAccount({ owner: false, openSignup: false, validInvite: false }), false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capsula-owner-only-'));
+  const cfg = authConfigFromEnv({ GOOGLE_CLIENT_ID: 'x.apps.googleusercontent.com', GOOGLE_CLIENT_SECRET: 'y', OWNER_EMAIL: 'owner@example.test' }, dir)!;
+  const auth = await createAuth({ ...cfg, secret: 'k'.repeat(48), ownerOnly: true });
+  assert.equal(auth.validInvite(auth.invites.create().code), null, 'an invite link opens nothing');
+  auth.close();
+  const tenants = createTenants({ projectRoot: dir, dataDir: dir, seed: emptyDb, codexBin: '/usr/bin/false', aiOwnerOnly: true });
+  const guest = tenants.forUser('user-gggggg');
+  assert.throws(() => guest.ctx.admit!('tryon'), (e: { status?: number; message: string }) => e.status === 403 && e.message === AI_OWNER_ONLY);
+  const owner = tenants.forUser('owner-oooooo', true);
+  assert.equal(owner.ctx.admit, undefined, "the owner's AI is not gated");
+  guest.runner.stop();
+  owner.runner.stop();
+});
+
+test("Codex without commands (servers): shell tools off, read-only, the app collects the image from Codex's folder, no server secrets", async () => {
+  const { dir, store, call } = setup();
+  const home = path.join(dir, 'codex-home');
+  const thread = '01a1fca0-193a-7bd3-8911-8e8103738880';
+  const fake = path.join(dir, 'fake-codex.sh');
+  fs.writeFileSync(path.join(dir, 'fixture.png'), SAMPLE_PNG);
+  fs.writeFileSync(
+    fake,
+    `#!/bin/sh\necho "$@" >> "${dir}/args.txt"\nenv > "${dir}/env.txt"\nwhile [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift;; esac; shift; done\ncat >> "${dir}/stdin.txt"\necho '{"type":"thread.started","thread_id":"${thread}"}'\nmkdir -p "$CODEX_HOME/generated_images/${thread}"\ncp "${dir}/fixture.png" "$CODEX_HOME/generated_images/${thread}/exec-1.png"\necho '{"status":"done","notes":"fake"}' > "$o"\n`,
+    { mode: 0o755 },
+  );
+  process.env.BETTER_AUTH_SECRET = 'not-for-codex';
+  try {
+    const runner = createRunner(store, dir, fake, { codexShell: false, codexHome: home });
+    const pk = await call('POST', '/api/packshots', { itemIds: ['W-1'] });
+    assert.equal(pk.created, 1);
+    await runner.drain();
+  } finally {
+    delete process.env.BETTER_AUTH_SECRET;
+  }
+  const item = store.read().items.find((i) => i.id === 'W-1')!;
+  assert.ok(item.packshotId, 'the collected image became the packshot');
+  const calls = fs.readFileSync(path.join(dir, 'args.txt'), 'utf8').trim().split('\n');
+  assert.ok(calls.every((c) => c.includes('features.shell_tool=false') && c.includes('-s read-only') && !c.includes('workspace-write')), 'every Codex call runs without commands');
+  const prompt = fs.readFileSync(path.join(dir, 'stdin.txt'), 'utf8');
+  assert.doesNotMatch(prompt, /save it as a PNG/);
+  assert.match(prompt, /the app collects the generated image itself/);
+  assert.equal(fs.existsSync(path.join(home, 'generated_images', thread)), false, "Codex's own copy is removed");
+  const env = fs.readFileSync(path.join(dir, 'env.txt'), 'utf8');
+  assert.doesNotMatch(env, /BETTER_AUTH_SECRET/);
+  assert.match(env, new RegExp(`^CODEX_HOME=${home}$`, 'm'));
+});
+
 test('OpenAI engine: structured JSON with attached images and web search, PNG edits from references, honest errors, no guessed models', async () => {
   const { createOpenAIEngine, openAIConfigFromEnv, apiImagePrompt, responseText } = await import('./openai-engine.ts');
   assert.equal(openAIConfigFromEnv({}), null);
